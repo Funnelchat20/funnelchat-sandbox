@@ -1,0 +1,15 @@
+{
+  "port": 4010,
+  "statusDelays": { "sent": 1, "delivered": 2, "read": 3 },
+  "webhooks": { "retryDelays": [5, 15, 30], "timeoutSeconds": 10 },
+  "rules": { "window": true, "antiblock": true, "rateLimit": true },
+  "templateApprovalSeconds": 5,
+  "subscriptions": [
+    {
+      "url": "http://localhost:3000/hooks/funnelchat",
+      "events": ["message.received", "message.status_changed", "contact.created"],
+      "description": "Mi receptor local",
+      "secret": "whsec_desarrolloLocalNoUsarEnProduccion"
+    }
+  ]
+}
