@@ -1,0 +1,65 @@
+{
+  "name": "funnelchat-sandbox",
+  "version": "0.1.0",
+  "description": "Servidor local que imita la API pública de Funnelchat y manda webhooks firmados, sin efectos reales",
+  "private": true,
+  "license": "UNLICENSED",
+  "author": "Funnelchat",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/Funnelchat20/funnelchat-sandbox.git"
+  },
+  "keywords": [
+    "funnelchat",
+    "whatsapp",
+    "api",
+    "sandbox",
+    "mock",
+    "webhooks"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "funnelchat-sandbox": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "spec/procedencia.json",
+    "README.md"
+  ],
+  "scripts": {
+    "generate": "node scripts/generate.mjs",
+    "generate:check": "node scripts/generate.mjs --check",
+    "build": "tsup",
+    "start": "node dist/cli.js",
+    "dev": "tsup --watch --onSuccess \"node dist/cli.js\"",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/node": "^20.19.43",
+    "eslint": "^9.39.5",
+    "tsup": "^8.5.1",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.71.2",
+    "vitest": "^4.1.12"
+  }
+}
