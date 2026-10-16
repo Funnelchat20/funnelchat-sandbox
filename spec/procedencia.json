@@ -1,0 +1,64 @@
+{
+  "description": "De dónde salió cada archivo de spec/. Lo escribe `npm run generate -- --spec <archivo>` o `-- --pending <archivo>`; no lo edites a mano. spec/pending-sandbox.json es propio de este repo: sus fuentes están adentro.",
+  "snapshot": {
+    "file": "spec/funnelchat.json",
+    "sha256": "8bbbae569b4cab520884db98f28204156c1bd6c629578bee609343c193e0dadb",
+    "bytes": 635293,
+    "source": {
+      "repository": "git@github.com:Funnelchat20/developers-portal.git",
+      "path": "out/specs/funnelchat.json",
+      "branch": "feat/openapi-unificada",
+      "commit": "0ef4abb008870ed8c7cae49a08900a81e5e57ed8",
+      "commit_date": "2026-10-15T10:53:11-03:00",
+      "file_tracked_in_git": false,
+      "tracked_files_clean": true,
+      "file_modified_at": "2026-10-15T14:11:20.569Z"
+    },
+    "imported_at": "2026-10-16T11:46:40.094Z",
+    "spec": {
+      "openapi": "3.1.0",
+      "title": "Funnelchat API",
+      "version": "v0",
+      "paths": 191,
+      "operations": 230,
+      "webhooks": 28,
+      "domains": [
+        {
+          "domain": "conversations",
+          "sha": "9d723d52c",
+          "branch": "snapshot/referencia-1310",
+          "snapshot_at": "2026-10-13T10:41:30-03:00"
+        },
+        {
+          "domain": "communities",
+          "sha": "fab0bb10",
+          "branch": "snapshot/referencia-1310",
+          "snapshot_at": "2026-10-13T10:41:34-03:00"
+        },
+        {
+          "domain": "accounts",
+          "sha": "c234b6f8",
+          "branch": "snapshot/referencia-1310",
+          "snapshot_at": "2026-10-13T10:41:36-03:00"
+        }
+      ]
+    }
+  },
+  "pending": {
+    "file": "spec/pending.json",
+    "sha256": "a14bc4dbc3025d3e958ffda8afd1fa9fdab34af264418060825f3300799aceb0",
+    "bytes": 32775,
+    "source": {
+      "repository": "git@github.com:Funnelchat20/funnelchat-node.git",
+      "path": "spec/pending.json",
+      "branch": "feat/inicial",
+      "commit": "88557ce7819c5a4061e84c58053a1b6c49f35ec2",
+      "commit_date": "2026-10-16T02:46:14-03:00",
+      "file_tracked_in_git": true,
+      "tracked_files_clean": true,
+      "file_modified_at": "2026-10-16T05:29:09.348Z"
+    },
+    "imported_at": "2026-10-16T11:46:40.294Z",
+    "note": "La capa pendiente del SDK de Node, sin cambios. Lo propio del sandbox va en spec/pending-sandbox.json."
+  }
+}

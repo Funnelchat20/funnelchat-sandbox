@@ -1,0 +1,663 @@
+{
+  "x-fc-pending": {
+    "title": "Pendiente de la especificación",
+    "description": "Rutas, campos y eventos que la API ya tiene (o tiene en una rama sin mergear) pero que la instantánea de spec/funnelchat.json todavía no trae. scripts/generate.mjs los suma a la especificación antes de generar los tipos, solo mientras la instantánea no los tenga: cuando una instantánea nueva los trae, la generación usa la de la instantánea y avisa qué entradas de este archivo ya se pueden borrar.",
+    "rules": {
+      "paths": "Una operación (método + ruta) se agrega solo si la instantánea no la tiene.",
+      "operationPatches": "Un parche agrega propiedades al cuerpo de una operación de la instantánea solo mientras esa operación cumple la condición de `while`.",
+      "webhooks": "Un evento se agrega si la instantánea no lo tiene, o lo reemplaza mientras cumple la condición de `x-fc-replace-while`.",
+      "components.schemas": "Los esquemas de esta capa empiezan con `Pending` para no chocar con los de la instantánea."
+    },
+    "sources": {
+      "accounts-webhooks": "accounts origin/main @ c34cba2c (2026-10-16): back/routes/api/webhooks.php, Http/Controllers/WebhookSubscription*Controller.php, Http/Requests/*WebhookSubscriptionRequest.php, Http/Resources/WebhookSubscription*Resource.php, Catalogs/Areas/*Events.php. En producción desde el 13-10 (accounts #978).",
+      "conversations-c2": "conversations feat/armar-funnelchat-f1 @ eadef46c (PR #2284, SIN MERGEAR): envío con clave (contrato 1014, C2) y client_reference.",
+      "conversations-c1": "conversations feat/armar-funnelchat-f1 @ eadef46c (PR #2284, SIN MERGEAR): forma de data de message.status_changed (contrato 1014, C1)."
+    }
+  },
+  "components": {
+    "schemas": {
+      "PendingClientReference": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64,
+        "pattern": "^[\\x21-\\x7E]{1,64}$",
+        "description": "Tu referencia para correlacionar el envío con el historial y con `message.status_changed`: de 1 a 64 caracteres ASCII visibles, sin espacios. No es única ni está autenticada; no pongas datos personales. Pendiente de la especificación (conversations PR #2284, sin mergear)."
+      },
+      "PendingWebhookSubscriptionFilters": {
+        "type": "object",
+        "properties": {
+          "campaign_ids": {
+            "type": "array",
+            "maxItems": 100,
+            "items": { "type": "string", "minLength": 6, "maxLength": 64, "pattern": "^[A-Za-z0-9_-]+$" },
+            "description": "Solo entrega los eventos de estas campañas. Un evento sin campaña no pasa el filtro."
+          }
+        }
+      },
+      "PendingWebhookSubscription": {
+        "type": "object",
+        "description": "Una suscripción de webhook unificada. Nunca trae el secreto.",
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "description": "Identificador de la suscripción. Guardalo al crearla: es lo que identifica la tuya." },
+          "url": { "type": "string" },
+          "description": { "type": ["string", "null"] },
+          "events": { "type": "array", "items": { "type": "string" } },
+          "filters": { "$ref": "#/components/schemas/PendingWebhookSubscriptionFilters" },
+          "status": { "type": "string", "enum": ["active", "paused", "disabled"] },
+          "disabled_reason": { "type": ["string", "null"], "enum": ["too_many_failures", "key_revoked", null] },
+          "last_delivery_at": { "type": ["string", "null"], "format": "date-time" },
+          "last_success_at": { "type": ["string", "null"], "format": "date-time" },
+          "secret_rotated_at": { "type": ["string", "null"], "format": "date-time" },
+          "created_at": { "type": ["string", "null"], "format": "date-time" },
+          "updated_at": { "type": ["string", "null"], "format": "date-time" },
+          "migration": {
+            "type": ["object", "null"],
+            "properties": {
+              "origin": { "type": "string" },
+              "status": { "type": "string" },
+              "activated_via": { "type": ["string", "null"] },
+              "activated_at": { "type": ["string", "null"], "format": "date-time" },
+              "last_result": {}
+            },
+            "required": ["origin", "status", "activated_via", "activated_at", "last_result"]
+          }
+        },
+        "required": ["id", "url", "description", "events", "filters", "status", "disabled_reason", "last_delivery_at", "last_success_at", "secret_rotated_at", "created_at", "updated_at", "migration"]
+      },
+      "PendingWebhookSubscriptionWithSecret": {
+        "allOf": [
+          { "$ref": "#/components/schemas/PendingWebhookSubscription" },
+          {
+            "type": "object",
+            "properties": {
+              "secret": { "type": "string", "description": "El secreto completo para verificar la firma. Se muestra una sola vez: guardalo." },
+              "secret_notice": { "type": "string" }
+            },
+            "required": ["secret", "secret_notice"]
+          }
+        ]
+      },
+      "PendingWebhookSubscriptionCreate": {
+        "type": "object",
+        "properties": {
+          "url": { "type": "string", "maxLength": 2048, "description": "`https`, pública y sin usuario ni contraseña." },
+          "description": { "type": ["string", "null"], "maxLength": 160 },
+          "events": { "type": "array", "minItems": 1, "maxItems": 50, "items": { "type": "string" }, "description": "Tipos del catálogo (`GET /api/v1/webhooks/events`). La clave necesita el permiso `{área}:read` del área de cada tipo." },
+          "filters": {
+            "anyOf": [{ "$ref": "#/components/schemas/PendingWebhookSubscriptionFilters" }, { "type": "null" }]
+          }
+        },
+        "required": ["url", "events"]
+      },
+      "PendingWebhookSubscriptionUpdate": {
+        "allOf": [
+          { "$ref": "#/components/schemas/PendingWebhookSubscriptionCreate" },
+          {
+            "type": "object",
+            "properties": {
+              "status": { "type": "string", "enum": ["active", "paused"], "description": "Opcional. `disabled` no se puede pedir." }
+            }
+          }
+        ]
+      },
+      "PendingWebhookSubscriptionDelivery": {
+        "type": "object",
+        "description": "Un intento de entrega. Los intentos de un mismo evento comparten `event_id`.",
+        "properties": {
+          "id": { "type": "integer" },
+          "event_id": { "type": "string" },
+          "event_type": { "type": "string" },
+          "attempt": { "type": "integer" },
+          "url": { "type": "string" },
+          "response_status": { "type": ["integer", "null"] },
+          "succeeded": { "type": "boolean" },
+          "error": { "type": ["string", "null"] },
+          "duration_ms": { "type": ["integer", "null"] },
+          "attempted_at": { "type": ["string", "null"], "format": "date-time" }
+        },
+        "required": ["id", "event_id", "event_type", "attempt", "url", "response_status", "succeeded", "error", "duration_ms", "attempted_at"]
+      },
+      "PendingWebhookSubscriptionTestResult": {
+        "type": "object",
+        "description": "Resultado de la entrega de prueba (`webhook.test`). Responde 200 aunque tu servidor falle: mirá `succeeded`.",
+        "properties": {
+          "succeeded": { "type": "boolean" },
+          "response_status": { "type": ["integer", "null"] },
+          "error": { "type": ["string", "null"] },
+          "duration_ms": { "type": ["integer", "null"] },
+          "delivery_id": { "type": "integer" }
+        },
+        "required": ["succeeded", "response_status", "error", "duration_ms", "delivery_id"]
+      },
+      "PendingMessage": {
+        "type": "object",
+        "properties": { "message": { "type": "string" } },
+        "required": ["message"]
+      }
+    }
+  },
+  "paths": {
+    "/api/v1/webhooks": {
+      "get": {
+        "operationId": "pendingWebhookSubscription.index",
+        "summary": "Listar las suscripciones de webhook",
+        "description": "Todas las suscripciones de la cuenta (como máximo 50), también las que crearon otras integraciones. Solo el titular de la cuenta.\n\n**Pendiente de la especificación** (accounts origin/main @ c34cba2c).",
+        "tags": ["Webhooks"],
+        "x-fc-domain": "accounts",
+        "x-fc-permission": "accounts:read",
+        "x-fc-pending": "accounts-webhooks",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PendingWebhookSubscription" } } } }
+          }
+        }
+      },
+      "post": {
+        "operationId": "pendingWebhookSubscription.store",
+        "summary": "Crear una suscripción de webhook",
+        "description": "Devuelve el `secret` una sola vez. Tope: 50 suscripciones por cuenta (la siguiente responde 422).\n\n**Pendiente de la especificación** (accounts origin/main @ c34cba2c).",
+        "tags": ["Webhooks"],
+        "x-fc-domain": "accounts",
+        "x-fc-permission": "accounts:write",
+        "x-fc-pending": "accounts-webhooks",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PendingWebhookSubscriptionCreate" } } }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PendingWebhookSubscriptionWithSecret" } } }
+          },
+          "422": {
+            "description": "URL rechazada, tipos de evento inválidos o tope alcanzado",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PendingMessage" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/webhooks/{id}": {
+      "get": {
+        "operationId": "pendingWebhookSubscription.show",
+        "summary": "Ver una suscripción de webhook",
+        "description": "No trae el secreto. Si lo perdiste, rotalo.\n\n**Pendiente de la especificación** (accounts origin/main @ c34cba2c).",
+        "tags": ["Webhooks"],
+        "x-fc-domain": "accounts",
+        "x-fc-permission": "accounts:read",
+        "x-fc-pending": "accounts-webhooks",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PendingWebhookSubscription" } } }
+          }
+        }
+      },
+      "put": {
+        "operationId": "pendingWebhookSubscription.update",
+        "summary": "Cambiar una suscripción de webhook",
+        "description": "Reemplaza `url`, `events`, `description` y `filters`; `status` es opcional (`active` o `paused`). El secreto no cambia.\n\n**Pendiente de la especificación** (accounts origin/main @ c34cba2c).",
+        "tags": ["Webhooks"],
+        "x-fc-domain": "accounts",
+        "x-fc-permission": "accounts:write",
+        "x-fc-pending": "accounts-webhooks",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PendingWebhookSubscriptionUpdate" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PendingWebhookSubscription" } } }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "pendingWebhookSubscription.destroy",
+        "summary": "Eliminar una suscripción de webhook",
+        "description": "Borra la suscripción con su historial de entregas.\n\n**Pendiente de la especificación** (accounts origin/main @ c34cba2c).",
+        "tags": ["Webhooks"],
+        "x-fc-domain": "accounts",
+        "x-fc-permission": "accounts:write",
+        "x-fc-pending": "accounts-webhooks",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "204": { "description": "No Content" } }
+      }
+    },
+    "/api/v1/webhooks/{id}/rotate-secret": {
+      "post": {
+        "operationId": "pendingWebhookSubscription.rotateSecret",
+        "summary": "Generar un secreto nuevo",
+        "description": "Devuelve el secreto nuevo una sola vez; el anterior deja de valer de inmediato.\n\n**Pendiente de la especificación** (accounts origin/main @ c34cba2c).",
+        "tags": ["Webhooks"],
+        "x-fc-domain": "accounts",
+        "x-fc-permission": "accounts:write",
+        "x-fc-pending": "accounts-webhooks",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PendingWebhookSubscriptionWithSecret" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/webhooks/{id}/test": {
+      "post": {
+        "operationId": "pendingWebhookSubscription.test",
+        "summary": "Enviar ahora un evento de prueba",
+        "description": "Una entrega firmada de `webhook.test`, sin reintentos. Queda en el historial.\n\n**Pendiente de la especificación** (accounts origin/main @ c34cba2c).",
+        "tags": ["Webhooks"],
+        "x-fc-domain": "accounts",
+        "x-fc-permission": "accounts:write",
+        "x-fc-pending": "accounts-webhooks",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PendingWebhookSubscriptionTestResult" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/webhooks/{id}/deliveries": {
+      "get": {
+        "operationId": "pendingWebhookSubscription.deliveries",
+        "summary": "Ver el historial de entregas",
+        "description": "Un registro por intento, lo más reciente primero. Pagina con `page` y `per_page` (25 por defecto, 100 como máximo).\n\n**Pendiente de la especificación** (accounts origin/main @ c34cba2c).",
+        "tags": ["Webhooks"],
+        "x-fc-domain": "accounts",
+        "x-fc-permission": "accounts:read",
+        "x-fc-pending": "accounts-webhooks",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "minimum": 1 } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 25 } },
+          { "name": "event_type", "in": "query", "schema": { "type": "string" } },
+          { "name": "event_id", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/PendingWebhookSubscriptionDelivery" } },
+                    "links": {
+                      "type": "object",
+                      "properties": {
+                        "first": { "type": ["string", "null"] },
+                        "last": { "type": ["string", "null"] },
+                        "prev": { "type": ["string", "null"] },
+                        "next": { "type": ["string", "null"] }
+                      }
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "current_page": { "type": "integer" },
+                        "last_page": { "type": "integer" },
+                        "per_page": { "type": "integer" },
+                        "total": { "type": "integer" }
+                      },
+                      "required": ["current_page", "last_page", "per_page", "total"]
+                    }
+                  },
+                  "required": ["data", "links", "meta"]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "operationPatches": [
+    {
+      "method": "post",
+      "path": "/api/v1/contacts/{contact}/message",
+      "while": { "x-portal-v0": "send_pending" },
+      "x-fc-pending": "conversations-c2",
+      "requestBodyProperties": { "client_reference": { "$ref": "#/components/schemas/PendingClientReference" } }
+    },
+    {
+      "method": "post",
+      "path": "/api/v1/message/send-message",
+      "while": { "x-portal-v0": "send_pending" },
+      "x-fc-pending": "conversations-c2",
+      "requestBodyProperties": { "client_reference": { "$ref": "#/components/schemas/PendingClientReference" } }
+    },
+    {
+      "method": "post",
+      "path": "/api/v1/devices/{device}/templates/{template}/send-template",
+      "while": { "x-portal-v0": "send_pending" },
+      "x-fc-pending": "conversations-c2",
+      "requestBodyProperties": { "client_reference": { "$ref": "#/components/schemas/PendingClientReference" } }
+    },
+    {
+      "method": "post",
+      "path": "/api/v1/contacts/{contact}/message/contact-card",
+      "while": { "x-portal-v0": "send_pending" },
+      "x-fc-pending": "conversations-c2",
+      "requestBodyProperties": { "client_reference": { "$ref": "#/components/schemas/PendingClientReference" } }
+    },
+    {
+      "method": "post",
+      "path": "/api/v1/contacts/{contact}/messages/{message}/forward",
+      "while": { "x-portal-v0": "send_pending" },
+      "x-fc-pending": "conversations-c2",
+      "requestBodyProperties": { "client_reference": { "$ref": "#/components/schemas/PendingClientReference" } }
+    }
+  ],
+  "webhooks": {
+    "message.status_changed": {
+      "post": {
+        "summary": "message.status_changed",
+        "description": "Cambió el estado de entrega de un mensaje 1:1 enviado. Un aviso por transición, nunca uno que retroceda. Hay que pedirlo de forma explícita en `events`.",
+        "x-fc-status": "planned",
+        "x-fc-domain": "conversations",
+        "x-fc-pending": "conversations-c1",
+        "x-fc-replace-while": { "x-fc-status": "planned" },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "message_id": { "type": "integer", "description": "El `id` del mensaje en el historial del contacto." },
+                      "contact_id": { "type": "integer" },
+                      "device_id": { "type": ["integer", "null"], "description": "El número de tu cuenta que envió el mensaje." },
+                      "status": { "type": "string", "enum": ["sent", "delivered", "read", "failed"] },
+                      "previous_status": { "type": ["string", "null"], "enum": ["sent", "delivered", "read", "failed", null] },
+                      "error": {
+                        "type": "object",
+                        "description": "Solo cuando `status` es `failed`.",
+                        "properties": {
+                          "code": { "type": ["integer", "null"] },
+                          "title": { "type": ["string", "null"] }
+                        },
+                        "required": ["code", "title"]
+                      },
+                      "occurred_at": { "type": "string", "format": "date-time" },
+                      "client_reference": { "type": ["string", "null"], "description": "La `client_reference` que mandaste en el envío, o `null`." }
+                    },
+                    "required": ["message_id", "contact_id", "device_id", "status", "previous_status", "occurred_at", "client_reference"]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "device.connected": {
+      "post": {
+        "summary": "device.connected",
+        "description": "Uno de los números de la cuenta quedó conectado: al escanear el código QR o al terminar el alta de un número de WhatsApp Cloud.",
+        "x-fc-status": "live",
+        "x-fc-domain": "accounts",
+        "x-fc-pending": "accounts-webhooks",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "device": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "integer" },
+                          "name": { "type": ["string", "null"] },
+                          "number": { "type": ["string", "null"], "description": "Solo dígitos, sin `+`." }
+                        },
+                        "required": ["id", "name", "number"]
+                      },
+                      "connected_at": { "type": "string", "format": "date-time" }
+                    },
+                    "required": ["device", "connected_at"]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "device.disconnected": {
+      "post": {
+        "summary": "device.disconnected",
+        "description": "Uno de los números de la cuenta se desconectó y dejó de poder enviar o recibir.",
+        "x-fc-status": "live",
+        "x-fc-domain": "accounts",
+        "x-fc-pending": "accounts-webhooks",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "device": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "integer" },
+                          "name": { "type": ["string", "null"] },
+                          "number": { "type": ["string", "null"], "description": "Solo dígitos, sin `+`." }
+                        },
+                        "required": ["id", "name", "number"]
+                      },
+                      "disconnected_at": { "type": "string", "format": "date-time" }
+                    },
+                    "required": ["device", "disconnected_at"]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "billing.payment_failed": {
+      "post": {
+        "summary": "billing.payment_failed",
+        "description": "Un cobro de la suscripción no pudo procesarse (solo suscripciones de Stripe).",
+        "x-fc-status": "live",
+        "x-fc-domain": "accounts",
+        "x-fc-pending": "accounts-webhooks",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object" }, "example": { "data": { "amount_cents": 2990, "currency": "USD" } } } } }
+      }
+    },
+    "billing.plan_blocked": {
+      "post": {
+        "summary": "billing.plan_blocked",
+        "description": "El plan quedó bloqueado por un cobro no procesado. Planificado: todavía no se emite.",
+        "x-fc-status": "planned",
+        "x-fc-domain": "accounts",
+        "x-fc-pending": "accounts-webhooks",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object" } } } }
+      }
+    },
+    "billing.upcoming_charge": {
+      "post": {
+        "summary": "billing.upcoming_charge",
+        "description": "Se acerca el próximo cobro de la suscripción (solo suscripciones de Stripe).",
+        "x-fc-status": "live",
+        "x-fc-domain": "accounts",
+        "x-fc-pending": "accounts-webhooks",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object" }, "example": { "data": { "charge_date": "2026-11-05T00:00:00Z", "amount_cents": 2990, "currency": "USD" } } } } }
+      }
+    },
+    "subscription.expiring": {
+      "post": {
+        "summary": "subscription.expiring",
+        "description": "La suscripción está próxima a vencer. Planificado: todavía no se emite.",
+        "x-fc-status": "planned",
+        "x-fc-domain": "accounts",
+        "x-fc-pending": "accounts-webhooks",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object" } } } }
+      }
+    },
+    "subscription.trial_ending": {
+      "post": {
+        "summary": "subscription.trial_ending",
+        "description": "El período de prueba está por terminar.",
+        "x-fc-status": "live",
+        "x-fc-domain": "accounts",
+        "x-fc-pending": "accounts-webhooks",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object" }, "example": { "data": { "trial_ends_at": "2026-10-04T00:00:00Z" } } } } }
+      }
+    },
+    "subscription.reactivated": {
+      "post": {
+        "summary": "subscription.reactivated",
+        "description": "Se revirtió la cancelación programada de la suscripción (solo suscripciones de Stripe).",
+        "x-fc-status": "live",
+        "x-fc-domain": "accounts",
+        "x-fc-pending": "accounts-webhooks",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object" }, "example": { "data": { "renews_at": "2026-11-05T00:00:00Z" } } } } }
+      }
+    },
+    "subscription.cancellation_confirmed": {
+      "post": {
+        "summary": "subscription.cancellation_confirmed",
+        "description": "Quedó confirmada la cancelación de la suscripción (solo suscripciones de Stripe).",
+        "x-fc-status": "live",
+        "x-fc-domain": "accounts",
+        "x-fc-pending": "accounts-webhooks",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object" }, "example": { "data": { "access_until": "2026-11-05T00:00:00Z" } } } } }
+      }
+    },
+    "subscription.dormant_ending": {
+      "post": {
+        "summary": "subscription.dormant_ending",
+        "description": "El período de cuenta en reposo está por terminar.",
+        "x-fc-status": "live",
+        "x-fc-domain": "accounts",
+        "x-fc-pending": "accounts-webhooks",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object" }, "example": { "data": { "charge_date": "2026-10-08T00:00:00Z", "amount_cents": 1990, "currency": "USD" } } } } }
+      }
+    },
+    "ai_quota.low_balance": {
+      "post": {
+        "summary": "ai_quota.low_balance",
+        "description": "La cuota de mensajes de IA está por agotarse. Planificado: todavía no se emite.",
+        "x-fc-status": "planned",
+        "x-fc-domain": "accounts",
+        "x-fc-pending": "accounts-webhooks",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object" } } } }
+      }
+    },
+    "ai_quota.topup_succeeded": {
+      "post": {
+        "summary": "ai_quota.topup_succeeded",
+        "description": "Una recarga de cuota de IA se acreditó. Planificado: todavía no se emite.",
+        "x-fc-status": "planned",
+        "x-fc-domain": "accounts",
+        "x-fc-pending": "accounts-webhooks",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object" } } } }
+      }
+    },
+    "ai_quota.topup_failed": {
+      "post": {
+        "summary": "ai_quota.topup_failed",
+        "description": "Una recarga de cuota de IA no pudo procesarse. Planificado: todavía no se emite.",
+        "x-fc-status": "planned",
+        "x-fc-domain": "accounts",
+        "x-fc-pending": "accounts-webhooks",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object" } } } }
+      }
+    },
+    "mac.usage_80": {
+      "post": {
+        "summary": "mac.usage_80",
+        "description": "La cuenta alcanzó el 80 % de sus contactos activos mensuales del ciclo.",
+        "x-fc-status": "live",
+        "x-fc-domain": "accounts",
+        "x-fc-pending": "accounts-webhooks",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object" }, "example": { "data": { "used": 8000, "limit": 10000, "percentage": 80, "cycle_started_at": "2026-10-01T00:00:00Z" } } } } }
+      }
+    },
+    "mac.usage_100": {
+      "post": {
+        "summary": "mac.usage_100",
+        "description": "La cuenta agotó sus contactos activos mensuales del ciclo; se abre una gracia de 24 horas.",
+        "x-fc-status": "live",
+        "x-fc-domain": "accounts",
+        "x-fc-pending": "accounts-webhooks",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object" }, "example": { "data": { "used": 10000, "limit": 10000, "percentage": 100, "cycle_started_at": "2026-10-01T00:00:00Z", "grace_expires_at": "2026-10-02T12:00:00Z" } } } } }
+      }
+    },
+    "mac.expiring": {
+      "post": {
+        "summary": "mac.expiring",
+        "description": "Hay contactos activos mensuales que vencen en los próximos 7 días.",
+        "x-fc-status": "live",
+        "x-fc-domain": "accounts",
+        "x-fc-pending": "accounts-webhooks",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object" }, "example": { "data": { "contacts_expiring": 1200, "expires_at": "2026-10-08T03:00:00Z" } } } } }
+      }
+    },
+    "account.blocked": {
+      "post": {
+        "summary": "account.blocked",
+        "description": "La cuenta quedó bloqueada por consumo: terminó la gracia de 24 horas tras agotar los contactos activos mensuales.",
+        "x-fc-status": "live",
+        "x-fc-domain": "accounts",
+        "x-fc-pending": "accounts-webhooks",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object" }, "example": { "data": { "reason": "mac_grace_expired", "grace_started_at": "2026-10-01T12:00:00Z", "grace_expired_at": "2026-10-02T12:00:00Z" } } } } }
+      }
+    },
+    "group_action.failed": {
+      "post": {
+        "summary": "group_action.failed",
+        "description": "Una acción automática sobre un grupo falló.",
+        "x-fc-status": "live",
+        "x-fc-domain": "communities",
+        "x-fc-pending": "accounts-webhooks",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object" }, "example": { "data": { "campaign": { "uuid": "xK9mQz", "name": "Campaña de ejemplo" }, "pipeline": { "uuid": "bN7vLs", "name": "Pipeline de ejemplo" }, "group": { "uid": "120363000000000000@g.us", "name": "Grupo de ejemplo" }, "action": { "type": "tipo_de_ejemplo" }, "reason": "motivo_de_ejemplo" } } } } }
+      }
+    },
+    "daily_report.generated": {
+      "post": {
+        "summary": "daily_report.generated",
+        "description": "Se generó el reporte diario de la cuenta (clics, ingresos y salidas).",
+        "x-fc-status": "live",
+        "x-fc-domain": "communities",
+        "x-fc-pending": "accounts-webhooks",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object" }, "example": { "data": { "period": { "date": "2026-10-01", "timezone": "America/Argentina/Buenos_Aires" }, "clicks": 120, "joins": 80, "leaves": 10, "conversion_rate": 0.67 } } } } }
+      }
+    },
+    "campaign.no_groups_available": {
+      "post": {
+        "summary": "campaign.no_groups_available",
+        "description": "Una campaña no tiene grupos a los que dirigir a las personas que entran por su link.",
+        "x-fc-status": "live",
+        "x-fc-domain": "communities",
+        "x-fc-pending": "accounts-webhooks",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object" }, "example": { "data": { "campaign": { "uuid": "xK9mQz", "name": "Campaña de ejemplo" }, "reason": "none_selectable" } } } } }
+      }
+    },
+    "group.full": {
+      "post": {
+        "summary": "group.full",
+        "description": "Un grupo pasó de no estar lleno a estarlo.",
+        "x-fc-status": "live",
+        "x-fc-domain": "communities",
+        "x-fc-pending": "accounts-webhooks",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object" }, "example": { "data": { "group": { "uid": "120363000000000000@g.us", "name": "Grupo de ejemplo", "type": "tipo_de_ejemplo" }, "campaign": { "uuid": "xK9mQz", "name": "Campaña de ejemplo" }, "trigger": "participants_limit", "participants": 1024 } } } } }
+      }
+    }
+  }
+}

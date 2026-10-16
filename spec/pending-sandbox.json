@@ -1,0 +1,230 @@
+{
+  "x-fc-pending": {
+    "title": "Pendiente de la especificación: lo que suma el sandbox",
+    "description": "Lo que el sandbox imita y que ni la instantánea (spec/funnelchat.json) ni la capa pendiente del SDK de Node (spec/pending.json) traen todavía. scripts/generate.mjs lo aplica después de spec/pending.json y solo mientras la instantánea no lo tenga: cuando una instantánea nueva lo trae, avisa qué entradas se pueden borrar.",
+    "rules": {
+      "paths": "Una operación (método + ruta) se agrega solo si la instantánea no la tiene.",
+      "responsePatches": "Un parche reemplaza respuestas de una operación de la instantánea solo mientras esa operación cumple la condición de `while`.",
+      "webhookPatches": "Un parche fija propiedades de `data` de un evento (esquema y ejemplo) mientras el evento cumple `while`, o mientras su `data` no trae `whileMissing`.",
+      "components.schemas": "Los esquemas de esta capa empiezan con `PendingSandbox` para no chocar con los de la instantánea ni con los de spec/pending.json."
+    },
+    "sources": {
+      "conversations-send-queued": "conversations feat/envio-devuelve-id @ d3ac33994 (2026-10-16 02:52 -03:00), leída como rama local el 16-10: no tiene push ni PR todavía. SIN MERGEAR. Change de OpenSpec `api-send-queued-with-message-id` (specs/api-send-result, api-message-lookup, message-status-webhook-event) y back/app/Modules/Message/Http/Resources/PublicMessageResource.php: con clave, el envío responde 200 al instante con el mensaje en cola, `{message: {id, contact_id, device_id, direction, type, status: \"queued\", error, client_reference, created_at, updated_at}}`; la consulta por id GET /api/v1/contacts/{contact}/messages/{message}; y `error` con la clave `reason`. La rama todavía está en desarrollo (Inc 1 de varios): la forma puede cambiar antes del merge.",
+      "conversations-received-device": "conversations feat/armar-funnelchat-f1 @ eadef46c (PR #2284, SIN MERGEAR): `device_id` en `data` de message.received (back/app/Modules/Webhook/Payloads/MessageReceivedPayload.php). Es el mismo parche que funnelchat-php (spec/pending.json, webhookPatches) y que src/pending/events.ts de funnelchat-node."
+    }
+  },
+  "components": {
+    "schemas": {
+      "PendingSandboxMessageError": {
+        "type": "object",
+        "description": "Por qué falló un mensaje. `code` y `title` son los del proveedor (por ejemplo Meta); `reason` solo viene cuando lo frenó Funnelchat después de aceptarlo, y entonces `title` es un texto llano. Pendiente de la especificación (conversations feat/envio-devuelve-id, sin mergear).",
+        "properties": {
+          "code": { "type": ["integer", "null"] },
+          "title": { "type": ["string", "null"] },
+          "reason": {
+            "type": ["string", "null"],
+            "enum": ["device_unavailable", "insufficient_balance", "window_closed", "recipient_unreachable", "template_not_found", "template_unresolved_placeholder", "not_queued", "not_sent", null]
+          }
+        },
+        "required": ["code", "title", "reason"]
+      },
+      "PendingSandboxMessage": {
+        "type": "object",
+        "description": "El objeto público de un mensaje: las mismas diez claves en la respuesta del envío y en la consulta por id. Pendiente de la especificación (conversations feat/envio-devuelve-id, sin mergear).",
+        "properties": {
+          "id": { "type": "integer", "description": "El mismo id del historial y de `message.status_changed`." },
+          "contact_id": { "type": ["integer", "null"] },
+          "device_id": { "type": ["integer", "null"] },
+          "direction": { "type": "string", "enum": ["inbound", "outbound"] },
+          "type": { "type": "string", "description": "`text`, `image`, `document`, `template`, `contact`, `note`…" },
+          "status": {
+            "type": ["string", "null"],
+            "enum": ["queued", "sent", "delivered", "read", "failed", null],
+            "description": "`queued` al aceptarlo: en cola no es enviado. Después, el vocabulario de `message.status_changed`, o `null` si no se sabe si salió."
+          },
+          "error": {
+            "anyOf": [{ "$ref": "#/components/schemas/PendingSandboxMessageError" }, { "type": "null" }],
+            "description": "Solo cuando `status` es `failed`."
+          },
+          "client_reference": { "type": ["string", "null"] },
+          "created_at": { "type": ["string", "null"], "format": "date-time" },
+          "updated_at": { "type": ["string", "null"], "format": "date-time" }
+        },
+        "required": ["id", "contact_id", "device_id", "direction", "type", "status", "error", "client_reference", "created_at", "updated_at"]
+      },
+      "PendingSandboxSendResponse": {
+        "type": "object",
+        "description": "Respuesta de un envío aceptado con clave: el mensaje en cola. Pendiente de la especificación (conversations feat/envio-devuelve-id, sin mergear).",
+        "properties": { "message": { "$ref": "#/components/schemas/PendingSandboxMessage" } },
+        "required": ["message"]
+      },
+      "PendingSandboxContactCardResponse": {
+        "type": "object",
+        "description": "Un mensaje en cola por tarjeta, en el orden de `contact_card_ids`. Pendiente de la especificación (conversations feat/envio-devuelve-id, sin mergear).",
+        "properties": { "messages": { "type": "array", "items": { "$ref": "#/components/schemas/PendingSandboxMessage" } } },
+        "required": ["messages"]
+      },
+      "PendingSandboxForwardResult": {
+        "type": "object",
+        "description": "Un destino del reenvío, con el mensaje registrado para él (o `null` si quedó bloqueado). Pendiente de la especificación (conversations feat/envio-devuelve-id, sin mergear).",
+        "properties": {
+          "contact_id": { "type": "integer" },
+          "mode": { "type": "string" },
+          "status": { "type": "string" },
+          "reason": { "type": ["string", "null"] },
+          "message": { "anyOf": [{ "$ref": "#/components/schemas/PendingSandboxMessage" }, { "type": "null" }] }
+        },
+        "required": ["contact_id", "mode", "status", "reason", "message"]
+      },
+      "PendingSandboxNotFound": {
+        "type": "object",
+        "properties": { "message": { "type": "string" } },
+        "required": ["message"]
+      }
+    }
+  },
+  "paths": {
+    "/api/v1/contacts/{contact}/messages/{message}": {
+      "get": {
+        "operationId": "pendingSandboxMessage.show",
+        "summary": "Ver un mensaje por su id",
+        "description": "El estado actual de un mensaje: `queued` mientras un envío con clave espera su turno; después `sent`, `delivered`, `read` o `failed`, o `null` si no se sabe si salió. En cola no es enviado: el estado final llega por `message.status_changed` o por esta consulta.\n\n**Pendiente de la especificación** (conversations feat/envio-devuelve-id, sin mergear).",
+        "tags": ["Message"],
+        "x-fc-domain": "conversations",
+        "x-fc-permission": "conversations:read",
+        "x-fc-pending": "conversations-send-queued",
+        "parameters": [
+          { "name": "contact", "in": "path", "required": true, "schema": { "type": "integer" } },
+          { "name": "message", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PendingSandboxMessage" } } }
+          },
+          "404": {
+            "description": "El contacto o el mensaje no existen en la cuenta",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PendingSandboxNotFound" } } }
+          }
+        }
+      }
+    }
+  },
+  "responsePatches": [
+    {
+      "method": "post",
+      "path": "/api/v1/contacts/{contact}/message",
+      "while": { "x-portal-v0": "send_pending" },
+      "x-fc-pending": "conversations-send-queued",
+      "removeResponses": ["204"],
+      "responses": {
+        "200": {
+          "description": "El mensaje quedó en cola. Pendiente de la especificación: hoy, con sesión del panel, responde 204.",
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PendingSandboxSendResponse" } } }
+        }
+      }
+    },
+    {
+      "method": "post",
+      "path": "/api/v1/message/send-message",
+      "while": { "x-portal-v0": "send_pending" },
+      "x-fc-pending": "conversations-send-queued",
+      "responses": {
+        "200": {
+          "description": "El mensaje quedó en cola.",
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PendingSandboxSendResponse" } } }
+        }
+      }
+    },
+    {
+      "method": "post",
+      "path": "/api/v1/devices/{device}/templates/{template}/send-template",
+      "while": { "x-portal-v0": "send_pending" },
+      "x-fc-pending": "conversations-send-queued",
+      "removeResponses": ["502"],
+      "responses": {
+        "200": {
+          "description": "La plantilla quedó en cola.",
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PendingSandboxSendResponse" } } }
+        }
+      }
+    },
+    {
+      "method": "post",
+      "path": "/api/v1/contacts/{contact}/message/contact-card",
+      "while": { "x-portal-v0": "send_pending" },
+      "x-fc-pending": "conversations-send-queued",
+      "removeResponses": ["204"],
+      "responses": {
+        "200": {
+          "description": "Un mensaje en cola por tarjeta.",
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PendingSandboxContactCardResponse" } } }
+        }
+      }
+    },
+    {
+      "method": "post",
+      "path": "/api/v1/contacts/{contact}/messages/{message}/forward",
+      "while": { "x-portal-v0": "send_pending" },
+      "x-fc-pending": "conversations-send-queued",
+      "responses": {
+        "200": {
+          "description": "Un ítem por destino, con su mensaje en cola.",
+          "content": {
+            "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PendingSandboxForwardResult" } } }
+          }
+        }
+      }
+    }
+  ],
+  "webhookPatches": [
+    {
+      "type": "message.received",
+      "whileMissing": "device_id",
+      "x-fc-pending": "conversations-received-device",
+      "dataProperties": {
+        "device_id": {
+          "type": ["integer", "null"],
+          "description": "El número de tu cuenta que recibió el mensaje: el mismo `device_id` con el que respondés por ese número. `null` si el mensaje no tiene número. Pendiente de la especificación (conversations PR #2284, sin mergear)."
+        }
+      },
+      "exampleData": { "device_id": 4521 }
+    },
+    {
+      "type": "message.status_changed",
+      "while": { "x-fc-pending": "conversations-c1" },
+      "x-fc-pending": "conversations-send-queued",
+      "dataProperties": {
+        "error": {
+          "type": "object",
+          "description": "Solo cuando `status` es `failed`. `reason` es nueva: solo trae un valor cuando Funnelchat frenó un mensaje aceptado con clave.",
+          "properties": {
+            "code": { "type": ["integer", "null"] },
+            "title": { "type": ["string", "null"] },
+            "reason": {
+              "type": ["string", "null"],
+              "enum": ["device_unavailable", "insufficient_balance", "window_closed", "recipient_unreachable", "template_not_found", "template_unresolved_placeholder", "not_queued", "not_sent", null]
+            }
+          },
+          "required": ["code", "title", "reason"]
+        }
+      },
+      "example": {
+        "id": "evt_000000000000000000000014",
+        "type": "message.status_changed",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "message_id": 1001,
+          "contact_id": 2001,
+          "device_id": 4521,
+          "status": "failed",
+          "previous_status": "sent",
+          "error": { "code": 131047, "title": "Re-engagement message", "reason": null },
+          "occurred_at": "2026-10-01T12:00:00Z",
+          "client_reference": "pedido-1001"
+        }
+      }
+    }
+  ]
+}
