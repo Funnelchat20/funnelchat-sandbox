@@ -35,4 +35,9 @@ export default tseslint.config(
     files: ['scripts/**/*.mjs', 'src/cli.ts'],
     rules: { 'no-console': 'off' },
   },
+  {
+    // Tests read JSON answers and deliveries freely.
+    files: ['test/**/*.ts'],
+    rules: { '@typescript-eslint/no-explicit-any': 'off' },
+  },
 );

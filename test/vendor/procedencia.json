@@ -1,0 +1,38 @@
+{
+  "description": "Copias sin cambios de código de otros repos, para que los tests verifiquen las entregas del sandbox con el mismo código que usa quien integra. No se editan: se vuelven a copiar.",
+  "files": {
+    "funnelchat-node/src/webhooks/signature.ts": {
+      "repository": "git@github.com:Funnelchat20/funnelchat-node.git",
+      "path": "src/webhooks/signature.ts",
+      "branch": "feat/inicial",
+      "commit": "88557ce7819c5a4061e84c58053a1b6c49f35ec2",
+      "sha256": "aa72c84bc1aceca54ec747ef1657efe9746dba33e216aa2aba564eaa6ce9a1be",
+      "note": "verify y checkSignature del SDK de Node, sin mergear (rama feat/inicial)."
+    },
+    "funnelchat-node/src/core/errors.ts": {
+      "repository": "git@github.com:Funnelchat20/funnelchat-node.git",
+      "path": "src/core/errors.ts",
+      "branch": "feat/inicial",
+      "commit": "88557ce7819c5a4061e84c58053a1b6c49f35ec2",
+      "sha256": "086fbf14453f9dd72b6f872922a64d8016820f3fbfd8cafca817337e6c505533",
+      "note": "Lo importa signature.ts (WebhookVerificationError)."
+    },
+    "developers-portal/verificar-firma.cjs": {
+      "repository": "git@github.com:Funnelchat20/developers-portal.git",
+      "path": "snippets/verificar-firma.js",
+      "branch": "feat/armar-funnelchat-portal",
+      "commit": "dd7cd4273152ea6b41ec4da6de7f07b9ad56dba7",
+      "last_commit_touching_file": "2dab1f82d07707e41caeb7eab80b441ad65f1321",
+      "sha256": "04ac5d283cb34c5e4c92f7c7a1ef76beeba40d7031b12fb95a2860001b4fa5fd",
+      "note": "El snippet que publica el portal, igual en feat/openapi-unificada @ 0ef4abb. Se renombra a .cjs porque este repo es ESM."
+    },
+    "../fixtures/portal-signature-vectors.ts": {
+      "repository": "git@github.com:Funnelchat20/funnelchat-node.git",
+      "path": "test/fixtures/portal-signature-vectors.ts",
+      "branch": "feat/inicial",
+      "commit": "88557ce7819c5a4061e84c58053a1b6c49f35ec2",
+      "sha256": "c70bbf784f7bcc2fa4b01d2616de9baee35d18683ea726cd35459400fef9a278",
+      "note": "Los vectores de developers-portal tests/test_firmas.py, replicados caso por caso. FIXED_VECTORS.body se recalculó el 16-10 con hmac de Python y coincide."
+    }
+  }
+}
