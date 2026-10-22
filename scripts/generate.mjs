@@ -46,11 +46,11 @@ function parseArgs(argv) {
     else if (arg.startsWith('--spec=')) args.spec = arg.slice('--spec='.length);
     else if (arg === '--pending') args.pending = argv[++i];
     else if (arg.startsWith('--pending=')) args.pending = arg.slice('--pending='.length);
-    else throw new Error(`Argumento desconocido: ${arg}`);
+    else throw new Error(`Unknown argument: ${arg}`);
   }
-  if (args.spec === undefined) throw new Error('--spec necesita la ruta del archivo');
-  if (args.pending === undefined) throw new Error('--pending necesita la ruta del archivo');
-  if (args.check && (args.spec || args.pending)) throw new Error('--check no se combina con --spec ni con --pending');
+  if (args.spec === undefined) throw new Error('--spec needs the path of the file');
+  if (args.pending === undefined) throw new Error('--pending needs the path of the file');
+  if (args.check && (args.spec || args.pending)) throw new Error('--check does not combine with --spec or --pending');
   return args;
 }
 
@@ -77,7 +77,7 @@ function readProvenance() {
 function writeProvenance(provenance) {
   const ordered = {
     description:
-      'De dónde salió cada archivo de spec/. Lo escribe `npm run generate -- --spec <archivo>` o `-- --pending <archivo>`; no lo edites a mano. spec/pending-sandbox.json es propio de este repo: sus fuentes están adentro.',
+      'Where each file of spec/ came from. Written by `npm run generate -- --spec <file>` or `-- --pending <file>`; do not edit it by hand. spec/pending-sandbox.json belongs to this repo: its sources are inside it.',
     snapshot: provenance.snapshot ?? null,
     pending: provenance.pending ?? null,
   };
@@ -129,7 +129,7 @@ function importSpec(source) {
   writeFileSync(SPEC_FILE, bytes);
   writeProvenance(provenance);
   const src = provenance.snapshot.source;
-  console.log(`spec: copiada de ${src.path ?? sourcePath} (${src.branch ?? '?'} @ ${src.commit?.slice(0, 7) ?? '?'})`);
+  console.log(`spec: copied from ${src.path ?? sourcePath} (${src.branch ?? '?'} @ ${src.commit?.slice(0, 7) ?? '?'})`);
 }
 
 /** Step 1b: copy a new pending layer of funnelchat-node and record its provenance. */
@@ -144,12 +144,12 @@ function importPending(source) {
     bytes: bytes.length,
     source: gitSource(sourcePath),
     imported_at: new Date().toISOString(),
-    note: 'La capa pendiente del SDK de Node, sin cambios. Lo propio del sandbox va en spec/pending-sandbox.json.',
+    note: 'The pending layer of the Node SDK, unchanged. What belongs to the sandbox goes in spec/pending-sandbox.json.',
   };
   writeFileSync(PENDING_FILE, bytes);
   writeProvenance(provenance);
   const src = provenance.pending.source;
-  console.log(`pending: copiada de ${src.path ?? sourcePath} (${src.branch ?? '?'} @ ${src.commit?.slice(0, 7) ?? '?'})`);
+  console.log(`pending: copied from ${src.path ?? sourcePath} (${src.branch ?? '?'} @ ${src.commit?.slice(0, 7) ?? '?'})`);
 }
 
 function matches(target, condition) {
@@ -179,7 +179,7 @@ function mergeLayer(merged, layer, layerName, report) {
 
   for (const [name, schema] of Object.entries(layer.components?.schemas ?? {})) {
     if (merged.components.schemas[name]) {
-      throw new Error(`${layerName}: el esquema ${name} ya existe; renómbralo.`);
+      throw new Error(`${layerName}: the schema ${name} already exists; rename it.`);
     }
     merged.components.schemas[name] = schema;
   }
@@ -310,7 +310,7 @@ function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.spec) importSpec(args.spec);
   if (args.pending) importPending(args.pending);
-  if (!existsSync(SPEC_FILE)) throw new Error('Falta spec/funnelchat.json: corre `npm run generate -- --spec <archivo>`.');
+  if (!existsSync(SPEC_FILE)) throw new Error('spec/funnelchat.json is missing: run `npm run generate -- --spec <file>`.');
 
   const specBytes = readFileSync(SPEC_FILE);
   const pendingBytes = existsSync(PENDING_FILE) ? readFileSync(PENDING_FILE) : null;
@@ -318,10 +318,10 @@ function main() {
 
   const provenance = readProvenance();
   if (provenance.snapshot && provenance.snapshot.sha256 !== sha256(specBytes)) {
-    console.warn('aviso: spec/funnelchat.json no coincide con el sha256 de spec/procedencia.json (¿la editaron a mano?).');
+    console.warn('warning: spec/funnelchat.json does not match the sha256 in spec/procedencia.json (was it edited by hand?).');
   }
   if (pendingBytes && provenance.pending && provenance.pending.sha256 !== sha256(pendingBytes)) {
-    console.warn('aviso: spec/pending.json no coincide con el sha256 de spec/procedencia.json: es la capa del SDK de Node, cámbiala allá y vuelve a copiarla con --pending.');
+    console.warn('warning: spec/pending.json does not match the sha256 in spec/procedencia.json: it is the Node SDK\'s layer, change it there and copy it again with --pending.');
   }
 
   const layers = [];
@@ -331,7 +331,7 @@ function main() {
 
   merged['x-fc-sandbox'] = {
     generated_by: 'scripts/generate.mjs',
-    note: 'GENERADO: no lo edites. La instantánea del portal más las capas pendientes.',
+    note: 'GENERATED: do not edit it. The portal\'s snapshot plus the pending layers.',
     inputs: {
       'spec/funnelchat.json': sha256(specBytes),
       'spec/pending.json': pendingBytes ? sha256(pendingBytes) : null,
@@ -343,28 +343,28 @@ function main() {
   };
   const output = `${JSON.stringify(merged, null, 1)}\n`;
 
-  console.log(`pendiente de la especificación: ${report.applied.length} entradas aplicadas.`);
+  console.log(`pending of the spec: ${report.applied.length} entries applied.`);
   if (report.superseded.length) {
-    console.log(`la instantánea ya trae ${report.superseded.length} entradas pendientes; se pueden borrar:`);
+    console.log(`the snapshot already has ${report.superseded.length} pending entries; they can be deleted:`);
     for (const label of report.superseded) console.log(`  - ${label}`);
   }
   if (report.missing.length) {
-    console.warn(`aviso: ${report.missing.length} parches no encontraron su operación o su evento:`);
+    console.warn(`warning: ${report.missing.length} patches did not find their operation or their event:`);
     for (const label of report.missing) console.warn(`  - ${label}`);
   }
 
   if (args.check) {
     if (!existsSync(OUT_FILE) || readFileSync(OUT_FILE, 'utf8') !== output) {
-      console.error('generated/openapi.json está desactualizado: corre `npm run generate`.');
+      console.error('generated/openapi.json is out of date: run `npm run generate`.');
       process.exit(1);
     }
-    console.log('generated/openapi.json está al día.');
+    console.log('generated/openapi.json is up to date.');
     return;
   }
 
   mkdirSync(dirname(OUT_FILE), { recursive: true });
   writeFileSync(OUT_FILE, output);
-  console.log(`generado: ${relative(ROOT, OUT_FILE)}`);
+  console.log(`generated: ${relative(ROOT, OUT_FILE)}`);
 }
 
 try {

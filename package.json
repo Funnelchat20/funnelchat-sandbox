@@ -1,7 +1,7 @@
 {
   "name": "funnelchat-sandbox",
   "version": "0.1.0",
-  "description": "Servidor local que imita la API pública de Funnelchat y manda webhooks firmados, sin efectos reales",
+  "description": "A local server that imitates the Funnelchat public API and sends signed webhooks, with no real effects",
   "license": "MIT",
   "author": {
     "name": "Funnelchat",

@@ -42,13 +42,13 @@ function deepMerge(base: unknown, override: unknown): unknown {
 
 function contactOf(app: SandboxApp, id: unknown): Contact {
   const contact = app.store.contacts.get(Number(id));
-  if (!contact) throw notFound('El contacto no existe en el sandbox.');
+  if (!contact) throw notFound('The contact does not exist in the sandbox.');
   return contact;
 }
 
 function deviceOf(app: SandboxApp, id: unknown) {
   const device = app.store.devices.get(Number(id ?? 3));
-  if (!device) throw fieldError('device_id', `No hay un número ${id} en el sandbox: los de ejemplo son 3 (oficial) y 4 (QR).`);
+  if (!device) throw fieldError('device_id', `There is no number ${id} in the sandbox: the example ones are 3 (official) and 4 (QR).`);
   return device;
 }
 
@@ -100,7 +100,7 @@ function macState(app: SandboxApp): Record<string, unknown> {
 
 function idsOf(value: unknown, field: string, app: SandboxApp): number[] {
   if (value === undefined) return [];
-  if (!Array.isArray(value)) throw fieldError(field, `${field} tiene que ser una lista de ids de contacto.`);
+  if (!Array.isArray(value)) throw fieldError(field, `${field} must be a list of contact ids.`);
   return value.map((id) => contactOf(app, id).id);
 }
 
@@ -117,11 +117,11 @@ function inboundMessage(app: SandboxApp, req: SandboxRequest): SandboxResponse {
   if (b.contact_id !== undefined) contact = contactOf(app, b.contact_id);
   else {
     const phone = digits(b.phone);
-    if (!phone) throw fieldError('phone', 'Manda phone (el teléfono de quien escribe) o contact_id.');
+    if (!phone) throw fieldError('phone', 'Send phone (the phone of who writes) or contact_id.');
     contact = app.store.findContactByPhone(phone) ?? createContact(app, { phone, name: b.name ?? null });
   }
   const occurredAt = b.occurred_at ? new Date(String(b.occurred_at)) : new Date();
-  if (Number.isNaN(occurredAt.getTime())) throw fieldError('occurred_at', 'occurred_at tiene que ser una fecha ISO 8601.');
+  if (Number.isNaN(occurredAt.getTime())) throw fieldError('occurred_at', 'occurred_at must be an ISO 8601 date.');
   const type = typeof b.type === 'string' ? b.type : b.file ? 'image' : 'text';
   const text = b.text === undefined ? (b.file ? null : 'Hola, quiero más información') : b.text === null ? null : String(b.text);
   const file = typeof b.file === 'string' ? b.file : null;
@@ -181,7 +181,7 @@ const ROUTES: Route[] = [
     pattern: /^\/_sandbox\/reset$/,
     handle: (app) => {
       app.reset();
-      app.logger.info('estado reiniciado');
+      app.logger.info('state reset');
       return { status: 200, body: { reset: true, ...state(app) } };
     },
   },
@@ -223,8 +223,8 @@ const ROUTES: Route[] = [
     pattern: /^\/_sandbox\/events\/([a-z0-9_.]+)$/,
     handle: (app, req, [type]) => {
       const entry = catalogEntry(type as string);
-      if (!entry) throw notFound(`${type} no está en el catálogo. Mira GET /_sandbox/events.`);
-      if (!entry.subscribable) throw fieldError('type', `${type} no se puede suscribir: usa POST /api/v1/webhooks/{id}/test.`);
+      if (!entry) throw notFound(`${type} is not in the catalog. See GET /_sandbox/events.`);
+      if (!entry.subscribable) throw fieldError('type', `${type} cannot be subscribed to: use POST /api/v1/webhooks/{id}/test.`);
       const data = deepMerge(emittedData(entry), obj(req.body).data);
       return { status: 202, body: { event: emitted(app.webhooks.emit(entry.type, data)), data } };
     },
@@ -235,7 +235,7 @@ const ROUTES: Route[] = [
     handle: (app, req, [id]) => {
       const contact = contactOf(app, id);
       const tag = app.store.tags.get(Number(obj(req.body).tag_id));
-      if (!tag) throw fieldError('tag_id', 'La etiqueta no existe en el sandbox.');
+      if (!tag) throw fieldError('tag_id', 'The tag does not exist in the sandbox.');
       if (contact.tags.has(tag.id)) return { status: 200, body: { contact: contactResource(app.store, contact), event: null } };
       contact.tags.set(tag.id, new Date());
       const event = app.webhooks.emit('contact.tag_added', { contact: eventContact(contact), tag: { id: tag.id, name: tag.name }, source: 'manual' });
@@ -248,7 +248,7 @@ const ROUTES: Route[] = [
     handle: (app, _req, [id, tagId]) => {
       const contact = contactOf(app, id);
       const tag = app.store.tags.get(Number(tagId));
-      if (!tag || !contact.tags.delete(tag.id)) throw notFound('El contacto no tiene esa etiqueta.');
+      if (!tag || !contact.tags.delete(tag.id)) throw notFound('The contact does not have that tag.');
       const event = app.webhooks.emit('contact.tag_removed', { contact: eventContact(contact), tag: { id: tag.id, name: tag.name }, source: 'manual' });
       return { status: 200, body: { contact: contactResource(app.store, contact), event: emitted(event) } };
     },
@@ -260,13 +260,13 @@ const ROUTES: Route[] = [
     pattern: /^\/_sandbox\/messages\/(\d+)\/status$/,
     handle: (app, req, [id]) => {
       const message = app.store.messages.get(Number(id));
-      if (!message || !message.own) throw notFound('No hay un mensaje enviado con ese id.');
+      if (!message || !message.own) throw notFound('There is no sent message with that id.');
       const b = obj(req.body);
       const status = String(b.status ?? '');
-      if (!['sent', 'delivered', 'read', 'failed'].includes(status)) throw fieldError('status', 'status tiene que ser sent, delivered, read o failed.');
+      if (!['sent', 'delivered', 'read', 'failed'].includes(status)) throw fieldError('status', 'status must be sent, delivered, read or failed.');
       const error = status === 'failed' ? failureFor(parseForced('fail', b.error ?? true, 'error')).error : undefined;
       if (!transition(app, message, status as 'sent', error)) {
-        throw new ApiError(409, 'invalid_transition', `El mensaje está ${message.status ?? 'sin estado'}: no pasa a ${status} (nunca se retrocede ni se repite un estado).`);
+        throw new ApiError(409, 'invalid_transition', `The message is ${message.status ?? 'without a status'}: it does not move to ${status} (a status never goes back or repeats).`);
       }
       return { status: 200, body: { message: publicMessage(message) } };
     },
@@ -279,11 +279,11 @@ const ROUTES: Route[] = [
       const b = obj(req.body);
       const mode = b.mode === 'reject' || b.mode === 'edge' ? b.mode : b.mode === 'fail' || b.mode === undefined ? 'fail' : null;
       if (!mode) {
-        throw fieldError('mode', 'mode tiene que ser reject (el envío responde un error), fail (se acepta y termina failed) o edge (la próxima llamada recibe un error de la entrada de la API).');
+        throw fieldError('mode', 'mode must be reject (the send answers an error), fail (it is accepted and ends failed) or edge (the next call gets an error of the API edge).');
       }
       const code = mode === 'edge' ? parseEdge(b.code, 'code') : parseForced(mode, b.code ?? (mode === 'fail' ? true : undefined), 'code');
       const count = b.count === undefined ? 1 : Number(b.count);
-      if (!Number.isInteger(count) || count < 1) throw fieldError('count', 'count tiene que ser un entero mayor que 0.');
+      if (!Number.isInteger(count) || count < 1) throw fieldError('count', 'count must be an integer greater than 0.');
       const contactId = mode === 'edge' || b.contact_id === undefined || b.contact_id === null ? null : contactOf(app, b.contact_id).id;
       const failure: ArmedFailure = { id: app.store.ids.failure.next(), mode, code, remaining: count, contactId };
       if (mode === 'edge') failure.applied = code === 'origin_unreachable' && b.applied === true;
@@ -306,7 +306,7 @@ const ROUTES: Route[] = [
       status: 200,
       body: {
         reject: Object.keys(REJECTIONS),
-        fail: { reasons: Object.keys(FAILURE_REASONS), meta: 'cualquier código numérico de Meta, por ejemplo 131047' },
+        fail: { reasons: Object.keys(FAILURE_REASONS), meta: 'any numeric code of Meta, for example 131047' },
         edge: Object.keys(EDGE_ERRORS),
       },
     }),
@@ -324,7 +324,7 @@ const ROUTES: Route[] = [
       const b = obj(req.body);
       const { mac } = app.store;
       if (b.lockout !== undefined) {
-        if (typeof b.lockout !== 'boolean') throw fieldError('lockout', 'lockout tiene que ser true o false.');
+        if (typeof b.lockout !== 'boolean') throw fieldError('lockout', 'lockout must be true or false.');
         mac.lockout = b.lockout;
       }
       if (b.active_contact_ids !== undefined) mac.activeContacts = new Set(idsOf(b.active_contact_ids, 'active_contact_ids', app));
@@ -339,7 +339,7 @@ const ROUTES: Route[] = [
       const b = obj(req.body);
       const contact = contactOf(app, b.contact_id);
       const device = deviceOf(app, b.device_id);
-      if (typeof b.open !== 'boolean') throw fieldError('open', 'open tiene que ser true o false.');
+      if (typeof b.open !== 'boolean') throw fieldError('open', 'open must be true or false.');
       const key = `${contact.id}:${device.id}`;
       if (b.open) app.store.lastInbound.set(key, new Date());
       else app.store.lastInbound.delete(key);
@@ -367,10 +367,10 @@ const ROUTES: Route[] = [
     pattern: /^\/_sandbox\/templates\/(\d+)\/status$/,
     handle: (app, req, [id]) => {
       const template = app.store.templates.get(Number(id));
-      if (!template) throw notFound('La plantilla no existe en el sandbox.');
+      if (!template) throw notFound('The template does not exist in the sandbox.');
       const b = obj(req.body);
       const statuses: TemplateStatus[] = ['PENDING', 'APPROVED', 'REJECTED', 'PAUSED', 'DISABLED'];
-      if (!statuses.includes(b.status as TemplateStatus)) throw validationFailed({ status: [`status tiene que ser uno de: ${statuses.join(', ')}.`] });
+      if (!statuses.includes(b.status as TemplateStatus)) throw validationFailed({ status: [`status must be one of: ${statuses.join(', ')}.`] });
       setTemplateStatus(app, template, b.status as TemplateStatus, typeof b.reason === 'string' ? b.reason : null);
       return { status: 200, body: { id: template.id, status: template.status, reason: template.rejectionReason } };
     },
@@ -383,7 +383,7 @@ export async function handleSandbox(app: SandboxApp, req: SandboxRequest): Promi
   if (candidates.length === 0) return null;
   const route = candidates.find((r) => r.method === req.method);
   if (!route) {
-    throw new ApiError(405, 'method_not_allowed', `Usa ${candidates.map((r) => r.method).join(', ')} en ${req.path}.`);
+    throw new ApiError(405, 'method_not_allowed', `Use ${candidates.map((r) => r.method).join(', ')} on ${req.path}.`);
   }
   const params = (route.pattern.exec(req.path) ?? []).slice(1);
   return route.handle(app, req, params);

@@ -79,7 +79,7 @@ export async function startReceiver(answers: number[] = [200]): Promise<Receiver
       received.push({ raw, headers: req.headers, json: JSON.parse(raw.toString('utf8')) });
       const status = receiver.answers[Math.min(received.length - 1, receiver.answers.length - 1)] ?? 200;
       res.writeHead(status, { 'Content-Type': 'text/plain' });
-      res.end(status < 300 ? 'ok' : 'falló');
+      res.end(status < 300 ? 'ok' : 'failed');
     });
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -95,7 +95,7 @@ export async function startReceiver(answers: number[] = [200]): Promise<Receiver
   receiver.waitFor = async (count, timeoutMs = 3000) => {
     const until = Date.now() + timeoutMs;
     while (received.length < count) {
-      if (Date.now() > until) throw new Error(`Llegaron ${received.length} entregas; se esperaban ${count}.`);
+      if (Date.now() > until) throw new Error(`${received.length} deliveries arrived; ${count} were expected.`);
       await new Promise((r) => setTimeout(r, 10));
     }
     return received;
@@ -107,7 +107,7 @@ export async function startReceiver(answers: number[] = [200]): Promise<Receiver
 export async function until(check: () => boolean, timeoutMs = 3000): Promise<void> {
   const limit = Date.now() + timeoutMs;
   while (!check()) {
-    if (Date.now() > limit) throw new Error('Se agotó la espera.');
+    if (Date.now() > limit) throw new Error('Timed out waiting.');
     await new Promise((r) => setTimeout(r, 10));
   }
 }
@@ -115,6 +115,6 @@ export async function until(check: () => boolean, timeoutMs = 3000): Promise<voi
 /** Creates a subscription and returns it with its secret. */
 export async function subscribe(api: Api, url: string, events: string[]): Promise<{ id: string; secret: string }> {
   const res = await api.call('POST', '/api/v1/webhooks', { url, events, description: 'test' });
-  if (res.status !== 201) throw new Error(`No se creó la suscripción: ${res.status} ${JSON.stringify(res.body)}`);
+  if (res.status !== 201) throw new Error(`The subscription was not created: ${res.status} ${JSON.stringify(res.body)}`);
   return res.body;
 }

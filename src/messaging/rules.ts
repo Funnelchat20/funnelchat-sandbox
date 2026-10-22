@@ -116,11 +116,11 @@ export function parseForced(mode: 'reject' | 'fail', value: unknown, field: stri
   const text = String(value ?? '').trim();
   if (mode === 'reject') {
     if (text in REJECTIONS) return text;
-    throw fieldError(field, `${field} tiene que ser uno de: ${Object.keys(REJECTIONS).join(', ')}.`);
+    throw fieldError(field, `${field} must be one of: ${Object.keys(REJECTIONS).join(', ')}.`);
   }
   if (text === '' || text === 'true' || text === 'failed') return '131026';
   if (text in FAILURE_REASONS || /^\d{1,9}$/.test(text)) return text;
-  throw fieldError(field, `${field} tiene que ser un motivo (${Object.keys(FAILURE_REASONS).join(', ')}) o un código numérico de Meta (por ejemplo 131047).`);
+  throw fieldError(field, `${field} must be a reason (${Object.keys(FAILURE_REASONS).join(', ')}) or a numeric code of Meta (for example 131047).`);
 }
 
 /** The forced failure of this send, if any: a header of the request, or the next armed one that applies. */

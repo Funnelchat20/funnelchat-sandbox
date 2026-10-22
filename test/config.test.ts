@@ -27,9 +27,9 @@ describe('configuration', () => {
 
   it('rejects unknown flags and bad values with a clear message', () => {
     expect(() => parseArgs(['--nope'])).toThrow(ConfigError);
-    expect(() => parseArgs(['--retry-delays', 'a,b'])).toThrow(/no es un número de segundos/);
+    expect(() => parseArgs(['--retry-delays', 'a,b'])).toThrow(/is not a number of seconds/);
     expect(() => mergeConfig(defaultConfig(), { port: 70000 })).toThrow(ConfigError);
-    expect(() => mergeConfig(defaultConfig(), { nope: 1 } as never)).toThrow(/Opción desconocida/);
+    expect(() => mergeConfig(defaultConfig(), { nope: 1 } as never)).toThrow(/Unknown option/);
   });
 
   it('reads a configuration file, and the flags win over it', () => {

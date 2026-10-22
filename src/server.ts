@@ -84,8 +84,8 @@ function send(res: ServerResponse, requestId: string, result: { status: number; 
 
 function errorResult(error: unknown): HandlerResult {
   if (error instanceof ApiError) return { status: error.status, body: error.body(), headers: error.headers };
-  console.error('[sandbox] error inesperado:', error);
-  return { status: 500, body: { error: 'server_error', message: 'El sandbox tuvo un error inesperado. Mira la consola.' } };
+  console.error('[sandbox] unexpected error:', error);
+  return { status: 500, body: { error: 'server_error', message: 'The sandbox had an unexpected error. See its console.' } };
 }
 
 /** A webhook secret is shown once, to whoever asked for it: the request log of the panel keeps it hidden. */
@@ -196,7 +196,7 @@ export function createSandbox(options: CreateSandboxOptions = {}): Sandbox {
         const body = method === 'GET' ? undefined : parseBody(await readBody(req), headers['content-type']);
         const answer = await handleSandbox(app, { method, path: url.pathname.replace(/\/+$/, '') || '/_sandbox', query: url.searchParams, body });
         if (!answer) {
-          send(res, requestId, errorResult(new ApiError(404, 'route_not_found', 'Esa ruta del sandbox no existe. El panel está en /_sandbox.')));
+          send(res, requestId, errorResult(new ApiError(404, 'route_not_found', 'That sandbox route does not exist. The panel is at /_sandbox.')));
         } else if (answer.html !== undefined) {
           res.writeHead(answer.status, { 'Content-Type': 'text/html; charset=utf-8', 'X-Funnelchat-Sandbox': VERSION, [REQUEST_ID_HEADER]: requestId });
           res.end(answer.html);

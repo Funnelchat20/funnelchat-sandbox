@@ -1,5 +1,5 @@
 {
-  "description": "El catálogo de eventos de GET /api/v1/webhooks/events tal como lo responde accounts en producción: cada entrada con sus claves y en su orden, y `example` como lo publica accounts (null en las planificadas). Transcrito del código, no de una respuesta: si accounts cambia el catálogo, se transcribe de nuevo desde el tag nuevo.",
+  "description": "The event catalog of GET /api/v1/webhooks/events as accounts answers it in production: every entry with its keys and in its order, and `example` as accounts publishes it (null for the planned ones). Transcribed from the code, not from a response: if accounts changes the catalog, transcribe it again from the new tag.",
   "source": {
     "repository": "Funnelchat20/accounts",
     "tag": "v1.4.24",

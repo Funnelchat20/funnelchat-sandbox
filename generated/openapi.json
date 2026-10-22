@@ -4575,7 +4575,7 @@
     },
     "responses": {
      "200": {
-      "description": "Un mensaje en cola por tarjeta.",
+      "description": "One queued message per card.",
       "content": {
        "application/json": {
         "schema": {
@@ -5838,7 +5838,7 @@
     },
     "responses": {
      "200": {
-      "description": "El mensaje quedó en cola.",
+      "description": "The message was queued.",
       "content": {
        "application/json": {
         "schema": {
@@ -8189,7 +8189,7 @@
     },
     "responses": {
      "200": {
-      "description": "Un ítem por destino, con su mensaje en cola.",
+      "description": "One item per destination, with its queued message.",
       "content": {
        "application/json": {
         "schema": {
@@ -10407,7 +10407,7 @@
            "sticker",
            null
           ],
-          "description": "El tipo del archivo, cuando la URL no lo dice. Siempre gana a la extensión."
+          "description": "The type of the file, when the URL does not say it. It always wins over the extension."
          },
          "file_name": {
           "type": [
@@ -10416,7 +10416,7 @@
           ],
           "minLength": 1,
           "maxLength": 255,
-          "description": "El nombre con extensión de un documento cuya URL no la tiene (por ejemplo factura.pdf)."
+          "description": "The name, with its extension, of a document whose URL has none (for example invoice.pdf)."
          }
         },
         "required": [
@@ -10429,7 +10429,7 @@
     },
     "responses": {
      "200": {
-      "description": "El mensaje quedó en cola.",
+      "description": "The message was queued.",
       "content": {
        "application/json": {
         "schema": {
@@ -11146,7 +11146,7 @@
     },
     "responses": {
      "200": {
-      "description": "La plantilla quedó en cola.",
+      "description": "The template was queued.",
       "content": {
        "application/json": {
         "schema": {
@@ -15846,8 +15846,8 @@
    },
    "post": {
     "operationId": "pendingSandboxGroupActions.groups.post",
-    "summary": "Acción de grupo por API (apagada)",
-    "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "Group action by API (off)",
+    "description": "It exists in communities but is off in production: any key gets `403 route_not_available`.\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "GroupActions"
     ],
@@ -15856,7 +15856,7 @@
     "x-fc-pending": "communities-group-actions",
     "responses": {
      "403": {
-      "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+      "description": "route_not_available: the group actions by API are off in production.",
       "content": {
        "application/json": {
         "schema": {
@@ -16959,8 +16959,8 @@
    },
    "post": {
     "operationId": "pendingSandboxGroupActions.groups.group.messages.post",
-    "summary": "Acción de grupo por API (apagada)",
-    "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "Group action by API (off)",
+    "description": "It exists in communities but is off in production: any key gets `403 route_not_available`.\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "GroupActions"
     ],
@@ -16979,7 +16979,7 @@
     ],
     "responses": {
      "403": {
-      "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+      "description": "route_not_available: the group actions by API are off in production.",
       "content": {
        "application/json": {
         "schema": {
@@ -27047,8 +27047,8 @@
   "/api/v1/contacts/{contact}/messages/{message}": {
    "get": {
     "operationId": "pendingSandboxMessage.show",
-    "summary": "Ver un mensaje por su id",
-    "description": "El estado actual de un mensaje: `queued` mientras un envío con clave espera su turno; después `sent`, `delivered`, `read` o `failed`, o `null` si no se sabe si salió. En cola no es enviado: el estado final llega por `message.status_changed` o por esta consulta.\n\n**Pendiente de la especificación**: está en producción (conversations v1.18.10), falta en la instantánea del portal.",
+    "summary": "Show a message by its id",
+    "description": "The current status of a message: `queued` while a send with a key waits its turn; then `sent`, `delivered`, `read` or `failed`, or `null` if it is not known whether it went out. Queued is not sent: the final status arrives by `message.status_changed` or by this lookup.\n\n**Pending of the spec**: it is in production (conversations v1.18.10), missing from the portal's snapshot.",
     "tags": [
      "Message"
     ],
@@ -27085,7 +27085,7 @@
       }
      },
      "404": {
-      "description": "El contacto o el mensaje no existen en la cuenta",
+      "description": "The contact or the message does not exist in the account",
       "content": {
        "application/json": {
         "schema": {
@@ -27100,8 +27100,8 @@
   "/api/v1/forms/templates": {
    "get": {
     "operationId": "pendingSandboxForms.templates",
-    "summary": "Plantillas para armar un formulario",
-    "description": "Los puntos de partida de `POST /forms` (`template_key`).\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "Templates to build a form",
+    "description": "The starting points of `POST /forms` (`template_key`).\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "WhatsappForm"
     ],
@@ -27125,8 +27125,8 @@
   "/api/v1/forms": {
    "get": {
     "operationId": "pendingSandboxForms.index",
-    "summary": "Listar los formularios",
-    "description": "Un formulario por fila (su versión vigente, o la más nueva), paginado. Filtros `q`, `status` y `device_id`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "List the forms",
+    "description": "One form per row (its current version, or the newest), paginated. Filters `q`, `status` and `device_id`.\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "WhatsappForm"
     ],
@@ -27193,8 +27193,8 @@
    },
    "post": {
     "operationId": "pendingSandboxForms.store",
-    "summary": "Crear un formulario",
-    "description": "Crea un borrador desde una plantilla, en un número oficial (`device_id`) y, opcional, en otros (`device_ids`). Responde `201` con `data`, `lint` y `numbers`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "Create a form",
+    "description": "Creates a draft from a template, on an official number (`device_id`) and, optionally, on others (`device_ids`). Answers `201` with `data`, `lint` and `numbers`.\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "WhatsappForm"
     ],
@@ -27234,7 +27234,7 @@
     },
     "responses": {
      "201": {
-      "description": "Creado",
+      "description": "Created",
       "content": {
        "application/json": {
         "schema": {
@@ -27249,8 +27249,8 @@
   "/api/v1/forms/{id}": {
    "get": {
     "operationId": "pendingSandboxForms.show",
-    "summary": "Ver una versión de un formulario",
-    "description": "La versión con su definición, `lint`, `versions` y `numbers`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "Show a version of a form",
+    "description": "The version with its definition, `lint`, `versions` and `numbers`.\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "WhatsappForm"
     ],
@@ -27279,7 +27279,7 @@
       }
      },
      "404": {
-      "description": "No existe en la cuenta",
+      "description": "It does not exist in the account",
       "content": {
        "application/json": {
         "schema": {
@@ -27292,8 +27292,8 @@
    },
    "put": {
     "operationId": "pendingSandboxForms.update",
-    "summary": "Editar un borrador",
-    "description": "Guarda `definition` (y opcional `name`). Un formulario publicado responde `409 PUBLISHED`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "Edit a draft",
+    "description": "Saves `definition` (and, optionally, `name`). A published form answers `409 PUBLISHED`.\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "WhatsappForm"
     ],
@@ -27344,7 +27344,7 @@
       }
      },
      "404": {
-      "description": "No existe en la cuenta",
+      "description": "It does not exist in the account",
       "content": {
        "application/json": {
         "schema": {
@@ -27357,8 +27357,8 @@
    },
    "delete": {
     "operationId": "pendingSandboxForms.destroy",
-    "summary": "Borrar un borrador",
-    "description": "`204`. Un formulario publicado responde `409 PUBLISHED`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "Delete a draft",
+    "description": "`204`. A published form answers `409 PUBLISHED`.\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "WhatsappForm"
     ],
@@ -27377,10 +27377,10 @@
     ],
     "responses": {
      "204": {
-      "description": "Borrado"
+      "description": "Deleted"
      },
      "404": {
-      "description": "No existe en la cuenta",
+      "description": "It does not exist in the account",
       "content": {
        "application/json": {
         "schema": {
@@ -27395,8 +27395,8 @@
   "/api/v1/forms/{id}/versions": {
    "post": {
     "operationId": "pendingSandboxForms.versions.store",
-    "summary": "Crear una versión nueva",
-    "description": "Nace como borrador (`201`), o `200` con `created: false` si ya había uno.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "Create a new version",
+    "description": "It is born as a draft (`201`), or `200` with `created: false` if there was one already.\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "WhatsappForm"
     ],
@@ -27425,7 +27425,7 @@
       }
      },
      "404": {
-      "description": "No existe en la cuenta",
+      "description": "It does not exist in the account",
       "content": {
        "application/json": {
         "schema": {
@@ -27440,8 +27440,8 @@
   "/api/v1/forms/{id}/sync": {
    "post": {
     "operationId": "pendingSandboxForms.sync",
-    "summary": "Validar en Meta",
-    "description": "Corre el linter y sube el formulario a Meta, sin publicar.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "Validate at Meta",
+    "description": "Runs the linter and uploads the form to Meta, without publishing.\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "WhatsappForm"
     ],
@@ -27470,7 +27470,7 @@
       }
      },
      "404": {
-      "description": "No existe en la cuenta",
+      "description": "It does not exist in the account",
       "content": {
        "application/json": {
         "schema": {
@@ -27485,8 +27485,8 @@
   "/api/v1/forms/{id}/publish": {
    "post": {
     "operationId": "pendingSandboxForms.publish",
-    "summary": "Publicar",
-    "description": "Valida y publica en el número principal; los otros números se publican en segundo plano.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "Publish",
+    "description": "Validates and publishes on the primary number; the other numbers publish in the background.\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "WhatsappForm"
     ],
@@ -27515,7 +27515,7 @@
       }
      },
      "404": {
-      "description": "No existe en la cuenta",
+      "description": "It does not exist in the account",
       "content": {
        "application/json": {
         "schema": {
@@ -27530,8 +27530,8 @@
   "/api/v1/forms/{id}/numbers": {
    "get": {
     "operationId": "pendingSandboxForms.numbers",
-    "summary": "Los números del formulario",
-    "description": "`{numbers: [{device_id, primary, status, error}]}`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "The numbers of the form",
+    "description": "`{numbers: [{device_id, primary, status, error}]}`.\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "WhatsappForm"
     ],
@@ -27563,8 +27563,8 @@
    },
    "post": {
     "operationId": "pendingSandboxForms.numbers.store",
-    "summary": "Sumar un número",
-    "description": "Publica el formulario en otro número oficial.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "Add a number",
+    "description": "Publishes the form on another official number.\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "WhatsappForm"
     ],
@@ -27617,8 +27617,8 @@
   "/api/v1/forms/{id}/numbers/{deviceId}": {
    "delete": {
     "operationId": "pendingSandboxForms.numbers.destroy",
-    "summary": "Quitar un número",
-    "description": "El número principal no se quita: `422 PRIMARY_NUMBER`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "Remove a number",
+    "description": "The primary number cannot be removed: `422 PRIMARY_NUMBER`.\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "WhatsappForm"
     ],
@@ -27660,8 +27660,8 @@
   "/api/v1/forms/{id}/numbers/retry": {
    "post": {
     "operationId": "pendingSandboxForms.numbers.retry",
-    "summary": "Reintentar los números que fallaron",
-    "description": "\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "Retry the numbers that failed",
+    "description": "\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "WhatsappForm"
     ],
@@ -27695,8 +27695,8 @@
   "/api/v1/forms/families/{familyId}/definition": {
    "get": {
     "operationId": "pendingSandboxForms.families.definition",
-    "summary": "La definición publicada vigente",
-    "description": "\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "The current published definition",
+    "description": "\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "WhatsappForm"
     ],
@@ -27730,8 +27730,8 @@
   "/api/v1/forms/families/{familyId}/versions": {
    "get": {
     "operationId": "pendingSandboxForms.families.versions",
-    "summary": "Las versiones",
-    "description": "\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "The versions",
+    "description": "\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "WhatsappForm"
     ],
@@ -27765,8 +27765,8 @@
   "/api/v1/forms/families/{familyId}/responses": {
    "get": {
     "operationId": "pendingSandboxForms.families.responses",
-    "summary": "Las respuestas",
-    "description": "\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "The responses",
+    "description": "\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "WhatsappForm"
     ],
@@ -27831,8 +27831,8 @@
   "/api/v1/forms/families/{familyId}/responses/{runId}": {
    "get": {
     "operationId": "pendingSandboxForms.families.response",
-    "summary": "Una respuesta",
-    "description": "\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "One response",
+    "description": "\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "WhatsappForm"
     ],
@@ -27874,8 +27874,8 @@
   "/api/v1/contacts/{contact}/message/form": {
    "post": {
     "operationId": "pendingSandboxForms.send",
-    "summary": "Enviar un formulario a un contacto",
-    "description": "Solo por números oficiales y con la ventana de 24 horas abierta. Responde `200` con el mensaje en cola (`type: \"whatsapp_form\"`).\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "Send a form to a contact",
+    "description": "Only through official numbers and with the 24-hour window open. Answers `200` with the queued message (`type: \"whatsapp_form\"`).\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "Message"
     ],
@@ -27935,7 +27935,7 @@
     },
     "responses": {
      "200": {
-      "description": "El formulario quedó en cola.",
+      "description": "The form was queued.",
       "content": {
        "application/json": {
         "schema": {
@@ -27945,7 +27945,7 @@
       }
      },
      "404": {
-      "description": "No existe en la cuenta",
+      "description": "It does not exist in the account",
       "content": {
        "application/json": {
         "schema": {
@@ -27960,8 +27960,8 @@
   "/api/v1/groups/actions/{action}": {
    "get": {
     "operationId": "pendingSandboxGroupActions.groups.actions.action.get",
-    "summary": "Acción de grupo por API (apagada)",
-    "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "Group action by API (off)",
+    "description": "It exists in communities but is off in production: any key gets `403 route_not_available`.\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "GroupActions"
     ],
@@ -27980,7 +27980,7 @@
     ],
     "responses": {
      "403": {
-      "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+      "description": "route_not_available: the group actions by API are off in production.",
       "content": {
        "application/json": {
         "schema": {
@@ -28008,8 +28008,8 @@
   "/api/v1/groups/{group}/participants": {
    "post": {
     "operationId": "pendingSandboxGroupActions.groups.group.participants.post",
-    "summary": "Acción de grupo por API (apagada)",
-    "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "Group action by API (off)",
+    "description": "It exists in communities but is off in production: any key gets `403 route_not_available`.\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "GroupActions"
     ],
@@ -28028,7 +28028,7 @@
     ],
     "responses": {
      "403": {
-      "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+      "description": "route_not_available: the group actions by API are off in production.",
       "content": {
        "application/json": {
         "schema": {
@@ -28056,8 +28056,8 @@
   "/api/v1/groups/{group}/participants/remove": {
    "post": {
     "operationId": "pendingSandboxGroupActions.groups.group.participants.remove.post",
-    "summary": "Acción de grupo por API (apagada)",
-    "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "Group action by API (off)",
+    "description": "It exists in communities but is off in production: any key gets `403 route_not_available`.\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "GroupActions"
     ],
@@ -28076,7 +28076,7 @@
     ],
     "responses": {
      "403": {
-      "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+      "description": "route_not_available: the group actions by API are off in production.",
       "content": {
        "application/json": {
         "schema": {
@@ -28104,8 +28104,8 @@
   "/api/v1/groups/{group}/admins": {
    "post": {
     "operationId": "pendingSandboxGroupActions.groups.group.admins.post",
-    "summary": "Acción de grupo por API (apagada)",
-    "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "Group action by API (off)",
+    "description": "It exists in communities but is off in production: any key gets `403 route_not_available`.\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "GroupActions"
     ],
@@ -28124,7 +28124,7 @@
     ],
     "responses": {
      "403": {
-      "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+      "description": "route_not_available: the group actions by API are off in production.",
       "content": {
        "application/json": {
         "schema": {
@@ -28152,8 +28152,8 @@
   "/api/v1/groups/{group}/admins/remove": {
    "post": {
     "operationId": "pendingSandboxGroupActions.groups.group.admins.remove.post",
-    "summary": "Acción de grupo por API (apagada)",
-    "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "Group action by API (off)",
+    "description": "It exists in communities but is off in production: any key gets `403 route_not_available`.\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "GroupActions"
     ],
@@ -28172,7 +28172,7 @@
     ],
     "responses": {
      "403": {
-      "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+      "description": "route_not_available: the group actions by API are off in production.",
       "content": {
        "application/json": {
         "schema": {
@@ -28200,8 +28200,8 @@
   "/api/v1/groups/{group}/name": {
    "put": {
     "operationId": "pendingSandboxGroupActions.groups.group.name.put",
-    "summary": "Acción de grupo por API (apagada)",
-    "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "Group action by API (off)",
+    "description": "It exists in communities but is off in production: any key gets `403 route_not_available`.\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "GroupActions"
     ],
@@ -28220,7 +28220,7 @@
     ],
     "responses": {
      "403": {
-      "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+      "description": "route_not_available: the group actions by API are off in production.",
       "content": {
        "application/json": {
         "schema": {
@@ -28248,8 +28248,8 @@
   "/api/v1/groups/{group}/description": {
    "put": {
     "operationId": "pendingSandboxGroupActions.groups.group.description.put",
-    "summary": "Acción de grupo por API (apagada)",
-    "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "Group action by API (off)",
+    "description": "It exists in communities but is off in production: any key gets `403 route_not_available`.\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "GroupActions"
     ],
@@ -28268,7 +28268,7 @@
     ],
     "responses": {
      "403": {
-      "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+      "description": "route_not_available: the group actions by API are off in production.",
       "content": {
        "application/json": {
         "schema": {
@@ -28296,8 +28296,8 @@
   "/api/v1/groups/{group}/photo": {
    "put": {
     "operationId": "pendingSandboxGroupActions.groups.group.photo.put",
-    "summary": "Acción de grupo por API (apagada)",
-    "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "Group action by API (off)",
+    "description": "It exists in communities but is off in production: any key gets `403 route_not_available`.\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "GroupActions"
     ],
@@ -28316,7 +28316,7 @@
     ],
     "responses": {
      "403": {
-      "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+      "description": "route_not_available: the group actions by API are off in production.",
       "content": {
        "application/json": {
         "schema": {
@@ -28344,8 +28344,8 @@
   "/api/v1/groups/{group}/settings": {
    "put": {
     "operationId": "pendingSandboxGroupActions.groups.group.settings.put",
-    "summary": "Acción de grupo por API (apagada)",
-    "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "Group action by API (off)",
+    "description": "It exists in communities but is off in production: any key gets `403 route_not_available`.\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "GroupActions"
     ],
@@ -28364,7 +28364,7 @@
     ],
     "responses": {
      "403": {
-      "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+      "description": "route_not_available: the group actions by API are off in production.",
       "content": {
        "application/json": {
         "schema": {
@@ -28392,8 +28392,8 @@
   "/api/v1/groups/{group}/invite-link/renew": {
    "post": {
     "operationId": "pendingSandboxGroupActions.groups.group.invite-link.renew.post",
-    "summary": "Acción de grupo por API (apagada)",
-    "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "Group action by API (off)",
+    "description": "It exists in communities but is off in production: any key gets `403 route_not_available`.\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "GroupActions"
     ],
@@ -28412,7 +28412,7 @@
     ],
     "responses": {
      "403": {
-      "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+      "description": "route_not_available: the group actions by API are off in production.",
       "content": {
        "application/json": {
         "schema": {
@@ -28440,8 +28440,8 @@
   "/api/v1/groups/{group}/invite-link/live": {
    "get": {
     "operationId": "pendingSandboxGroupActions.groups.group.invite-link.live.get",
-    "summary": "Acción de grupo por API (apagada)",
-    "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "Group action by API (off)",
+    "description": "It exists in communities but is off in production: any key gets `403 route_not_available`.\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "GroupActions"
     ],
@@ -28460,7 +28460,7 @@
     ],
     "responses": {
      "403": {
-      "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+      "description": "route_not_available: the group actions by API are off in production.",
       "content": {
        "application/json": {
         "schema": {
@@ -28488,8 +28488,8 @@
   "/api/v1/groups/{group}/join-requests": {
    "get": {
     "operationId": "pendingSandboxGroupActions.groups.group.join-requests.get",
-    "summary": "Acción de grupo por API (apagada)",
-    "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "Group action by API (off)",
+    "description": "It exists in communities but is off in production: any key gets `403 route_not_available`.\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "GroupActions"
     ],
@@ -28508,7 +28508,7 @@
     ],
     "responses": {
      "403": {
-      "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+      "description": "route_not_available: the group actions by API are off in production.",
       "content": {
        "application/json": {
         "schema": {
@@ -28536,8 +28536,8 @@
   "/api/v1/groups/{group}/join-requests/approve": {
    "post": {
     "operationId": "pendingSandboxGroupActions.groups.group.join-requests.approve.post",
-    "summary": "Acción de grupo por API (apagada)",
-    "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "Group action by API (off)",
+    "description": "It exists in communities but is off in production: any key gets `403 route_not_available`.\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "GroupActions"
     ],
@@ -28556,7 +28556,7 @@
     ],
     "responses": {
      "403": {
-      "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+      "description": "route_not_available: the group actions by API are off in production.",
       "content": {
        "application/json": {
         "schema": {
@@ -28584,8 +28584,8 @@
   "/api/v1/groups/{group}/join-requests/reject": {
    "post": {
     "operationId": "pendingSandboxGroupActions.groups.group.join-requests.reject.post",
-    "summary": "Acción de grupo por API (apagada)",
-    "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+    "summary": "Group action by API (off)",
+    "description": "It exists in communities but is off in production: any key gets `403 route_not_available`.\n\n**Pending of the spec**: it is in production, missing from the portal's snapshot.",
     "tags": [
      "GroupActions"
     ],
@@ -28604,7 +28604,7 @@
     ],
     "responses": {
      "403": {
-      "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+      "description": "route_not_available: the group actions by API are off in production.",
       "content": {
        "application/json": {
         "schema": {
@@ -28713,7 +28713,7 @@
              "integer",
              "null"
             ],
-            "description": "El número de tu cuenta que recibió el mensaje: el mismo `device_id` con el que respondés por ese número. `null` si el mensaje no tiene número.",
+            "description": "The number of your account that received the message: the same `device_id` you answer through on that number. `null` if the message has no number.",
             "x-fc-pending": "conversations-received-device"
            }
           }
@@ -30704,7 +30704,7 @@
            },
            "error": {
             "type": "object",
-            "description": "Solo cuando `status` es `failed`. `reason` es nueva: solo trae un valor cuando Funnelchat frenó un mensaje aceptado con clave.",
+            "description": "Only when `status` is `failed`. `reason` is new: it only carries a value when Funnelchat stopped a message accepted with a key.",
             "properties": {
              "code": {
               "type": [
@@ -38279,7 +38279,7 @@
        "sticker",
        null
       ],
-      "description": "El tipo del archivo, cuando la URL no lo dice. Siempre gana a la extensión."
+      "description": "The type of the file, when the URL does not say it. It always wins over the extension."
      },
      "file_name": {
       "type": [
@@ -38288,7 +38288,7 @@
       ],
       "minLength": 1,
       "maxLength": 255,
-      "description": "El nombre con extensión de un documento cuya URL no la tiene (por ejemplo factura.pdf)."
+      "description": "The name, with its extension, of a document whose URL has none (for example invoice.pdf)."
      }
     },
     "required": [
@@ -40252,7 +40252,7 @@
    },
    "PendingSandboxMessageError": {
     "type": "object",
-    "description": "Por qué falló un mensaje. `code` y `title` son los del proveedor (por ejemplo Meta); `reason` solo viene cuando lo frenó Funnelchat después de aceptarlo, y entonces `title` es un texto llano.",
+    "description": "Why a message failed. `code` and `title` are the provider's (for example Meta); `reason` only comes when Funnelchat stopped it after accepting it, and then `title` is a plain text.",
     "properties": {
      "code": {
       "type": [
@@ -40292,11 +40292,11 @@
    },
    "PendingSandboxMessage": {
     "type": "object",
-    "description": "El objeto público de un mensaje: las mismas diez claves en la respuesta del envío y en la consulta por id.",
+    "description": "The public object of a message: the same ten keys in the send's answer and in the lookup by id.",
     "properties": {
      "id": {
       "type": "integer",
-      "description": "El mismo id del historial y de `message.status_changed`."
+      "description": "The same id of the history and of `message.status_changed`."
      },
      "contact_id": {
       "type": [
@@ -40334,7 +40334,7 @@
        "failed",
        null
       ],
-      "description": "`queued` al aceptarlo: en cola no es enviado. Después, el vocabulario de `message.status_changed`, o `null` si no se sabe si salió."
+      "description": "`queued` when accepted: queued is not sent. Then the vocabulary of `message.status_changed`, or `null` if it is not known whether it went out."
      },
      "error": {
       "anyOf": [
@@ -40345,7 +40345,7 @@
         "type": "null"
        }
       ],
-      "description": "Solo cuando `status` es `failed`."
+      "description": "Only when `status` is `failed`."
      },
      "client_reference": {
       "type": [
@@ -40383,7 +40383,7 @@
    },
    "PendingSandboxSendResponse": {
     "type": "object",
-    "description": "Respuesta de un envío aceptado con clave: el mensaje en cola.",
+    "description": "Answer of a send accepted with a key: the queued message.",
     "properties": {
      "message": {
       "$ref": "#/components/schemas/PendingSandboxMessage"
@@ -40395,7 +40395,7 @@
    },
    "PendingSandboxContactCardResponse": {
     "type": "object",
-    "description": "Un mensaje en cola por tarjeta, en el orden de `contact_card_ids`.",
+    "description": "One queued message per card, in the order of `contact_card_ids`.",
     "properties": {
      "messages": {
       "type": "array",
@@ -40410,7 +40410,7 @@
    },
    "PendingSandboxForwardResult": {
     "type": "object",
-    "description": "Un destino del reenvío, con el mensaje registrado para él (o `null` si quedó bloqueado).",
+    "description": "One destination of the forward, with the message registered for it (or `null` if it was blocked).",
     "properties": {
      "contact_id": {
       "type": "integer"
@@ -40448,7 +40448,7 @@
    },
    "PendingSandboxNotFound": {
     "type": "object",
-    "description": "El 404 de conversations: solo `message`, «Objeto no encontrado.».",
+    "description": "The 404 of conversations: only `message`, \"Objeto no encontrado.\".",
     "properties": {
      "message": {
       "type": "string"
@@ -40872,11 +40872,11 @@
  ],
  "x-fc-sandbox": {
   "generated_by": "scripts/generate.mjs",
-  "note": "GENERADO: no lo edites. La instantánea del portal más las capas pendientes.",
+  "note": "GENERATED: do not edit it. The portal's snapshot plus the pending layers.",
   "inputs": {
    "spec/funnelchat.json": "8bbbae569b4cab520884db98f28204156c1bd6c629578bee609343c193e0dadb",
    "spec/pending.json": "a14bc4dbc3025d3e958ffda8afd1fa9fdab34af264418060825f3300799aceb0",
-   "spec/pending-sandbox.json": "895ea8d47d8c01f8f2f53600902c535abfb7b7e3997d4e026354c71874d03509"
+   "spec/pending-sandbox.json": "d915e3b23cbc1738d999eb2b582af2b205b7989c08361cee293f23b2ef278a0e"
   },
   "snapshot_commit": "0ef4abb008870ed8c7cae49a08900a81e5e57ed8",
   "pending_commit": "88557ce7819c5a4061e84c58053a1b6c49f35ec2",

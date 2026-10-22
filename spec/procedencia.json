@@ -1,5 +1,5 @@
 {
-  "description": "De dónde salió cada archivo de spec/. Lo escribe `npm run generate -- --spec <archivo>` o `-- --pending <archivo>`; no lo edites a mano. spec/pending-sandbox.json es propio de este repo: sus fuentes están adentro.",
+  "description": "Where each file of spec/ came from. Written by `npm run generate -- --spec <file>` or `-- --pending <file>`; do not edit it by hand. spec/pending-sandbox.json belongs to this repo: its sources are inside it.",
   "snapshot": {
     "file": "spec/funnelchat.json",
     "sha256": "8bbbae569b4cab520884db98f28204156c1bd6c629578bee609343c193e0dadb",
@@ -59,6 +59,6 @@
       "file_modified_at": "2026-10-16T05:29:09.348Z"
     },
     "imported_at": "2026-10-16T11:46:40.294Z",
-    "note": "La capa pendiente del SDK de Node, sin cambios. Lo propio del sandbox va en spec/pending-sandbox.json."
+    "note": "The pending layer of the Node SDK, unchanged. What belongs to the sandbox goes in spec/pending-sandbox.json."
   }
 }

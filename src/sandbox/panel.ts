@@ -5,11 +5,11 @@
  */
 export function panelHtml(): string {
   return `<!doctype html>
-<html lang="es">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sandbox de Funnelchat</title>
+<title>Funnelchat sandbox</title>
 <style>
   :root { --bg: #f6f7f9; --card: #fff; --text: #1d2433; --muted: #5b6475; --line: #dfe3ea; --ok: #1b7f3b; --bad: #b42318; --warn: #a15c00; --accent: #0b6e4f; }
   @media (prefers-color-scheme: dark) { :root { --bg: #11151c; --card: #1a202a; --text: #e6e9ef; --muted: #9aa4b5; --line: #2b3340; --ok: #4cc27a; --bad: #ff7b72; --warn: #e3a44a; --accent: #3fb68b; } }
@@ -38,26 +38,26 @@ export function panelHtml(): string {
 </style>
 </head>
 <body>
-<header><h1>Sandbox de Funnelchat</h1><span>Nada sale a WhatsApp: todo queda en memoria.</span><span id="summary"></span></header>
+<header><h1>Funnelchat sandbox</h1><span>Nothing goes out to WhatsApp: everything stays in memory.</span><span id="summary"></span></header>
 <main>
   <section>
-    <h2>Mensaje entrante</h2>
+    <h2>Incoming message</h2>
     <form id="inbound">
-      <label for="phone">Teléfono de quien escribe</label>
+      <label for="phone">Phone of who writes</label>
       <input id="phone" name="phone" value="5491100000000" autocomplete="off">
-      <label for="name">Nombre (si el contacto es nuevo)</label>
-      <input id="name" name="name" placeholder="Opcional">
-      <label for="device">Número que recibe</label>
-      <select id="device" name="device_id"><option value="3">3 · oficial (Cloud API)</option><option value="4">4 · QR</option></select>
-      <label for="text">Texto</label>
+      <label for="name">Name (if the contact is new)</label>
+      <input id="name" name="name" placeholder="Optional">
+      <label for="device">Number that receives it</label>
+      <select id="device" name="device_id"><option value="3">3 · official (Cloud API)</option><option value="4">4 · QR</option></select>
+      <label for="text">Text</label>
       <textarea id="text" name="text" rows="3">Hola, quiero más información</textarea>
-      <button type="submit">Mandar mensaje entrante</button>
-      <button type="button" class="secondary" id="reset">Reiniciar el estado</button>
+      <button type="submit">Send incoming message</button>
+      <button type="button" class="secondary" id="reset">Reset the state</button>
     </form>
     <div id="result" class="muted"></div>
   </section>
-  <section><h2>Últimos pedidos</h2><ul id="requests"><li class="muted">Todavía no hay pedidos.</li></ul></section>
-  <section><h2>Entregas de webhooks</h2><ul id="deliveries"><li class="muted">Todavía no hay entregas.</li></ul></section>
+  <section><h2>Last requests</h2><ul id="requests"><li class="muted">No requests yet.</li></ul></section>
+  <section><h2>Webhook deliveries</h2><ul id="deliveries"><li class="muted">No deliveries yet.</li></ul></section>
 </main>
 <script>
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -69,11 +69,11 @@ async function refresh() {
   try {
     const [req, del, st] = await Promise.all(['requests', 'deliveries', 'state'].map((p) => fetch('/_sandbox/' + p + (p === 'state' ? '' : '?limit=40')).then((r) => r.json())));
     const reqList = document.getElementById('requests'); remember(reqList);
-    reqList.innerHTML = req.data.length ? req.data.map((r) => '<li><details data-key="r' + r.id + '"' + (open.has('r' + r.id) ? ' open' : '') + '><summary><b class="' + cls(r.status) + '">' + r.status + '</b><code>' + esc(r.method) + ' ' + esc(r.path) + '</code><span class="muted">' + r.durationMs + ' ms · ' + esc(r.at.slice(11, 19)) + '</span></summary>' + (r.requestBody !== null && r.requestBody !== undefined ? '<p class="muted">Pedido</p><pre>' + pretty(r.requestBody) + '</pre>' : '') + '<p class="muted">Respuesta · X-Request-Id <code>' + esc(r.requestId) + '</code></p><pre>' + pretty(r.responseBody) + '</pre></details></li>').join('') : '<li class="muted">Todavía no hay pedidos.</li>';
+    reqList.innerHTML = req.data.length ? req.data.map((r) => '<li><details data-key="r' + r.id + '"' + (open.has('r' + r.id) ? ' open' : '') + '><summary><b class="' + cls(r.status) + '">' + r.status + '</b><code>' + esc(r.method) + ' ' + esc(r.path) + '</code><span class="muted">' + r.durationMs + ' ms · ' + esc(r.at.slice(11, 19)) + '</span></summary>' + (r.requestBody !== null && r.requestBody !== undefined ? '<p class="muted">Request</p><pre>' + pretty(r.requestBody) + '</pre>' : '') + '<p class="muted">Response · X-Request-Id <code>' + esc(r.requestId) + '</code></p><pre>' + pretty(r.responseBody) + '</pre></details></li>').join('') : '<li class="muted">No requests yet.</li>';
     const delList = document.getElementById('deliveries'); remember(delList);
-    delList.innerHTML = del.data.length ? del.data.map((d) => '<li><details data-key="d' + d.id + '"' + (open.has('d' + d.id) ? ' open' : '') + '><summary><b class="' + cls(d.response_status) + '">' + esc(d.response_status ?? d.error) + '</b><code>' + esc(d.event_type) + '</code><span class="muted">intento ' + d.attempt + ' · ' + esc(d.url) + (d.next_attempt_at ? ' · reintento ' + esc(d.next_attempt_at.slice(11, 19)) : '') + '</span></summary><p class="muted">Cuerpo firmado</p><pre>' + pretty(d.request_body) + '</pre><p class="muted">Respuesta de tu servidor</p><pre>' + esc(d.response_body ?? d.error) + '</pre></details></li>').join('') : '<li class="muted">Todavía no hay entregas.</li>';
-    document.getElementById('summary').textContent = st.counts.contacts + ' contactos · ' + st.counts.messages + ' mensajes · ' + st.counts.subscriptions + ' suscripciones';
-  } catch (e) { document.getElementById('summary').textContent = 'Sin conexión con el sandbox'; }
+    delList.innerHTML = del.data.length ? del.data.map((d) => '<li><details data-key="d' + d.id + '"' + (open.has('d' + d.id) ? ' open' : '') + '><summary><b class="' + cls(d.response_status) + '">' + esc(d.response_status ?? d.error) + '</b><code>' + esc(d.event_type) + '</code><span class="muted">attempt ' + d.attempt + ' · ' + esc(d.url) + (d.next_attempt_at ? ' · retry ' + esc(d.next_attempt_at.slice(11, 19)) : '') + '</span></summary><p class="muted">Signed body</p><pre>' + pretty(d.request_body) + '</pre><p class="muted">What your server answered</p><pre>' + esc(d.response_body ?? d.error) + '</pre></details></li>').join('') : '<li class="muted">No deliveries yet.</li>';
+    document.getElementById('summary').textContent = st.counts.contacts + ' contacts · ' + st.counts.messages + ' messages · ' + st.counts.subscriptions + ' subscriptions';
+  } catch (e) { document.getElementById('summary').textContent = 'No connection with the sandbox'; }
 }
 document.getElementById('inbound').addEventListener('submit', async (ev) => {
   ev.preventDefault();
@@ -82,10 +82,10 @@ document.getElementById('inbound').addEventListener('submit', async (ev) => {
   if (f.get('name')) body.name = f.get('name');
   const res = await fetch('/_sandbox/inbound/message', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const json = await res.json();
-  document.getElementById('result').innerHTML = res.ok ? 'Mensaje ' + json.message.id + ' del contacto ' + json.contact.id + ' · evento ' + esc(json.event.id) + ' a ' + json.event.subscriptions + ' suscripciones' : '<span class="s4">' + esc(json.message) + '</span>';
+  document.getElementById('result').innerHTML = res.ok ? 'Message ' + json.message.id + ' from contact ' + json.contact.id + ' · event ' + esc(json.event.id) + ' to ' + json.event.subscriptions + ' subscriptions' : '<span class="s4">' + esc(json.message) + '</span>';
   refresh();
 });
-document.getElementById('reset').addEventListener('click', async () => { await fetch('/_sandbox/reset', { method: 'POST' }); document.getElementById('result').textContent = 'Estado reiniciado.'; refresh(); });
+document.getElementById('reset').addEventListener('click', async () => { await fetch('/_sandbox/reset', { method: 'POST' }); document.getElementById('result').textContent = 'State reset.'; refresh(); });
 refresh();
 setInterval(refresh, 2000);
 </script>

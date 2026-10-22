@@ -71,7 +71,7 @@ export class ConfigError extends Error {}
 
 const nonNegative = (value: unknown, name: string): number => {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-    throw new ConfigError(`${name} tiene que ser un número de segundos mayor o igual a 0.`);
+    throw new ConfigError(`${name} must be a number of seconds, 0 or more.`);
   }
   return value;
 };
@@ -81,32 +81,32 @@ const optionalDelay = (value: unknown, name: string): number | null => (value ==
 /** Merges a partial configuration over a full one, checking every value. */
 export function mergeConfig(base: SandboxConfig, input: ConfigInput): SandboxConfig {
   const out: SandboxConfig = structuredClone(base);
-  if (!isRecord(input)) throw new ConfigError('La configuración tiene que ser un objeto JSON.');
+  if (!isRecord(input)) throw new ConfigError('The configuration must be a JSON object.');
   for (const key of Object.keys(input)) {
-    if (!(key in out)) throw new ConfigError(`Opción desconocida en la configuración: ${key}.`);
+    if (!(key in out)) throw new ConfigError(`Unknown option in the configuration: ${key}.`);
   }
   if (input.port !== undefined) {
     if (!Number.isInteger(input.port) || (input.port as number) < 0 || (input.port as number) > 65535) {
-      throw new ConfigError('port tiene que ser un entero entre 0 y 65535.');
+      throw new ConfigError('port must be an integer between 0 and 65535.');
     }
     out.port = input.port as number;
   }
   if (input.host !== undefined) {
-    if (typeof input.host !== 'string' || input.host === '') throw new ConfigError('host tiene que ser un texto.');
+    if (typeof input.host !== 'string' || input.host === '') throw new ConfigError('host must be a string.');
     out.host = input.host;
   }
   if (input.statusDelays !== undefined) {
     const d = input.statusDelays;
-    if (!isRecord(d)) throw new ConfigError('statusDelays tiene que ser un objeto {sent, delivered, read}.');
+    if (!isRecord(d)) throw new ConfigError('statusDelays must be an object {sent, delivered, read}.');
     if (d.sent !== undefined) out.statusDelays.sent = nonNegative(d.sent, 'statusDelays.sent');
     if (d.delivered !== undefined) out.statusDelays.delivered = optionalDelay(d.delivered, 'statusDelays.delivered');
     if (d.read !== undefined) out.statusDelays.read = optionalDelay(d.read, 'statusDelays.read');
   }
   if (input.webhooks !== undefined) {
     const w = input.webhooks;
-    if (!isRecord(w)) throw new ConfigError('webhooks tiene que ser un objeto.');
+    if (!isRecord(w)) throw new ConfigError('webhooks must be an object.');
     if (w.retryDelays !== undefined) {
-      if (!Array.isArray(w.retryDelays)) throw new ConfigError('webhooks.retryDelays tiene que ser una lista de segundos.');
+      if (!Array.isArray(w.retryDelays)) throw new ConfigError('webhooks.retryDelays must be a list of seconds.');
       out.webhooks.retryDelays = w.retryDelays.map((v, i) => nonNegative(v, `webhooks.retryDelays[${i}]`));
     }
     if (w.timeoutSeconds !== undefined) {
@@ -114,7 +114,7 @@ export function mergeConfig(base: SandboxConfig, input: ConfigInput): SandboxCon
     }
     if (w.maxConsecutiveFailures !== undefined) {
       if (!Number.isInteger(w.maxConsecutiveFailures) || (w.maxConsecutiveFailures as number) < 1) {
-        throw new ConfigError('webhooks.maxConsecutiveFailures tiene que ser un entero mayor que 0.');
+        throw new ConfigError('webhooks.maxConsecutiveFailures must be an integer greater than 0.');
       }
       out.webhooks.maxConsecutiveFailures = w.maxConsecutiveFailures as number;
     }
@@ -122,7 +122,7 @@ export function mergeConfig(base: SandboxConfig, input: ConfigInput): SandboxCon
   }
   if (input.rules !== undefined) {
     const r = input.rules;
-    if (!isRecord(r)) throw new ConfigError('rules tiene que ser un objeto {window, antiblock, rateLimit}.');
+    if (!isRecord(r)) throw new ConfigError('rules must be an object {window, antiblock, rateLimit}.');
     for (const key of ['window', 'antiblock', 'rateLimit'] as const) {
       if (r[key] !== undefined) out.rules[key] = Boolean(r[key]);
     }
@@ -131,20 +131,20 @@ export function mergeConfig(base: SandboxConfig, input: ConfigInput): SandboxCon
     out.templateApprovalSeconds = optionalDelay(input.templateApprovalSeconds, 'templateApprovalSeconds');
   }
   if (input.subscriptions !== undefined) {
-    if (!Array.isArray(input.subscriptions)) throw new ConfigError('subscriptions tiene que ser una lista.');
+    if (!Array.isArray(input.subscriptions)) throw new ConfigError('subscriptions must be a list.');
     out.subscriptions = input.subscriptions.map((s, i) => {
       if (!isRecord(s) || typeof s.url !== 'string' || !Array.isArray(s.events) || s.events.some((e) => typeof e !== 'string')) {
-        throw new ConfigError(`subscriptions[${i}] necesita url (texto) y events (lista de tipos).`);
+        throw new ConfigError(`subscriptions[${i}] needs url (a string) and events (a list of types).`);
       }
       if (s.secret !== undefined && (typeof s.secret !== 'string' || s.secret === '')) {
-        throw new ConfigError(`subscriptions[${i}].secret tiene que ser un texto.`);
+        throw new ConfigError(`subscriptions[${i}].secret must be a string.`);
       }
       return structuredClone(s) as unknown as PresetSubscription;
     });
   }
   if (input.historyLimit !== undefined) {
     if (!Number.isInteger(input.historyLimit) || (input.historyLimit as number) < 1) {
-      throw new ConfigError('historyLimit tiene que ser un entero mayor que 0.');
+      throw new ConfigError('historyLimit must be an integer greater than 0.');
     }
     out.historyLimit = input.historyLimit as number;
   }
@@ -155,11 +155,11 @@ export function mergeConfig(base: SandboxConfig, input: ConfigInput): SandboxCon
 /** Reads a JSON configuration file. */
 export function readConfigFile(path: string): ConfigInput {
   const full = resolve(path);
-  if (!existsSync(full)) throw new ConfigError(`No existe el archivo de configuración ${path}.`);
+  if (!existsSync(full)) throw new ConfigError(`The configuration file ${path} does not exist.`);
   try {
     return JSON.parse(readFileSync(full, 'utf8')) as ConfigInput;
   } catch (error) {
-    throw new ConfigError(`${path} no es JSON válido: ${error instanceof Error ? error.message : String(error)}`);
+    throw new ConfigError(`${path} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -169,7 +169,7 @@ export function parseSecondsList(value: string, flag: string, allowNull = false)
     const text = part.trim();
     if (allowNull && (text === '-' || text === 'null')) return null;
     const n = Number(text);
-    if (text === '' || !Number.isFinite(n) || n < 0) throw new ConfigError(`${flag}: "${part}" no es un número de segundos.`);
+    if (text === '' || !Number.isFinite(n) || n < 0) throw new ConfigError(`${flag}: "${part}" is not a number of seconds.`);
     return n;
   });
 }
@@ -187,7 +187,7 @@ export function parseArgs(argv: string[]): CliArgs {
   const o = args.overrides;
   const take = (i: number, flag: string): string => {
     const value = argv[i + 1];
-    if (value === undefined || value.startsWith('--')) throw new ConfigError(`${flag} necesita un valor.`);
+    if (value === undefined || value.startsWith('--')) throw new ConfigError(`${flag} needs a value.`);
     return value;
   };
   for (let i = 0; i < argv.length; i++) {
@@ -220,7 +220,7 @@ export function parseArgs(argv: string[]): CliArgs {
       case '-p':
       case '--port': {
         const n = Number(value());
-        if (!Number.isInteger(n)) throw new ConfigError('--port tiene que ser un entero.');
+        if (!Number.isInteger(n)) throw new ConfigError('--port must be an integer.');
         o.port = n;
         break;
       }
@@ -229,7 +229,7 @@ export function parseArgs(argv: string[]): CliArgs {
         break;
       case '--status-delays': {
         const [sent, delivered, read] = parseSecondsList(value(), '--status-delays', true);
-        if (sent === null || sent === undefined) throw new ConfigError('--status-delays: el primero (sent) tiene que ser un número.');
+        if (sent === null || sent === undefined) throw new ConfigError('--status-delays: the first one (sent) must be a number.');
         o.statusDelays = { sent, delivered: delivered === undefined ? null : delivered, read: read === undefined ? null : read };
         break;
       }
@@ -263,7 +263,7 @@ export function parseArgs(argv: string[]): CliArgs {
         o.log = false;
         break;
       default:
-        throw new ConfigError(`Opción desconocida: ${arg}. Prueba --help.`);
+        throw new ConfigError(`Unknown option: ${arg}. Try --help.`);
     }
   }
   return args;

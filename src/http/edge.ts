@@ -18,7 +18,7 @@ export const EDGE_HEADER_VALUES = ['origin_unreachable', 'origin_unreachable_app
 export function parseEdge(value: unknown, field: string): string {
   const text = String(value ?? '').trim();
   if (text in EDGE_ERRORS) return text;
-  throw fieldError(field, `${field} tiene que ser uno de: ${Object.keys(EDGE_ERRORS).join(', ')}.`);
+  throw fieldError(field, `${field} must be one of: ${Object.keys(EDGE_ERRORS).join(', ')}.`);
 }
 
 /** The forced edge error of this call, if any: the header, or the next armed one. */
@@ -27,7 +27,7 @@ export function takeEdgeFailure(app: SandboxApp, headers: Record<string, string 
   if (header) {
     if (header === 'origin_unreachable_applied') return { code: 'origin_unreachable', applied: true };
     if (!EDGE_HEADER_VALUES.includes(header)) {
-      throw fieldError('X-Sandbox-Edge', `X-Sandbox-Edge tiene que ser uno de: ${EDGE_HEADER_VALUES.join(', ')}.`);
+      throw fieldError('X-Sandbox-Edge', `X-Sandbox-Edge must be one of: ${EDGE_HEADER_VALUES.join(', ')}.`);
     }
     return { code: header, applied: false };
   }

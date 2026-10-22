@@ -87,7 +87,7 @@ export const webhookHandlers: HandlerTable = {
       updatedAt: now,
     };
     ctx.app.store.subscriptions.set(subscription.id, subscription);
-    ctx.app.logger.info(`suscripción creada ${subscription.id} → ${subscription.url} (${subscription.events.join(', ')})`);
+    ctx.app.logger.info(`subscription created ${subscription.id} → ${subscription.url} (${subscription.events.join(', ')})`);
     return ok(subscriptionWithSecret(subscription), 201);
   },
 

@@ -14,7 +14,7 @@ const stamp = (): string => new Date().toISOString().slice(11, 19);
 
 export const consoleLogger: Logger = {
   info: (message) => process.stdout.write(`${stamp()} ${message}\n`),
-  warn: (message) => process.stderr.write(`${stamp()} aviso: ${message}\n`),
+  warn: (message) => process.stderr.write(`${stamp()} warning: ${message}\n`),
 };
 
 export const silentLogger: Logger = { info: () => {}, warn: () => {} };
@@ -28,7 +28,7 @@ export class Scheduler {
       this.#timers.delete(timer);
       void Promise.resolve()
         .then(task)
-        .catch((error: unknown) => console.error('[sandbox] tarea programada falló:', error));
+        .catch((error: unknown) => console.error('[sandbox] a scheduled task failed:', error));
     }, Math.max(0, ms));
     timer.unref?.();
     this.#timers.add(timer);
@@ -65,12 +65,12 @@ export class SandboxApp {
     seed(this.store);
     for (const preset of this.config.subscriptions) {
       const unknown = preset.events.filter((e) => !isSubscribable(e));
-      if (unknown.length) this.logger.warn(`suscripción de la configuración con tipos que no están en el catálogo: ${unknown.join(', ')}`);
+      if (unknown.length) this.logger.warn(`subscription from the configuration with types that are not in the catalog: ${unknown.join(', ')}`);
       const now = new Date();
       const subscription: Subscription = {
         id: preset.id ?? uuid(),
         url: preset.url,
-        description: preset.description ?? 'Suscripción de la configuración del sandbox',
+        description: preset.description ?? 'Subscription from the sandbox configuration',
         events: [...new Set(preset.events)],
         filters: {},
         status: 'active',

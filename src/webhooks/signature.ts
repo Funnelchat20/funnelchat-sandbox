@@ -15,7 +15,7 @@ export const DELIVERY_HEADER = 'X-Funnelchat-Delivery';
 export const USER_AGENT = 'Funnelchat-Webhooks/1';
 
 export function signature(secret: string, body: string | Uint8Array, timestamp: number): string {
-  if (!Number.isInteger(timestamp) || timestamp < 0) throw new TypeError('El timestamp tiene que ser un entero de segundos.');
+  if (!Number.isInteger(timestamp) || timestamp < 0) throw new TypeError('The timestamp must be an integer number of seconds.');
   const v1 = createHmac('sha256', secret).update(`${timestamp}.`).update(body).digest('hex');
   return `t=${timestamp},v1=${v1}`;
 }

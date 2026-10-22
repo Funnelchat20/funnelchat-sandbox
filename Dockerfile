@@ -1,4 +1,4 @@
-# funnelchat-sandbox en un contenedor: docker build -t funnelchat-sandbox . && docker run --rm -p 4010:4010 funnelchat-sandbox
+# funnelchat-sandbox in a container: docker build -t funnelchat-sandbox . && docker run --rm -p 4010:4010 funnelchat-sandbox
 FROM node:20-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -18,6 +18,6 @@ COPY --from=build /app/dist ./dist
 COPY spec/procedencia.json ./spec/procedencia.json
 USER node
 EXPOSE 4010
-# 0.0.0.0 para que el puerto publicado llegue al proceso. Un archivo de configuración se monta en
-# /app/funnelchat-sandbox.config.json (se lee solo) o se pasa con --config.
+# 0.0.0.0 so the published port reaches the process. A configuration file is mounted at
+# /app/funnelchat-sandbox.config.json (read on its own) or passed with --config.
 ENTRYPOINT ["node", "dist/cli.js", "--host", "0.0.0.0"]

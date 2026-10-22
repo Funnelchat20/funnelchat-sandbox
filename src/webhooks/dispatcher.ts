@@ -45,7 +45,7 @@ function assertNoAccountIds(value: unknown, path = 'data'): void {
   if (Array.isArray(value)) value.forEach((v, i) => assertNoAccountIds(v, `${path}.${i}`));
   if (!isRecord(value)) return;
   for (const [key, child] of Object.entries(value)) {
-    if (FORBIDDEN_KEYS.includes(key.toLowerCase())) throw new Error(`El payload de un webhook no puede llevar \`${key}\` (en \`${path}\`).`);
+    if (FORBIDDEN_KEYS.includes(key.toLowerCase())) throw new Error(`A webhook payload cannot carry \`${key}\` (in \`${path}\`).`);
     assertNoAccountIds(child, `${path}.${key}`);
   }
 }
@@ -104,7 +104,7 @@ export class Webhooks {
       count++;
       void this.attempt(subscription.id, envelope.id, type, body, 1);
     }
-    if (count === 0) this.app.logger.info(`evento ${type} (${envelope.id}): ninguna suscripción lo pidió`);
+    if (count === 0) this.app.logger.info(`event ${type} (${envelope.id}): no subscription asked for it`);
     return { envelope, subscriptions: count };
   }
 
@@ -178,8 +178,8 @@ export class Webhooks {
 
     const outcome = succeeded ? String(result.status) : `${result.status ?? result.error}${result.error && result.status ? ` ${result.error}` : ''}`;
     logger.info(
-      `webhook ${type} → ${subscription.url} ${outcome} (intento ${attempt}/${this.maxAttempts}, ${result.durationMs} ms)` +
-        (delaySeconds !== null ? `; reintento en ${delaySeconds} s` : ''),
+      `webhook ${type} → ${subscription.url} ${outcome} (attempt ${attempt}/${this.maxAttempts}, ${result.durationMs} ms)` +
+        (delaySeconds !== null ? `; retry in ${delaySeconds} s` : ''),
     );
 
     if (succeeded) {
@@ -197,7 +197,7 @@ export class Webhooks {
       subscription.status = 'disabled';
       subscription.disabledReason = 'too_many_failures';
       subscription.updatedAt = now;
-      logger.warn(`suscripción ${subscription.id} deshabilitada: ${subscription.consecutiveFailures} entregas fallidas seguidas`);
+      logger.warn(`subscription ${subscription.id} disabled: ${subscription.consecutiveFailures} failed deliveries in a row`);
     }
   }
 
@@ -222,7 +222,7 @@ export class Webhooks {
       requestBody: body,
       nextAttemptAt: null,
     });
-    this.app.logger.info(`webhook webhook.test → ${subscription.url} ${result.status ?? result.error} (prueba, ${result.durationMs} ms)`);
+    this.app.logger.info(`webhook webhook.test → ${subscription.url} ${result.status ?? result.error} (test, ${result.durationMs} ms)`);
     return {
       succeeded,
       response_status: result.status,
