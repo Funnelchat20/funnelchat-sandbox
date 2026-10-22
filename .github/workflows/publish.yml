@@ -1,14 +1,27 @@
-# Publishes @funnelchat-hq/sandbox to npm with provenance when a version tag (vX.Y.Z) is pushed.
+# Publishes @funnelchat-hq/sandbox to npm when a version tag (vX.Y.Z) is pushed, through npm Trusted
+# Publishing: npm accepts the publish only from this repo and this workflow, by OIDC, with no token,
+# and adds provenance on its own.
+#
+# ONE-TIME SETUP: on npmjs.com, in the package settings, add a Trusted Publisher for GitHub Actions
+# with organization Funnelchat20, repository funnelchat-sandbox, workflow publish.yml and no environment.
+#
+# Run it by hand (workflow_dispatch) to check the OIDC exchange with npm without publishing anything.
 name: Publish to npm
 
 on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
 
 permissions:
   id-token: write
   contents: read
+
+# One run per tag at a time; a second run for the same tag waits and then finds the version published.
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   publish:
@@ -16,15 +29,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Node 20, as in engines (>=20.11) and the Dockerfile.
+      # Node 20, as in engines (>=20.11) and the Dockerfile. The latest 20.x also meets npm 11 (^20.17.0).
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           registry-url: https://registry.npmjs.org/
 
-      - run: npm ci
+      # npm 11.5.1 or newer does the OIDC exchange. Not latest: npm 12 asks for newer Node versions.
+      - run: npm install -g npm@^11.5.1
+
+      - name: Check the trusted publishing exchange
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          name="$(node -p "require('./package.json').name")"
+          id_token="$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=npm:registry.npmjs.org" | jq -r '.value // empty')"
+          if [ -z "$id_token" ]; then
+            echo "::error::Could not get the GitHub identity token"
+            exit 1
+          fi
+          echo "::add-mask::$id_token"
+          status="$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer $id_token" \
+            "https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/${name//\//%2f}")"
+          if [ "${status:0:1}" != "2" ]; then
+            echo "::error::Trusted publishing exchange for $name answered HTTP $status"
+            exit 1
+          fi
+          echo "Trusted publishing OK for $name"
 
       - name: Check that the tag matches package.json
+        if: github.event_name != 'workflow_dispatch'
         run: |
           version="$(node -p "require('./package.json').version")"
           tag="${GITHUB_REF_NAME#v}"
@@ -33,7 +68,20 @@ jobs:
             exit 1
           fi
 
+      - name: Check whether the version is already published
+        id: published
+        if: github.event_name != 'workflow_dispatch'
+        run: |
+          name="$(node -p "require('./package.json').name")"
+          version="$(node -p "require('./package.json').version")"
+          if [ "$(npm view "$name@$version" version 2>/dev/null || true)" = "$version" ]; then
+            echo "::notice::$name@$version is already on npm; nothing to publish"
+            echo "already=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - run: npm ci
+        if: github.event_name != 'workflow_dispatch' && steps.published.outputs.already != 'true'
+
       # prepack builds dist/.
       - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        if: github.event_name != 'workflow_dispatch' && steps.published.outputs.already != 'true'
