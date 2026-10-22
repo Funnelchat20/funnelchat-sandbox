@@ -3,7 +3,7 @@
  */
 import type { SandboxApp } from '../app.js';
 import { body, listContext, ok, type HandlerContext, type HandlerTable } from '../http/context.js';
-import { fieldError, notFound } from '../http/errors.js';
+import { fieldError, objectNotFound } from '../http/errors.js';
 import { cursorPaginate, paginate } from '../http/paginate.js';
 import {
   contactCustomFieldResource,
@@ -17,7 +17,8 @@ import { digits, toE164 } from '../util.js';
 
 export function getContact(app: SandboxApp, id: unknown): Contact {
   const contact = app.store.contacts.get(Number(id));
-  if (!contact) throw notFound('El contacto no existe en esta cuenta.');
+  // The model binding of conversations (`bootstrap/app.php`): `{message: "Objeto no encontrado."}`.
+  if (!contact) throw objectNotFound();
   return contact;
 }
 
@@ -431,12 +432,12 @@ function pick(source: Record<string, unknown>, keys: string[]): Record<string, u
 
 function getTag(ctx: HandlerContext) {
   const tag = ctx.app.store.tags.get(Number(ctx.path.tag));
-  if (!tag) throw notFound('La etiqueta no existe en esta cuenta.');
+  if (!tag) throw objectNotFound();
   return tag;
 }
 
 function getCustomField(ctx: HandlerContext) {
   const field = ctx.app.store.customFields.get(Number(ctx.path.customField));
-  if (!field) throw notFound('El campo personalizado no existe en esta cuenta.');
+  if (!field) throw objectNotFound();
   return field;
 }

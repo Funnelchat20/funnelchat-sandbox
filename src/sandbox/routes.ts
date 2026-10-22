@@ -3,15 +3,17 @@
  * from WhatsApp or from the panel (an incoming message, a group, a tag), force failures and inspect the state.
  */
 import type { SandboxApp } from '../app.js';
-import { ApiError, fieldError, notFound, validationFailed } from '../http/errors.js';
+import { parseEdge } from '../http/edge.js';
+import { ApiError, EDGE_ERRORS, fieldError, notFound, validationFailed } from '../http/errors.js';
 import { createContact, eventContact } from '../handlers/contacts.js';
+import { completeForm } from '../handlers/forms.js';
 import { setTemplateStatus } from '../handlers/messages.js';
 import { createMessage, transition } from '../messaging/lifecycle.js';
 import { FAILURE_REASONS, REJECTIONS, failureFor, parseForced } from '../messaging/rules.js';
 import { contactResource, deliveryResource, deviceResource, publicMessage } from '../state/resources.js';
-import type { Contact, TemplateStatus } from '../state/store.js';
+import type { ArmedFailure, Contact, TemplateStatus } from '../state/store.js';
 import { digits, isRecord, iso8601, isoSeconds, toE164 } from '../util.js';
-import { catalog, catalogEntry } from '../webhooks/catalog.js';
+import { catalog, catalogEntry, emittedData } from '../webhooks/catalog.js';
 import { panelHtml } from './panel.js';
 
 export interface SandboxRequest {
@@ -64,6 +66,8 @@ function state(app: SandboxApp): Record<string, unknown> {
       tags: store.tags.size,
       custom_fields: store.customFields.size,
       templates: store.templates.size,
+      forms: store.formFamilies.size,
+      form_runs: store.formRuns.size,
       subscriptions: store.subscriptions.size,
       deliveries: store.deliveries.length,
       requests: store.requests.length,
@@ -79,6 +83,7 @@ function state(app: SandboxApp): Record<string, unknown> {
       consecutive_failures: s.consecutiveFailures,
     })),
     failures: store.failures,
+    mac: macState(app),
     config: {
       statusDelays: config.statusDelays,
       webhooks: config.webhooks,
@@ -86,6 +91,17 @@ function state(app: SandboxApp): Record<string, unknown> {
       templateApprovalSeconds: config.templateApprovalSeconds,
     },
   };
+}
+
+function macState(app: SandboxApp): Record<string, unknown> {
+  const { mac } = app.store;
+  return { lockout: mac.lockout, active_contact_ids: [...mac.activeContacts], inactive_contact_ids: [...mac.inactiveContacts] };
+}
+
+function idsOf(value: unknown, field: string, app: SandboxApp): number[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw fieldError(field, `${field} tiene que ser una lista de ids de contacto.`);
+  return value.map((id) => contactOf(app, id).id);
 }
 
 function limitOf(query: URLSearchParams): number {
@@ -122,7 +138,7 @@ function inboundMessage(app: SandboxApp, req: SandboxRequest): SandboxResponse {
       message: { id: message.id, type, text, media: file && type !== 'text' ? { file } : null },
       contact: eventContact(contact),
       receiver: { phone: toE164(device.number) },
-      // PENDING OF THE SPEC (conversations PR #2284): the number that received the message.
+      // The number that received the message (conversations v1.18.10 `MessageReceivedPayload`).
       device_id: device.id,
     },
     { occurredAt },
@@ -140,7 +156,8 @@ function inboundMessage(app: SandboxApp, req: SandboxRequest): SandboxResponse {
 
 function participantEvent(app: SandboxApp, req: SandboxRequest, type: string): SandboxResponse {
   const b = obj(req.body);
-  const example = obj(catalogEntry(type)?.example.data);
+  const entry = catalogEntry(type);
+  const example = obj(entry ? emittedData(entry) : {});
   const participant = obj(b.participant);
   const phone = participant.phone ?? b.phone;
   const data = deepMerge(example, {
@@ -148,7 +165,8 @@ function participantEvent(app: SandboxApp, req: SandboxRequest, type: string): S
     ...(isRecord(b.campaign) ? { campaign: b.campaign } : {}),
     participant: {
       ...obj(example.participant),
-      ...(phone !== undefined ? { identity: toE164(phone), identity_type: 'phone' } : {}),
+      // communities `PlatformEventParticipant`: the phone in digits, without `+`.
+      ...(phone !== undefined ? { identity: digits(phone), identity_type: 'phone' } : {}),
       ...(participant.name !== undefined || b.name !== undefined ? { name: participant.name ?? b.name } : {}),
     },
   });
@@ -207,7 +225,7 @@ const ROUTES: Route[] = [
       const entry = catalogEntry(type as string);
       if (!entry) throw notFound(`${type} no está en el catálogo. Mirá GET /_sandbox/events.`);
       if (!entry.subscribable) throw fieldError('type', `${type} no se puede suscribir: usá POST /api/v1/webhooks/{id}/test.`);
-      const data = deepMerge(entry.example.data, obj(req.body).data);
+      const data = deepMerge(emittedData(entry), obj(req.body).data);
       return { status: 202, body: { event: emitted(app.webhooks.emit(entry.type, data)), data } };
     },
   },
@@ -259,13 +277,16 @@ const ROUTES: Route[] = [
     pattern: /^\/_sandbox\/failures$/,
     handle: (app, req) => {
       const b = obj(req.body);
-      const mode = b.mode === 'reject' ? 'reject' : b.mode === 'fail' || b.mode === undefined ? 'fail' : null;
-      if (!mode) throw fieldError('mode', 'mode tiene que ser reject (el envío responde un error) o fail (se acepta y termina failed).');
-      const code = parseForced(mode, b.code ?? (mode === 'fail' ? true : undefined), 'code');
+      const mode = b.mode === 'reject' || b.mode === 'edge' ? b.mode : b.mode === 'fail' || b.mode === undefined ? 'fail' : null;
+      if (!mode) {
+        throw fieldError('mode', 'mode tiene que ser reject (el envío responde un error), fail (se acepta y termina failed) o edge (la próxima llamada recibe un error de la entrada de la API).');
+      }
+      const code = mode === 'edge' ? parseEdge(b.code, 'code') : parseForced(mode, b.code ?? (mode === 'fail' ? true : undefined), 'code');
       const count = b.count === undefined ? 1 : Number(b.count);
       if (!Number.isInteger(count) || count < 1) throw fieldError('count', 'count tiene que ser un entero mayor que 0.');
-      const contactId = b.contact_id === undefined || b.contact_id === null ? null : contactOf(app, b.contact_id).id;
-      const failure = { id: app.store.ids.failure.next(), mode, code, remaining: count, contactId } as const;
+      const contactId = mode === 'edge' || b.contact_id === undefined || b.contact_id === null ? null : contactOf(app, b.contact_id).id;
+      const failure: ArmedFailure = { id: app.store.ids.failure.next(), mode, code, remaining: count, contactId };
+      if (mode === 'edge') failure.applied = code === 'origin_unreachable' && b.applied === true;
       app.store.failures.push({ ...failure });
       return { status: 201, body: { failure } };
     },
@@ -281,7 +302,35 @@ const ROUTES: Route[] = [
   {
     method: 'GET',
     pattern: /^\/_sandbox\/failures\/codes$/,
-    handle: () => ({ status: 200, body: { reject: Object.keys(REJECTIONS), fail: { reasons: Object.keys(FAILURE_REASONS), meta: 'cualquier código numérico de Meta, por ejemplo 131047' } } }),
+    handle: () => ({
+      status: 200,
+      body: {
+        reject: Object.keys(REJECTIONS),
+        fail: { reasons: Object.keys(FAILURE_REASONS), meta: 'cualquier código numérico de Meta, por ejemplo 131047' },
+        edge: Object.keys(EDGE_ERRORS),
+      },
+    }),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/_sandbox\/forms\/complete$/,
+    handle: (app, req) => ({ status: 200, body: completeForm(app, obj(req.body)) }),
+  },
+  { method: 'GET', pattern: /^\/_sandbox\/mac$/, handle: (app) => ({ status: 200, body: macState(app) }) },
+  {
+    method: 'POST',
+    pattern: /^\/_sandbox\/mac$/,
+    handle: (app, req) => {
+      const b = obj(req.body);
+      const { mac } = app.store;
+      if (b.lockout !== undefined) {
+        if (typeof b.lockout !== 'boolean') throw fieldError('lockout', 'lockout tiene que ser true o false.');
+        mac.lockout = b.lockout;
+      }
+      if (b.active_contact_ids !== undefined) mac.activeContacts = new Set(idsOf(b.active_contact_ids, 'active_contact_ids', app));
+      if (b.inactive_contact_ids !== undefined) mac.inactiveContacts = new Set(idsOf(b.inactive_contact_ids, 'inactive_contact_ids', app));
+      return { status: 200, body: macState(app) };
+    },
   },
   {
     method: 'POST',

@@ -1,16 +1,27 @@
 /**
  * Sending, the history and the message lookup (conversations domain), and the templates.
  *
- * PENDING OF THE SPEC: with an API key, every send that registers messages answers `200` right away with the queued
- * message (`{message: {...}}`, `{messages: [...]}` for cards, `message` in each forward item) — conversations
- * feat/envio-devuelve-id @ d3ac33994, NOT merged. The snapshot still documents `204` / the old bodies.
+ * As conversations v1.18.10 answers them in production: with an API key, every send that registers messages answers
+ * `200` right away with the queued message (`{message: {...}}`, `{messages: [...]}` for cards, `message` in each
+ * forward item; `ApiKeySendResponse`, `PublicMessageResource`), after the rules of each route, in their order.
  */
 import type { SandboxApp } from '../app.js';
 import { body, listContext, noContent, ok, type HandlerContext, type HandlerResult, type HandlerTable } from '../http/context.js';
-import { ApiError, fieldError, notFound } from '../http/errors.js';
+import { ApiError, fieldError, notFound, objectNotFound, RawApiError } from '../http/errors.js';
 import { cursorPaginate, paginate } from '../http/paginate.js';
+import { resolveFile, type UnsupportedStyle } from '../messaging/files.js';
 import { createMessage, scheduleLifecycle } from '../messaging/lifecycle.js';
-import { checkSend, contentHash, failureFor, recordSend, rejection, takeForcedFailure, type SendCheck, type SendProfile } from '../messaging/rules.js';
+import {
+  checkSend,
+  contentHash,
+  failureFor,
+  macRejection,
+  recordSend,
+  rejection,
+  takeForcedFailure,
+  type SendCheck,
+  type SendProfile,
+} from '../messaging/rules.js';
 import { deviceResource, historyMessage, publicMessage, templateResource } from '../state/resources.js';
 import type { Contact, Device, Message, Template } from '../state/store.js';
 import { getContact } from './contacts.js';
@@ -22,13 +33,16 @@ export function getDevice(app: SandboxApp, id: unknown, field = 'device_id'): De
   return device;
 }
 
-function fileType(file: string | null): string {
-  if (!file) return 'text';
-  const ext = file.split('?')[0]?.split('.').pop()?.toLowerCase() ?? '';
-  if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) return 'image';
-  if (['mp4', 'mov', '3gp', 'webm'].includes(ext)) return 'video';
-  if (['mp3', 'ogg', 'opus', 'aac', 'm4a', 'amr', 'wav'].includes(ext)) return 'audio';
-  return 'document';
+/** `ClientReference::rules()`: optional, 1 to 64 visible ASCII characters, no spaces. */
+const CLIENT_REFERENCE = /^[\x21-\x7E]{1,64}$/;
+
+export function clientReference(b: Record<string, unknown>): string | null {
+  const value = b.client_reference;
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string') throw fieldError('client_reference', 'El campo client_reference debe ser una cadena de caracteres.');
+  if (value.length > 64) throw fieldError('client_reference', 'El campo client_reference no debe tener más de 64 caracteres.');
+  if (!CLIENT_REFERENCE.test(value)) throw fieldError('client_reference', 'El formato del campo client_reference no es válido.');
+  return value;
 }
 
 interface Outgoing {
@@ -39,11 +53,23 @@ interface Outgoing {
   hash: string;
 }
 
+export interface SendInput {
+  device: Device;
+  contact: Contact;
+  profile: SendProfile;
+  items: Outgoing[];
+  phone?: unknown;
+  whatsappId?: unknown;
+  clientReference: string | null;
+  /** Whether the MAC gate applies: every free-form send with a key; templates do not have it. */
+  mac: boolean;
+}
+
 /**
- * The common path of every send with an API key: forced failures, the rules, then one queued message per item
- * with its lifecycle. Notes skip all that: they are stored, never sent.
+ * The common path of every send with an API key: forced failures, the rules, the MAC gate, then one queued
+ * message per item with its lifecycle. Notes skip all that: they are stored, never sent.
  */
-function send(ctx: HandlerContext, input: { device: Device; contact: Contact; profile: SendProfile; items: Outgoing[]; phone?: unknown; whatsappId?: unknown; clientReference: unknown }): Message[] {
+export function send(ctx: HandlerContext, input: SendInput): Message[] {
   const { app } = ctx;
   const check: SendCheck = {
     device: input.device,
@@ -55,11 +81,10 @@ function send(ctx: HandlerContext, input: { device: Device; contact: Contact; pr
   };
   const forced = takeForcedFailure(app, ctx.headers, input.contact.id);
   if (forced?.mode === 'reject') throw rejection(forced.code);
-  const refused = checkSend(app, check);
+  const refused = checkSend(app, check) ?? (input.mac ? macRejection(app, input.contact) : null);
   if (refused) throw refused;
   recordSend(app, check);
 
-  const clientReference = input.clientReference === undefined || input.clientReference === null || input.clientReference === '' ? null : String(input.clientReference);
   return input.items.map((item) => {
     const message = createMessage(app, {
       contactId: input.contact.id,
@@ -68,7 +93,7 @@ function send(ctx: HandlerContext, input: { device: Device; contact: Contact; pr
       type: item.type,
       text: item.text,
       file: item.file,
-      clientReference,
+      clientReference: input.clientReference,
       templateId: item.templateId ?? null,
       viaApi: true,
       status: 'queued',
@@ -78,38 +103,45 @@ function send(ctx: HandlerContext, input: { device: Device; contact: Contact; pr
   });
 }
 
-function note(ctx: HandlerContext, contact: Contact, device: Device, text: unknown, clientReference: unknown): HandlerResult {
+function note(ctx: HandlerContext, contact: Contact, device: Device, text: unknown, reference: string | null): HandlerResult {
   const message = createMessage(ctx.app, {
     contactId: contact.id,
     deviceId: device.id,
     own: true,
     type: 'note',
     text: text === undefined || text === null ? null : String(text),
-    clientReference: clientReference ? String(clientReference) : null,
+    clientReference: reference,
     viaApi: true,
     status: null,
   });
   return ok({ message: publicMessage(message) });
 }
 
-/** Text, a file or a menu (`options`) to one contact. */
-function sendToContact(ctx: HandlerContext, contact: Contact): HandlerResult {
+/**
+ * Text, a file (by URL, with `file_type` / `file_name`) or a menu (`options`) to one contact. `style` is the route:
+ * `conversation` (`contacts/{contact}/message`, which checks the body's recipient) or `direct` (`send-message`).
+ */
+function sendToContact(ctx: HandlerContext, contact: Contact, style: UnsupportedStyle): HandlerResult {
   const b = body(ctx);
+  const reference = clientReference(b);
+  const options = Array.isArray(b.options) ? b.options : null;
+  if (b.note === true && options) throw new RawApiError(422, { error: 'A note cannot carry interactive options.' });
+  const file = resolveFile(b, style);
   const device = getDevice(ctx.app, b.device_id);
-  if (b.note === true) return note(ctx, contact, device, b.text, b.client_reference);
-  const file = typeof b.file === 'string' && b.file !== '' ? b.file : null;
+  if (b.note === true) return note(ctx, contact, device, b.text, reference);
   const text = typeof b.text === 'string' && b.text !== '' ? b.text : null;
   if (!text && !file) throw fieldError('text', 'El campo text es obligatorio cuando file no está presente.');
-  const options = Array.isArray(b.options) ? b.options : null;
-  const type = options ? 'interactive' : fileType(file);
+  const type = options ? 'interactive' : (file?.type ?? 'text');
   const [message] = send(ctx, {
     device,
     contact,
     profile: 'free_form',
-    items: [{ type, text, file, hash: contentHash('message', text, file, options) }],
-    phone: b.phone,
-    whatsappId: b.whatsapp_id,
-    clientReference: b.client_reference,
+    items: [{ type, text, file: file?.file ?? null, hash: contentHash('message', text, file?.file ?? null, options) }],
+    // `recipient_mismatch` only exists on the routes with the recipient in the body (`ApiRecipientBinding`).
+    phone: style === 'conversation' ? b.phone : undefined,
+    whatsappId: style === 'conversation' ? b.whatsapp_id : undefined,
+    clientReference: reference,
+    mac: true,
   });
   return ok({ message: publicMessage(message as Message) });
 }
@@ -120,9 +152,13 @@ function renderTemplate(template: Template, variables: unknown): string {
   const values = Array.isArray(variables) ? variables : [];
   const missing = [...template.body.matchAll(PLACEHOLDER)].map((m) => Number(m[1])).filter((n) => values[n - 1] === undefined || values[n - 1] === null || values[n - 1] === '');
   if (missing.length) {
-    throw new ApiError(422, 'template_unresolved_placeholder', 'La plantilla tiene variables sin completar: mandá un valor para cada una en template_variables.body, en orden.', {
-      placeholders: [...new Set(missing)].map((n) => `{{${n}}}`),
-    });
+    const placeholders = [...new Set(missing)].map((n) => `{{${n}}}`);
+    throw new ApiError(
+      422,
+      'template_unresolved_placeholder',
+      'No se envió: la plantilla tiene variables que se completan con campos personalizados que no existen en tu cuenta. Revisa las variables de la plantilla.',
+      { placeholders: placeholders.slice(0, 20), count: placeholders.length },
+    );
   }
   return template.body.replace(PLACEHOLDER, (_, n: string) => String(values[Number(n) - 1]));
 }
@@ -133,41 +169,56 @@ function getTemplate(app: SandboxApp, id: unknown): Template {
   return template;
 }
 
+function sendTemplate(ctx: HandlerContext): HandlerResult {
+  const b = body(ctx);
+  const reference = clientReference(b);
+  // `template_not_found` goes before everything else (`MessageTemplateController`).
+  const template = ctx.app.store.templates.get(Number(ctx.path.template_id ?? ctx.path.template));
+  if (!template) throw new ApiError(404, 'template_not_found', 'No se envió: la plantilla no existe en tu cuenta. Revisa el identificador de la plantilla.');
+  const device = ctx.app.store.devices.get(Number(ctx.path.device));
+  // A number outside the account is refused by `ApiKeySendAcceptor`.
+  if (!device) throw rejection('device_unavailable');
+  if (template.deviceId !== device.id) throw new RawApiError(422, { error: 'La plantilla no pertenece al número actual', error_code: 'template_waba_mismatch' });
+  if (template.status !== 'APPROVED') throw fieldError('template', `La plantilla está ${template.status}: solo se envían plantillas aprobadas.`);
+  const contact = ctx.app.store.contacts.get(Number(b.contact_id));
+  if (!contact) throw new RawApiError(404, { error: 'Contact not found' });
+  if (!device.connected) throw rejection('device_unavailable');
+  const variables = (b.template_variables as { body?: unknown } | undefined)?.body;
+  const check = checkSend(ctx.app, { device, contact, profile: 'template', phone: b.phone, contentHashes: [] });
+  if (check?.code === 'recipient_mismatch') throw check;
+  const text = renderTemplate(template, variables);
+  const [message] = send(ctx, {
+    device,
+    contact,
+    profile: 'template',
+    items: [{ type: 'template', text, file: template.file, templateId: template.id, hash: contentHash('template', template.id, variables) }],
+    phone: b.phone,
+    clientReference: reference,
+    mac: false,
+  });
+  return ok({ message: publicMessage(message as Message) });
+}
+
 export const messageHandlers: HandlerTable = {
-  'POST /api/v1/contacts/{contact}/message': (ctx) => sendToContact(ctx, getContact(ctx.app, ctx.path.contact)),
+  'POST /api/v1/contacts/{contact}/message': (ctx) => sendToContact(ctx, getContact(ctx.app, ctx.path.contact), 'conversation'),
 
   'POST /api/v1/message/send-message': (ctx) => {
     const b = body(ctx);
-    const device = ctx.app.store.devices.get(Number(b.device_id));
-    // `send-message` answers 403 for a number outside the account (conversations).
-    if (!device) throw new ApiError(403, 'forbidden', 'El número no pertenece a esta cuenta.');
-    return sendToContact(ctx, getContact(ctx.app, b.contact_id));
+    const contact = ctx.app.store.contacts.get(Number(b.contact_id));
+    // `MessageController`: its own bodies, `{status: "error", error}`.
+    if (!contact) throw new RawApiError(404, { status: 'error', error: 'Contacto no encontrado.' });
+    if (!ctx.app.store.devices.has(Number(b.device_id))) throw new RawApiError(403, { status: 'error', error: 'No autorizado' });
+    return sendToContact(ctx, contact, 'direct');
   },
 
-  'POST /api/v1/devices/{device}/templates/{template}/send-template': (ctx) => {
-    const b = body(ctx);
-    const device = ctx.app.store.devices.get(Number(ctx.path.device));
-    if (!device) throw new ApiError(403, 'forbidden', 'El número no pertenece a esta cuenta.');
-    const template = getTemplate(ctx.app, ctx.path.template);
-    if (template.deviceId !== device.id) throw notFound('La plantilla no es de este número.');
-    if (template.status !== 'APPROVED') throw fieldError('template', `La plantilla está ${template.status}: solo se envían plantillas aprobadas.`);
-    const contact = getContact(ctx.app, b.contact_id);
-    const variables = (b.template_variables as { body?: unknown } | undefined)?.body;
-    const text = renderTemplate(template, variables);
-    const [message] = send(ctx, {
-      device,
-      contact,
-      profile: 'template',
-      items: [{ type: 'template', text, file: template.file, templateId: template.id, hash: contentHash('template', template.id, variables) }],
-      phone: b.phone,
-      clientReference: b.client_reference,
-    });
-    return ok({ message: publicMessage(message as Message) });
-  },
+  // The spec of the portal names the parameter `{template}`; conversations, `{template_id}`. Same URL.
+  'POST /api/v1/devices/{device}/templates/{template}/send-template': sendTemplate,
+  'POST /api/v1/devices/{device}/templates/{template_id}/send-template': sendTemplate,
 
   'POST /api/v1/contacts/{contact}/message/contact-card': (ctx) => {
     const contact = getContact(ctx.app, ctx.path.contact);
     const b = body(ctx);
+    const reference = clientReference(b);
     const device = getDevice(ctx.app, b.device_id);
     const ids = (b.contact_card_ids as number[] | undefined) ?? [];
     const cards = ids.map((id, i) => {
@@ -180,7 +231,8 @@ export const messageHandlers: HandlerTable = {
       contact,
       profile: 'free_form',
       items: cards.map((card) => ({ type: 'contact', text: card.name, file: null, hash: contentHash('card', card.id) })),
-      clientReference: b.client_reference,
+      clientReference: reference,
+      mac: true,
     });
     return ok({ messages: messages.map(publicMessage) });
   },
@@ -188,27 +240,32 @@ export const messageHandlers: HandlerTable = {
   'POST /api/v1/contacts/{contact}/messages/{message}/forward': (ctx) => {
     const origin = getContact(ctx.app, ctx.path.contact);
     const source = ctx.app.store.messages.get(Number(ctx.path.message));
-    if (!source || source.contactId !== origin.id) throw notFound('El mensaje no existe en esta conversación.');
+    if (!source || source.contactId !== origin.id) throw objectNotFound();
     const b = body(ctx);
+    const reference = clientReference(b);
     const targets = (b.targets as { contact_id: number; device_id: number }[] | undefined) ?? [];
     const resolved = targets.map((t, i) => {
       const contact = ctx.app.store.contacts.get(Number(t.contact_id));
       if (!contact) throw fieldError(`targets.${i}.contact_id`, `El valor seleccionado en targets.${i}.contact_id no es válido.`);
       return { contact, device: getDevice(ctx.app, t.device_id, `targets.${i}.device_id`) };
     });
-    // Every destination passes the rules before anything is registered.
+    // Every destination passes the rules before anything is registered: the forward is all or nothing.
     for (const { contact, device } of resolved) {
       const refused = checkSend(ctx.app, { device, contact, profile: 'free_form', contentHashes: [contentHash('forward', source.id)] });
       if (refused) throw refused;
     }
     return ok(
       resolved.map(({ contact, device }) => {
+        // The MAC lockout is not a 429 here: that destination comes back `blocked` (`ForwardMessageAction`).
+        const mac = macRejection(ctx.app, contact);
+        if (mac) return { contact_id: contact.id, mode: 'native', status: 'blocked', reason: mac.code, message: null };
         const [message] = send(ctx, {
           device,
           contact,
           profile: 'free_form',
           items: [{ type: source.type, text: source.text, file: source.file, hash: contentHash('forward', source.id) }],
-          clientReference: b.client_reference,
+          clientReference: reference,
+          mac: false,
         });
         return { contact_id: contact.id, mode: 'native', status: 'queued', reason: null, message: publicMessage(message as Message) };
       }),
@@ -218,7 +275,7 @@ export const messageHandlers: HandlerTable = {
   'PUT /api/v1/contacts/{contact}/messages/{message}/reaction': (ctx) => {
     const contact = getContact(ctx.app, ctx.path.contact);
     const message = ctx.app.store.messages.get(Number(ctx.path.message));
-    if (!message || message.contactId !== contact.id) throw notFound('El mensaje no existe en esta conversación.');
+    if (!message || message.contactId !== contact.id) throw objectNotFound();
     message.reactions = [...message.reactions.filter((r) => !r.own), { emoji: String(body(ctx).emoji), own: true }];
     return { status: 202 };
   },
@@ -226,13 +283,14 @@ export const messageHandlers: HandlerTable = {
   'DELETE /api/v1/contacts/{contact}/messages/{message}/reaction': (ctx) => {
     const contact = getContact(ctx.app, ctx.path.contact);
     const message = ctx.app.store.messages.get(Number(ctx.path.message));
-    if (!message || message.contactId !== contact.id) throw notFound('El mensaje no existe en esta conversación.');
+    if (!message || message.contactId !== contact.id) throw objectNotFound();
     message.reactions = message.reactions.filter((r) => !r.own);
     return { status: 202 };
   },
 
   'GET /api/v1/contacts/{contactId}/messages': (ctx) => {
-    const contact = getContact(ctx.app, ctx.path.contactId);
+    const contact = ctx.app.store.contacts.get(Number(ctx.path.contactId));
+    if (!contact) throw new RawApiError(404, { message: 'Contacto no encontrado.' });
     const since = ctx.query.updated_since ? new Date(String(ctx.query.updated_since)) : null;
     const list = ctx.app.store
       .contactMessages(contact.id)
@@ -241,11 +299,11 @@ export const messageHandlers: HandlerTable = {
     return ok(cursorPaginate(list, listContext(ctx), (m) => historyMessage(ctx.app.store, m)));
   },
 
-  // PENDING OF THE SPEC (conversations feat/envio-devuelve-id): one message by id.
+  // One message by id (`ShowMessageController`): every refusal is the same 404.
   'GET /api/v1/contacts/{contact}/messages/{message}': (ctx) => {
-    const contact = getContact(ctx.app, ctx.path.contact);
+    const contact = ctx.app.store.contacts.get(Number(ctx.path.contact));
     const message = ctx.app.store.messages.get(Number(ctx.path.message));
-    if (!message || message.contactId !== contact.id) throw notFound('El mensaje no existe en esta conversación.');
+    if (!contact || !message || message.contactId !== contact.id) throw objectNotFound();
     return ok(publicMessage(message));
   },
 
@@ -339,15 +397,13 @@ export const messageHandlers: HandlerTable = {
 
   // --- numbers (accounts) -----------------------------------------------------------------------------------
 
-  'GET /api/v1/devices': (ctx) => {
-    const list = [...ctx.app.store.devices.values()];
-    if (ctx.query.perPage !== undefined || ctx.query.per_page !== undefined) return ok(paginate(list, listContext(ctx), deviceResource));
-    return ok(list.map(deviceResource));
-  },
+  // With an API key the list always paginates (accounts `PublicApiListings`: `perPage`, 25 by default, up to 100, by id).
+  'GET /api/v1/devices': (ctx) => ok(paginate([...ctx.app.store.devices.values()].sort((a, b) => a.id - b.id), listContext(ctx), deviceResource)),
 
   'GET /api/v1/devices/{device}': (ctx) => {
     const device = ctx.app.store.devices.get(Number(ctx.path.device));
-    if (!device) throw notFound('El número no existe en esta cuenta.');
+    // accounts `bootstrap/app.php`: the 404 of a model, in English and without `error`.
+    if (!device) throw new RawApiError(404, { message: 'Object not found' });
     return ok(deviceResource(device));
   },
 };

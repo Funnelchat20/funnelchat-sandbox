@@ -1,85 +1,231 @@
 {
   "x-fc-pending": {
     "title": "Pendiente de la especificación: lo que suma el sandbox",
-    "description": "Lo que el sandbox imita y que ni la instantánea (spec/funnelchat.json) ni la capa pendiente del SDK de Node (spec/pending.json) traen todavía. scripts/generate.mjs lo aplica después de spec/pending.json y solo mientras la instantánea no lo tenga: cuando una instantánea nueva lo trae, avisa qué entradas se pueden borrar.",
+    "description": "Lo que el sandbox imita y que la instantánea del portal (spec/funnelchat.json, del 15-10) ni la capa pendiente del SDK de Node (spec/pending.json) traen todavía. Casi todo ya está en producción desde el 21-10; falta en la instantánea. scripts/generate.mjs lo aplica después de spec/pending.json y solo mientras la instantánea no lo tenga: cuando una instantánea nueva lo trae, avisa qué entradas se pueden borrar.",
     "rules": {
       "paths": "Una operación (método + ruta) se agrega solo si la instantánea no la tiene.",
       "responsePatches": "Un parche reemplaza respuestas de una operación de la instantánea solo mientras esa operación cumple la condición de `while`.",
       "webhookPatches": "Un parche fija propiedades de `data` de un evento (esquema y ejemplo) mientras el evento cumple `while`, o mientras su `data` no trae `whileMissing`.",
-      "components.schemas": "Los esquemas de esta capa empiezan con `PendingSandbox` para no chocar con los de la instantánea ni con los de spec/pending.json."
+      "components.schemas": "Los esquemas de esta capa empiezan con `PendingSandbox` para no chocar con los de la instantánea ni con los de spec/pending.json.",
+      "operationPatches": "Un parche suma propiedades al cuerpo de una operación de la instantánea mientras esa operación cumple `while` (si lo tiene)."
     },
     "sources": {
-      "conversations-send-queued": "conversations feat/envio-devuelve-id @ d3ac33994 (2026-10-16 02:52 -03:00), leída como rama local el 16-10: no tiene push ni PR todavía. SIN MERGEAR. Change de OpenSpec `api-send-queued-with-message-id` (specs/api-send-result, api-message-lookup, message-status-webhook-event) y back/app/Modules/Message/Http/Resources/PublicMessageResource.php: con clave, el envío responde 200 al instante con el mensaje en cola, `{message: {id, contact_id, device_id, direction, type, status: \"queued\", error, client_reference, created_at, updated_at}}`; la consulta por id GET /api/v1/contacts/{contact}/messages/{message}; y `error` con la clave `reason`. La rama todavía está en desarrollo (Inc 1 de varios): la forma puede cambiar antes del merge.",
-      "conversations-received-device": "conversations feat/armar-funnelchat-f1 @ eadef46c (PR #2284, SIN MERGEAR): `device_id` en `data` de message.received (back/app/Modules/Webhook/Payloads/MessageReceivedPayload.php). Es el mismo parche que funnelchat-php (spec/pending.json, webhookPatches) y que src/pending/events.ts de funnelchat-node."
+      "conversations-send-queued": "conversations v1.18.10 (a580a3d00, en producción): `ApiKeySendResponse`, `PublicMessageResource`, `ShowMessageController` y `AcceptedSendFailure`. Con clave, el envío responde 200 al instante con el mensaje en cola, `{message: {id, contact_id, device_id, direction, type, status: \"queued\", error, client_reference, created_at, updated_at}}`; la consulta por id GET /api/v1/contacts/{contact}/messages/{message}; y `error` con la clave `reason`.",
+      "conversations-received-device": "conversations v1.18.10 (en producción): `device_id` en `data` de message.received (`MessageReceivedPayload`).",
+      "conversations-file-by-url": "conversations v1.18.10 (en producción): `SendFileType` — `file` por URL (firmada o sin extensión) con `file_type` y `file_name` opcionales, en POST contacts/{contact}/message y POST message/send-message.",
+      "conversations-forms": "conversations v1.18.10 (en producción): `routes/api/whatsapp-forms.php`, `WhatsappFormController`, `WhatsappFormSendController`, `SendWhatsappFormRequest`. Las rutas de formularios abiertas a claves (`config/platform-gate.php`) y el envío de un formulario a un contacto. El portal no las documenta todavía: su `config/borde.json` no tiene el prefijo `forms`.",
+      "communities-group-actions": "communities v2.34.52 (6f32f0b4, en producción): `GroupManagement/routes.php`. Las acciones de grupo y las solicitudes de unión por API existen pero están apagadas (`API_GROUP_ACTIONS_ENABLED`, por defecto false): fuera del catálogo del portero, una clave recibe 403 route_not_available."
     }
   },
   "components": {
     "schemas": {
       "PendingSandboxMessageError": {
         "type": "object",
-        "description": "Por qué falló un mensaje. `code` y `title` son los del proveedor (por ejemplo Meta); `reason` solo viene cuando lo frenó Funnelchat después de aceptarlo, y entonces `title` es un texto llano. Pendiente de la especificación (conversations feat/envio-devuelve-id, sin mergear).",
+        "description": "Por qué falló un mensaje. `code` y `title` son los del proveedor (por ejemplo Meta); `reason` solo viene cuando lo frenó Funnelchat después de aceptarlo, y entonces `title` es un texto llano.",
         "properties": {
-          "code": { "type": ["integer", "null"] },
-          "title": { "type": ["string", "null"] },
+          "code": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "reason": {
-            "type": ["string", "null"],
-            "enum": ["device_unavailable", "insufficient_balance", "window_closed", "recipient_unreachable", "template_not_found", "template_unresolved_placeholder", "not_queued", "not_sent", null]
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "device_unavailable",
+              "insufficient_balance",
+              "window_closed",
+              "recipient_unreachable",
+              "template_not_found",
+              "template_unresolved_placeholder",
+              "not_queued",
+              "not_sent",
+              null
+            ]
           }
         },
-        "required": ["code", "title", "reason"]
+        "required": [
+          "code",
+          "title",
+          "reason"
+        ]
       },
       "PendingSandboxMessage": {
         "type": "object",
-        "description": "El objeto público de un mensaje: las mismas diez claves en la respuesta del envío y en la consulta por id. Pendiente de la especificación (conversations feat/envio-devuelve-id, sin mergear).",
+        "description": "El objeto público de un mensaje: las mismas diez claves en la respuesta del envío y en la consulta por id.",
         "properties": {
-          "id": { "type": "integer", "description": "El mismo id del historial y de `message.status_changed`." },
-          "contact_id": { "type": ["integer", "null"] },
-          "device_id": { "type": ["integer", "null"] },
-          "direction": { "type": "string", "enum": ["inbound", "outbound"] },
-          "type": { "type": "string", "description": "`text`, `image`, `document`, `template`, `contact`, `note`…" },
+          "id": {
+            "type": "integer",
+            "description": "El mismo id del historial y de `message.status_changed`."
+          },
+          "contact_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "device_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "inbound",
+              "outbound"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "description": "`text`, `image`, `document`, `template`, `contact`, `note`…"
+          },
           "status": {
-            "type": ["string", "null"],
-            "enum": ["queued", "sent", "delivered", "read", "failed", null],
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "queued",
+              "sent",
+              "delivered",
+              "read",
+              "failed",
+              null
+            ],
             "description": "`queued` al aceptarlo: en cola no es enviado. Después, el vocabulario de `message.status_changed`, o `null` si no se sabe si salió."
           },
           "error": {
-            "anyOf": [{ "$ref": "#/components/schemas/PendingSandboxMessageError" }, { "type": "null" }],
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingSandboxMessageError"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "description": "Solo cuando `status` es `failed`."
           },
-          "client_reference": { "type": ["string", "null"] },
-          "created_at": { "type": ["string", "null"], "format": "date-time" },
-          "updated_at": { "type": ["string", "null"], "format": "date-time" }
+          "client_reference": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
         },
-        "required": ["id", "contact_id", "device_id", "direction", "type", "status", "error", "client_reference", "created_at", "updated_at"]
+        "required": [
+          "id",
+          "contact_id",
+          "device_id",
+          "direction",
+          "type",
+          "status",
+          "error",
+          "client_reference",
+          "created_at",
+          "updated_at"
+        ]
       },
       "PendingSandboxSendResponse": {
         "type": "object",
-        "description": "Respuesta de un envío aceptado con clave: el mensaje en cola. Pendiente de la especificación (conversations feat/envio-devuelve-id, sin mergear).",
-        "properties": { "message": { "$ref": "#/components/schemas/PendingSandboxMessage" } },
-        "required": ["message"]
+        "description": "Respuesta de un envío aceptado con clave: el mensaje en cola.",
+        "properties": {
+          "message": {
+            "$ref": "#/components/schemas/PendingSandboxMessage"
+          }
+        },
+        "required": [
+          "message"
+        ]
       },
       "PendingSandboxContactCardResponse": {
         "type": "object",
-        "description": "Un mensaje en cola por tarjeta, en el orden de `contact_card_ids`. Pendiente de la especificación (conversations feat/envio-devuelve-id, sin mergear).",
-        "properties": { "messages": { "type": "array", "items": { "$ref": "#/components/schemas/PendingSandboxMessage" } } },
-        "required": ["messages"]
+        "description": "Un mensaje en cola por tarjeta, en el orden de `contact_card_ids`.",
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PendingSandboxMessage"
+            }
+          }
+        },
+        "required": [
+          "messages"
+        ]
       },
       "PendingSandboxForwardResult": {
         "type": "object",
-        "description": "Un destino del reenvío, con el mensaje registrado para él (o `null` si quedó bloqueado). Pendiente de la especificación (conversations feat/envio-devuelve-id, sin mergear).",
+        "description": "Un destino del reenvío, con el mensaje registrado para él (o `null` si quedó bloqueado).",
         "properties": {
-          "contact_id": { "type": "integer" },
-          "mode": { "type": "string" },
-          "status": { "type": "string" },
-          "reason": { "type": ["string", "null"] },
-          "message": { "anyOf": [{ "$ref": "#/components/schemas/PendingSandboxMessage" }, { "type": "null" }] }
+          "contact_id": {
+            "type": "integer"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingSandboxMessage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
         },
-        "required": ["contact_id", "mode", "status", "reason", "message"]
+        "required": [
+          "contact_id",
+          "mode",
+          "status",
+          "reason",
+          "message"
+        ]
       },
       "PendingSandboxNotFound": {
         "type": "object",
-        "properties": { "message": { "type": "string" } },
-        "required": ["message"]
+        "description": "El 404 de conversations: solo `message`, «Objeto no encontrado.».",
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ]
       }
     }
   },
@@ -88,23 +234,1669 @@
       "get": {
         "operationId": "pendingSandboxMessage.show",
         "summary": "Ver un mensaje por su id",
-        "description": "El estado actual de un mensaje: `queued` mientras un envío con clave espera su turno; después `sent`, `delivered`, `read` o `failed`, o `null` si no se sabe si salió. En cola no es enviado: el estado final llega por `message.status_changed` o por esta consulta.\n\n**Pendiente de la especificación** (conversations feat/envio-devuelve-id, sin mergear).",
-        "tags": ["Message"],
+        "description": "El estado actual de un mensaje: `queued` mientras un envío con clave espera su turno; después `sent`, `delivered`, `read` o `failed`, o `null` si no se sabe si salió. En cola no es enviado: el estado final llega por `message.status_changed` o por esta consulta.\n\n**Pendiente de la especificación**: está en producción (conversations v1.18.10), falta en la instantánea del portal.",
+        "tags": [
+          "Message"
+        ],
         "x-fc-domain": "conversations",
         "x-fc-permission": "conversations:read",
         "x-fc-pending": "conversations-send-queued",
         "parameters": [
-          { "name": "contact", "in": "path", "required": true, "schema": { "type": "integer" } },
-          { "name": "message", "in": "path", "required": true, "schema": { "type": "integer" } }
+          {
+            "name": "contact",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "message",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
         ],
         "responses": {
           "200": {
             "description": "OK",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PendingSandboxMessage" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingSandboxMessage"
+                }
+              }
+            }
           },
           "404": {
             "description": "El contacto o el mensaje no existen en la cuenta",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PendingSandboxNotFound" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingSandboxNotFound"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/forms/templates": {
+      "get": {
+        "operationId": "pendingSandboxForms.templates",
+        "summary": "Plantillas para armar un formulario",
+        "description": "Los puntos de partida de `POST /forms` (`template_key`).\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "WhatsappForm"
+        ],
+        "x-fc-domain": "conversations",
+        "x-fc-permission": "conversations:read",
+        "x-fc-pending": "conversations-forms",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/forms": {
+      "get": {
+        "operationId": "pendingSandboxForms.index",
+        "summary": "Listar los formularios",
+        "description": "Un formulario por fila (su versión vigente, o la más nueva), paginado. Filtros `q`, `status` y `device_id`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "WhatsappForm"
+        ],
+        "x-fc-domain": "conversations",
+        "x-fc-permission": "conversations:read",
+        "x-fc-pending": "conversations-forms",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "published",
+                "deprecated"
+              ]
+            }
+          },
+          {
+            "name": "device_id",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "pendingSandboxForms.store",
+        "summary": "Crear un formulario",
+        "description": "Crea un borrador desde una plantilla, en un número oficial (`device_id`) y, opcional, en otros (`device_ids`). Responde `201` con `data`, `lint` y `numbers`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "WhatsappForm"
+        ],
+        "x-fc-domain": "conversations",
+        "x-fc-permission": "conversations:write",
+        "x-fc-pending": "conversations-forms",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "device_id": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "device_ids": {
+                    "type": "array",
+                    "maxItems": 50,
+                    "items": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "template_key": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "device_id",
+                  "template_key"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Creado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/forms/{id}": {
+      "get": {
+        "operationId": "pendingSandboxForms.show",
+        "summary": "Ver una versión de un formulario",
+        "description": "La versión con su definición, `lint`, `versions` y `numbers`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "WhatsappForm"
+        ],
+        "x-fc-domain": "conversations",
+        "x-fc-permission": "conversations:read",
+        "x-fc-pending": "conversations-forms",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No existe en la cuenta",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingSandboxNotFound"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "pendingSandboxForms.update",
+        "summary": "Editar un borrador",
+        "description": "Guarda `definition` (y opcional `name`). Un formulario publicado responde `409 PUBLISHED`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "WhatsappForm"
+        ],
+        "x-fc-domain": "conversations",
+        "x-fc-permission": "conversations:write",
+        "x-fc-pending": "conversations-forms",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "definition": {
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "definition"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No existe en la cuenta",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingSandboxNotFound"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "pendingSandboxForms.destroy",
+        "summary": "Borrar un borrador",
+        "description": "`204`. Un formulario publicado responde `409 PUBLISHED`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "WhatsappForm"
+        ],
+        "x-fc-domain": "conversations",
+        "x-fc-permission": "conversations:write",
+        "x-fc-pending": "conversations-forms",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Borrado"
+          },
+          "404": {
+            "description": "No existe en la cuenta",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingSandboxNotFound"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/forms/{id}/versions": {
+      "post": {
+        "operationId": "pendingSandboxForms.versions.store",
+        "summary": "Crear una versión nueva",
+        "description": "Nace como borrador (`201`), o `200` con `created: false` si ya había uno.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "WhatsappForm"
+        ],
+        "x-fc-domain": "conversations",
+        "x-fc-permission": "conversations:write",
+        "x-fc-pending": "conversations-forms",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No existe en la cuenta",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingSandboxNotFound"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/forms/{id}/sync": {
+      "post": {
+        "operationId": "pendingSandboxForms.sync",
+        "summary": "Validar en Meta",
+        "description": "Corre el linter y sube el formulario a Meta, sin publicar.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "WhatsappForm"
+        ],
+        "x-fc-domain": "conversations",
+        "x-fc-permission": "conversations:write",
+        "x-fc-pending": "conversations-forms",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No existe en la cuenta",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingSandboxNotFound"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/forms/{id}/publish": {
+      "post": {
+        "operationId": "pendingSandboxForms.publish",
+        "summary": "Publicar",
+        "description": "Valida y publica en el número principal; los otros números se publican en segundo plano.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "WhatsappForm"
+        ],
+        "x-fc-domain": "conversations",
+        "x-fc-permission": "conversations:write",
+        "x-fc-pending": "conversations-forms",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No existe en la cuenta",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingSandboxNotFound"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/forms/{id}/numbers": {
+      "get": {
+        "operationId": "pendingSandboxForms.numbers",
+        "summary": "Los números del formulario",
+        "description": "`{numbers: [{device_id, primary, status, error}]}`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "WhatsappForm"
+        ],
+        "x-fc-domain": "conversations",
+        "x-fc-permission": "conversations:read",
+        "x-fc-pending": "conversations-forms",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "pendingSandboxForms.numbers.store",
+        "summary": "Sumar un número",
+        "description": "Publica el formulario en otro número oficial.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "WhatsappForm"
+        ],
+        "x-fc-domain": "conversations",
+        "x-fc-permission": "conversations:write",
+        "x-fc-pending": "conversations-forms",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "device_id": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "device_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/forms/{id}/numbers/{deviceId}": {
+      "delete": {
+        "operationId": "pendingSandboxForms.numbers.destroy",
+        "summary": "Quitar un número",
+        "description": "El número principal no se quita: `422 PRIMARY_NUMBER`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "WhatsappForm"
+        ],
+        "x-fc-domain": "conversations",
+        "x-fc-permission": "conversations:write",
+        "x-fc-pending": "conversations-forms",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "deviceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/forms/{id}/numbers/retry": {
+      "post": {
+        "operationId": "pendingSandboxForms.numbers.retry",
+        "summary": "Reintentar los números que fallaron",
+        "description": "\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "WhatsappForm"
+        ],
+        "x-fc-domain": "conversations",
+        "x-fc-permission": "conversations:write",
+        "x-fc-pending": "conversations-forms",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/forms/families/{familyId}/definition": {
+      "get": {
+        "operationId": "pendingSandboxForms.families.definition",
+        "summary": "La definición publicada vigente",
+        "description": "\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "WhatsappForm"
+        ],
+        "x-fc-domain": "conversations",
+        "x-fc-permission": "conversations:read",
+        "x-fc-pending": "conversations-forms",
+        "parameters": [
+          {
+            "name": "familyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/forms/families/{familyId}/versions": {
+      "get": {
+        "operationId": "pendingSandboxForms.families.versions",
+        "summary": "Las versiones",
+        "description": "\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "WhatsappForm"
+        ],
+        "x-fc-domain": "conversations",
+        "x-fc-permission": "conversations:read",
+        "x-fc-pending": "conversations-forms",
+        "parameters": [
+          {
+            "name": "familyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/forms/families/{familyId}/responses": {
+      "get": {
+        "operationId": "pendingSandboxForms.families.responses",
+        "summary": "Las respuestas",
+        "description": "\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "WhatsappForm"
+        ],
+        "x-fc-domain": "conversations",
+        "x-fc-permission": "conversations:read",
+        "x-fc-pending": "conversations-forms",
+        "parameters": [
+          {
+            "name": "familyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "version_id",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/forms/families/{familyId}/responses/{runId}": {
+      "get": {
+        "operationId": "pendingSandboxForms.families.response",
+        "summary": "Una respuesta",
+        "description": "\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "WhatsappForm"
+        ],
+        "x-fc-domain": "conversations",
+        "x-fc-permission": "conversations:read",
+        "x-fc-pending": "conversations-forms",
+        "parameters": [
+          {
+            "name": "familyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/contacts/{contact}/message/form": {
+      "post": {
+        "operationId": "pendingSandboxForms.send",
+        "summary": "Enviar un formulario a un contacto",
+        "description": "Solo por números oficiales y con la ventana de 24 horas abierta. Responde `200` con el mensaje en cola (`type: \"whatsapp_form\"`).\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "Message"
+        ],
+        "x-fc-domain": "conversations",
+        "x-fc-permission": "conversations:send",
+        "x-fc-pending": "conversations-forms",
+        "parameters": [
+          {
+            "name": "contact",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "form_id": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "device_id": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  },
+                  "button_text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 30
+                  },
+                  "client_reference": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 64
+                  }
+                },
+                "required": [
+                  "form_id",
+                  "device_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "El formulario quedó en cola.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingSandboxSendResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No existe en la cuenta",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingSandboxNotFound"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/groups/actions/{action}": {
+      "get": {
+        "operationId": "pendingSandboxGroupActions.groups.actions.action.get",
+        "summary": "Acción de grupo por API (apagada)",
+        "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "GroupActions"
+        ],
+        "x-fc-domain": "communities",
+        "x-fc-permission": "communities:operate",
+        "x-fc-pending": "communities-group-actions",
+        "parameters": [
+          {
+            "name": "action",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "const": "route_not_available"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/groups": {
+      "post": {
+        "operationId": "pendingSandboxGroupActions.groups.post",
+        "summary": "Acción de grupo por API (apagada)",
+        "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "GroupActions"
+        ],
+        "x-fc-domain": "communities",
+        "x-fc-permission": "communities:operate",
+        "x-fc-pending": "communities-group-actions",
+        "responses": {
+          "403": {
+            "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "const": "route_not_available"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/groups/{group}/participants": {
+      "post": {
+        "operationId": "pendingSandboxGroupActions.groups.group.participants.post",
+        "summary": "Acción de grupo por API (apagada)",
+        "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "GroupActions"
+        ],
+        "x-fc-domain": "communities",
+        "x-fc-permission": "communities:operate",
+        "x-fc-pending": "communities-group-actions",
+        "parameters": [
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "const": "route_not_available"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/groups/{group}/participants/remove": {
+      "post": {
+        "operationId": "pendingSandboxGroupActions.groups.group.participants.remove.post",
+        "summary": "Acción de grupo por API (apagada)",
+        "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "GroupActions"
+        ],
+        "x-fc-domain": "communities",
+        "x-fc-permission": "communities:operate",
+        "x-fc-pending": "communities-group-actions",
+        "parameters": [
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "const": "route_not_available"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/groups/{group}/admins": {
+      "post": {
+        "operationId": "pendingSandboxGroupActions.groups.group.admins.post",
+        "summary": "Acción de grupo por API (apagada)",
+        "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "GroupActions"
+        ],
+        "x-fc-domain": "communities",
+        "x-fc-permission": "communities:operate",
+        "x-fc-pending": "communities-group-actions",
+        "parameters": [
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "const": "route_not_available"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/groups/{group}/admins/remove": {
+      "post": {
+        "operationId": "pendingSandboxGroupActions.groups.group.admins.remove.post",
+        "summary": "Acción de grupo por API (apagada)",
+        "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "GroupActions"
+        ],
+        "x-fc-domain": "communities",
+        "x-fc-permission": "communities:operate",
+        "x-fc-pending": "communities-group-actions",
+        "parameters": [
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "const": "route_not_available"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/groups/{group}/name": {
+      "put": {
+        "operationId": "pendingSandboxGroupActions.groups.group.name.put",
+        "summary": "Acción de grupo por API (apagada)",
+        "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "GroupActions"
+        ],
+        "x-fc-domain": "communities",
+        "x-fc-permission": "communities:operate",
+        "x-fc-pending": "communities-group-actions",
+        "parameters": [
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "const": "route_not_available"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/groups/{group}/description": {
+      "put": {
+        "operationId": "pendingSandboxGroupActions.groups.group.description.put",
+        "summary": "Acción de grupo por API (apagada)",
+        "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "GroupActions"
+        ],
+        "x-fc-domain": "communities",
+        "x-fc-permission": "communities:operate",
+        "x-fc-pending": "communities-group-actions",
+        "parameters": [
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "const": "route_not_available"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/groups/{group}/photo": {
+      "put": {
+        "operationId": "pendingSandboxGroupActions.groups.group.photo.put",
+        "summary": "Acción de grupo por API (apagada)",
+        "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "GroupActions"
+        ],
+        "x-fc-domain": "communities",
+        "x-fc-permission": "communities:operate",
+        "x-fc-pending": "communities-group-actions",
+        "parameters": [
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "const": "route_not_available"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/groups/{group}/settings": {
+      "put": {
+        "operationId": "pendingSandboxGroupActions.groups.group.settings.put",
+        "summary": "Acción de grupo por API (apagada)",
+        "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "GroupActions"
+        ],
+        "x-fc-domain": "communities",
+        "x-fc-permission": "communities:operate",
+        "x-fc-pending": "communities-group-actions",
+        "parameters": [
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "const": "route_not_available"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/groups/{group}/invite-link/renew": {
+      "post": {
+        "operationId": "pendingSandboxGroupActions.groups.group.invite-link.renew.post",
+        "summary": "Acción de grupo por API (apagada)",
+        "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "GroupActions"
+        ],
+        "x-fc-domain": "communities",
+        "x-fc-permission": "communities:operate",
+        "x-fc-pending": "communities-group-actions",
+        "parameters": [
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "const": "route_not_available"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/groups/{group}/messages": {
+      "post": {
+        "operationId": "pendingSandboxGroupActions.groups.group.messages.post",
+        "summary": "Acción de grupo por API (apagada)",
+        "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "GroupActions"
+        ],
+        "x-fc-domain": "communities",
+        "x-fc-permission": "communities:operate",
+        "x-fc-pending": "communities-group-actions",
+        "parameters": [
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "const": "route_not_available"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/groups/{group}/invite-link/live": {
+      "get": {
+        "operationId": "pendingSandboxGroupActions.groups.group.invite-link.live.get",
+        "summary": "Acción de grupo por API (apagada)",
+        "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "GroupActions"
+        ],
+        "x-fc-domain": "communities",
+        "x-fc-permission": "communities:operate",
+        "x-fc-pending": "communities-group-actions",
+        "parameters": [
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "const": "route_not_available"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/groups/{group}/join-requests": {
+      "get": {
+        "operationId": "pendingSandboxGroupActions.groups.group.join-requests.get",
+        "summary": "Acción de grupo por API (apagada)",
+        "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "GroupActions"
+        ],
+        "x-fc-domain": "communities",
+        "x-fc-permission": "communities:operate",
+        "x-fc-pending": "communities-group-actions",
+        "parameters": [
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "const": "route_not_available"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/groups/{group}/join-requests/approve": {
+      "post": {
+        "operationId": "pendingSandboxGroupActions.groups.group.join-requests.approve.post",
+        "summary": "Acción de grupo por API (apagada)",
+        "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "GroupActions"
+        ],
+        "x-fc-domain": "communities",
+        "x-fc-permission": "communities:operate",
+        "x-fc-pending": "communities-group-actions",
+        "parameters": [
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "const": "route_not_available"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/groups/{group}/join-requests/reject": {
+      "post": {
+        "operationId": "pendingSandboxGroupActions.groups.group.join-requests.reject.post",
+        "summary": "Acción de grupo por API (apagada)",
+        "description": "Existe en communities pero está apagada en producción: cualquier clave recibe `403 route_not_available`.\n\n**Pendiente de la especificación**: está en producción, falta en la instantánea del portal.",
+        "tags": [
+          "GroupActions"
+        ],
+        "x-fc-domain": "communities",
+        "x-fc-permission": "communities:operate",
+        "x-fc-pending": "communities-group-actions",
+        "parameters": [
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "route_not_available: las acciones de grupo por API están apagadas en producción.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "const": "route_not_available"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -114,64 +1906,111 @@
     {
       "method": "post",
       "path": "/api/v1/contacts/{contact}/message",
-      "while": { "x-portal-v0": "send_pending" },
+      "while": {
+        "x-portal-v0": "send_pending"
+      },
       "x-fc-pending": "conversations-send-queued",
-      "removeResponses": ["204"],
+      "removeResponses": [
+        "204"
+      ],
       "responses": {
         "200": {
-          "description": "El mensaje quedó en cola. Pendiente de la especificación: hoy, con sesión del panel, responde 204.",
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PendingSandboxSendResponse" } } }
+          "description": "El mensaje quedó en cola.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PendingSandboxSendResponse"
+              }
+            }
+          }
         }
       }
     },
     {
       "method": "post",
       "path": "/api/v1/message/send-message",
-      "while": { "x-portal-v0": "send_pending" },
+      "while": {
+        "x-portal-v0": "send_pending"
+      },
       "x-fc-pending": "conversations-send-queued",
       "responses": {
         "200": {
           "description": "El mensaje quedó en cola.",
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PendingSandboxSendResponse" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PendingSandboxSendResponse"
+              }
+            }
+          }
         }
       }
     },
     {
       "method": "post",
       "path": "/api/v1/devices/{device}/templates/{template}/send-template",
-      "while": { "x-portal-v0": "send_pending" },
+      "while": {
+        "x-portal-v0": "send_pending"
+      },
       "x-fc-pending": "conversations-send-queued",
-      "removeResponses": ["502"],
+      "removeResponses": [
+        "502"
+      ],
       "responses": {
         "200": {
           "description": "La plantilla quedó en cola.",
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PendingSandboxSendResponse" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PendingSandboxSendResponse"
+              }
+            }
+          }
         }
       }
     },
     {
       "method": "post",
       "path": "/api/v1/contacts/{contact}/message/contact-card",
-      "while": { "x-portal-v0": "send_pending" },
+      "while": {
+        "x-portal-v0": "send_pending"
+      },
       "x-fc-pending": "conversations-send-queued",
-      "removeResponses": ["204"],
+      "removeResponses": [
+        "204"
+      ],
       "responses": {
         "200": {
           "description": "Un mensaje en cola por tarjeta.",
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PendingSandboxContactCardResponse" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PendingSandboxContactCardResponse"
+              }
+            }
+          }
         }
       }
     },
     {
       "method": "post",
       "path": "/api/v1/contacts/{contact}/messages/{message}/forward",
-      "while": { "x-portal-v0": "send_pending" },
+      "while": {
+        "x-portal-v0": "send_pending"
+      },
       "x-fc-pending": "conversations-send-queued",
       "responses": {
         "200": {
           "description": "Un ítem por destino, con su mensaje en cola.",
           "content": {
-            "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PendingSandboxForwardResult" } } }
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PendingSandboxForwardResult"
+                }
+              }
+            }
           }
         }
       }
@@ -184,29 +2023,63 @@
       "x-fc-pending": "conversations-received-device",
       "dataProperties": {
         "device_id": {
-          "type": ["integer", "null"],
-          "description": "El número de tu cuenta que recibió el mensaje: el mismo `device_id` con el que respondés por ese número. `null` si el mensaje no tiene número. Pendiente de la especificación (conversations PR #2284, sin mergear)."
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "El número de tu cuenta que recibió el mensaje: el mismo `device_id` con el que respondés por ese número. `null` si el mensaje no tiene número."
         }
       },
-      "exampleData": { "device_id": 4521 }
+      "exampleData": {
+        "device_id": 4521
+      }
     },
     {
       "type": "message.status_changed",
-      "while": { "x-fc-pending": "conversations-c1" },
+      "while": {
+        "x-fc-pending": "conversations-c1"
+      },
       "x-fc-pending": "conversations-send-queued",
       "dataProperties": {
         "error": {
           "type": "object",
           "description": "Solo cuando `status` es `failed`. `reason` es nueva: solo trae un valor cuando Funnelchat frenó un mensaje aceptado con clave.",
           "properties": {
-            "code": { "type": ["integer", "null"] },
-            "title": { "type": ["string", "null"] },
+            "code": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "title": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "reason": {
-              "type": ["string", "null"],
-              "enum": ["device_unavailable", "insufficient_balance", "window_closed", "recipient_unreachable", "template_not_found", "template_unresolved_placeholder", "not_queued", "not_sent", null]
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "device_unavailable",
+                "insufficient_balance",
+                "window_closed",
+                "recipient_unreachable",
+                "template_not_found",
+                "template_unresolved_placeholder",
+                "not_queued",
+                "not_sent",
+                null
+              ]
             }
           },
-          "required": ["code", "title", "reason"]
+          "required": [
+            "code",
+            "title",
+            "reason"
+          ]
         }
       },
       "example": {
@@ -220,9 +2093,77 @@
           "device_id": 4521,
           "status": "failed",
           "previous_status": "sent",
-          "error": { "code": 131047, "title": "Re-engagement message", "reason": null },
+          "error": {
+            "code": 131047,
+            "title": "Re-engagement message",
+            "reason": null
+          },
           "occurred_at": "2026-10-01T12:00:00Z",
           "client_reference": "pedido-1001"
+        }
+      }
+    }
+  ],
+  "operationPatches": [
+    {
+      "method": "post",
+      "path": "/api/v1/contacts/{contact}/message",
+      "x-fc-pending": "conversations-file-by-url",
+      "requestBodyProperties": {
+        "file_type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "image",
+            "video",
+            "audio",
+            "document",
+            "sticker",
+            null
+          ],
+          "description": "El tipo del archivo, cuando la URL no lo dice. Siempre gana a la extensión."
+        },
+        "file_name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 255,
+          "description": "El nombre con extensión de un documento cuya URL no la tiene (por ejemplo factura.pdf)."
+        }
+      }
+    },
+    {
+      "method": "post",
+      "path": "/api/v1/message/send-message",
+      "x-fc-pending": "conversations-file-by-url",
+      "requestBodyProperties": {
+        "file_type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "image",
+            "video",
+            "audio",
+            "document",
+            "sticker",
+            null
+          ],
+          "description": "El tipo del archivo, cuando la URL no lo dice. Siempre gana a la extensión."
+        },
+        "file_name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 255,
+          "description": "El nombre con extensión de un documento cuya URL no la tiene (por ejemplo factura.pdf)."
         }
       }
     }

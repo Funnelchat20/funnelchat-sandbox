@@ -149,9 +149,51 @@ export interface Delivery {
   nextAttemptAt: Date | null;
 }
 
+/** One version of a WhatsApp form (conversations `whatsapp_forms`); its family is the stable form. */
+export interface FormVersion {
+  id: number;
+  familyId: number;
+  /** Unique per number; a new version is `<label>__v<n>`. */
+  name: string;
+  category: string;
+  status: 'draft' | 'published';
+  version: number;
+  definition: Record<string, unknown>;
+  /** The number it was created with (`primary`). */
+  deviceId: number;
+  /** The other numbers (`whatsapp_form_copies`). */
+  copies: Map<number, { status: 'draft' | 'publishing' | 'published' | 'failed'; error: string | null }>;
+  metaFlowId: string | null;
+  publishedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface FormFamily {
+  id: number;
+  /** The published version a send uses. */
+  currentVersionId: number | null;
+}
+
+/** One send of a form to a contact, and its answers (conversations `whatsapp_form_runs`). */
+export interface FormRun {
+  id: number;
+  familyId: number;
+  versionId: number;
+  contactId: number;
+  deviceId: number;
+  messageId: number;
+  status: 'pending' | 'completed';
+  answers: Record<string, unknown> | null;
+  sentAt: Date;
+  respondedAt: Date | null;
+}
+
 export interface RequestLogEntry {
   id: number;
   at: Date;
+  /** The `X-Request-Id` of the answer. */
+  requestId: string;
   method: string;
   path: string;
   status: number;
@@ -164,11 +206,16 @@ export interface RequestLogEntry {
 /** A failure armed with `POST /_sandbox/failures` or the `X-Sandbox-*` headers. */
 export interface ArmedFailure {
   id: number;
-  /** `reject`: the send answers an error right away. `fail`: it is accepted and then ends `failed`. */
-  mode: 'reject' | 'fail';
+  /**
+   * `reject`: the send answers an error right away. `fail`: it is accepted and then ends `failed`. `edge`: the next
+   * API call (any route) gets an error of the edge.
+   */
+  mode: 'reject' | 'fail' | 'edge';
   code: string;
   remaining: number;
   contactId: number | null;
+  /** `edge` only: the call reached the domain and was applied; only the answer was lost. */
+  applied?: boolean;
 }
 
 class Sequence {
@@ -195,6 +242,9 @@ export class Store {
   deliveries: Delivery[] = [];
   requests: RequestLogEntry[] = [];
   failures: ArmedFailure[] = [];
+  forms = new Map<number, FormVersion>();
+  formFamilies = new Map<number, FormFamily>();
+  formRuns = new Map<number, FormRun>();
 
   /** Last inbound message per `contactId:deviceId`: the 24-hour window. */
   lastInbound = new Map<string, Date>();
@@ -202,6 +252,9 @@ export class Store {
   unanswered = new Map<number, { at: Date; hash: string }[]>();
   /** Recent API-key sends per number and per `deviceId:contactId`: the pace. */
   pace = new Map<string, number[]>();
+
+  /** The MAC state of the account (`POST /_sandbox/mac`): the 24-hour lockout, and contacts active or inactive in the cycle. */
+  mac = { lockout: false, activeContacts: new Set<number>(), inactiveContacts: new Set<number>() };
 
   /** Salt of the deterministic event ids: new on every reset, so ids never repeat across sessions. */
   eventSalt = randomBytes(16).toString('hex');
@@ -216,6 +269,9 @@ export class Store {
     request: new Sequence(1),
     failure: new Sequence(1),
     note: new Sequence(1),
+    formFamily: new Sequence(8001),
+    formVersion: new Sequence(8101),
+    formRun: new Sequence(1),
   };
 
   constructor(readonly historyLimit = 200) {}

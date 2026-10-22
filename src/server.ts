@@ -6,15 +6,19 @@
  * path, query and body (`404` / `422 validation_failed`) → the stateful handler, or the example of the response
  * schema for the routes without state.
  */
+import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { SandboxApp, type Logger } from './app.js';
 import { defaultConfig, mergeConfig, type ConfigInput, type SandboxConfig } from './config.js';
 import { contactHandlers } from './handlers/contacts.js';
+import { formHandlers } from './handlers/forms.js';
+import { GATE_CLOSED, groupHandlers } from './handlers/groups.js';
 import { messageHandlers } from './handlers/messages.js';
 import { webhookHandlers } from './handlers/webhooks.js';
 import type { HandlerResult, HandlerTable } from './http/context.js';
-import { ApiError, methodNotAllowed, notFound, routeNotFound, unauthenticated, validationFailed } from './http/errors.js';
+import { takeEdgeFailure } from './http/edge.js';
+import { ApiError, edgeError, methodNotAllowed, notFound, routeNotAvailable, routeNotFound, unauthenticated, validationFailed } from './http/errors.js';
 import { parseQuery } from './http/query.js';
 import { exampleFor } from './openapi/example.js';
 import { matchRoute, requestBodySchema, spec, successResponse } from './openapi/spec.js';
@@ -28,7 +32,7 @@ const MAX_BODY_BYTES = 1024 * 1024;
 /** `Authorization: Bearer <id>|fc_live_...`: any well-formed key is accepted. */
 const API_KEY = /^Bearer\s+(\d+)\|fc_live_[A-Za-z0-9]+$/;
 
-const handlers: HandlerTable = { ...contactHandlers, ...messageHandlers, ...webhookHandlers };
+const handlers: HandlerTable = { ...contactHandlers, ...messageHandlers, ...formHandlers, ...groupHandlers, ...webhookHandlers };
 
 class BodyError extends ApiError {}
 
@@ -61,8 +65,14 @@ function lowerHeaders(req: IncomingMessage): Record<string, string | undefined> 
   return out;
 }
 
-function send(res: ServerResponse, result: { status: number; body?: unknown; headers?: Record<string, string> }): void {
-  const headers: Record<string, string> = { 'X-Funnelchat-Sandbox': VERSION, ...result.headers };
+/**
+ * `X-Request-Id`: a fresh UUID v4 on every answer, errors included, like api-edge v0.3.0 and platform-gate 0.8. Only
+ * in the header, never in the body; one the client sends is ignored.
+ */
+export const REQUEST_ID_HEADER = 'X-Request-Id';
+
+function send(res: ServerResponse, requestId: string, result: { status: number; body?: unknown; headers?: Record<string, string> }): void {
+  const headers: Record<string, string> = { 'X-Funnelchat-Sandbox': VERSION, ...result.headers, [REQUEST_ID_HEADER]: requestId };
   if (result.status === 204 || result.body === undefined) {
     res.writeHead(result.status, headers);
     res.end();
@@ -113,12 +123,36 @@ export function createSandbox(options: CreateSandboxOptions = {}): Sandbox {
     const method = (req.method ?? 'GET').toUpperCase();
     const { match, allowed } = matchRoute(method, url.pathname);
     let requestBody: unknown;
+    // A forced error of the edge: it answers before the domain, or (`applied`) after the domain did the work.
+    let edge: ReturnType<typeof takeEdgeFailure>;
+    try {
+      edge = takeEdgeFailure(app, headers);
+    } catch (error) {
+      return { result: errorResult(error), operation: match?.op.key ?? null, requestBody };
+    }
+    if (edge && !edge.applied) return { result: errorResult(edgeError(edge.code)), operation: match?.op.key ?? null, requestBody };
+    const answer = await handleRoute(req, url, headers, method, match, allowed);
+    if (edge) return { ...answer, result: errorResult(edgeError(edge.code)) };
+    return answer;
+  }
+
+  async function handleRoute(
+    req: IncomingMessage,
+    url: URL,
+    headers: Record<string, string | undefined>,
+    method: string,
+    match: ReturnType<typeof matchRoute>['match'],
+    allowed: string[],
+  ): Promise<{ result: HandlerResult; operation: string | null; requestBody: unknown }> {
+    let requestBody: unknown;
     if (!match) {
       return { result: errorResult(allowed.length ? methodNotAllowed(method, allowed) : routeNotFound()), operation: null, requestBody };
     }
     const { op } = match;
     try {
       if (!API_KEY.test(headers.authorization?.trim() ?? '')) throw unauthenticated();
+      // A route no key enables: the gate answers before the domain validates anything.
+      if (GATE_CLOSED.has(`${op.method.toUpperCase()} ${op.path}`)) throw routeNotAvailable();
       requestBody = parseBody(await readBody(req), headers['content-type']);
       const validation = validateRequest(op.operation, match.params, parseQuery(url.searchParams), requestBody, requestBodySchema(op.operation));
       if (!validation.ok) {
@@ -148,6 +182,7 @@ export function createSandbox(options: CreateSandboxOptions = {}): Sandbox {
 
   async function onRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const started = Date.now();
+    const requestId = randomUUID();
     const url = new URL(req.url ?? '/', 'http://sandbox.local');
     const headers = lowerHeaders(req);
     const method = (req.method ?? 'GET').toUpperCase();
@@ -155,27 +190,27 @@ export function createSandbox(options: CreateSandboxOptions = {}): Sandbox {
     if (url.pathname === '/_sandbox' || url.pathname.startsWith('/_sandbox/')) {
       try {
         if (method === 'GET' && url.pathname === '/_sandbox/openapi.json') {
-          send(res, { status: 200, body: spec });
+          send(res, requestId, { status: 200, body: spec });
           return;
         }
         const body = method === 'GET' ? undefined : parseBody(await readBody(req), headers['content-type']);
         const answer = await handleSandbox(app, { method, path: url.pathname.replace(/\/+$/, '') || '/_sandbox', query: url.searchParams, body });
         if (!answer) {
-          send(res, errorResult(new ApiError(404, 'route_not_found', 'Esa ruta del sandbox no existe. El panel está en /_sandbox.')));
+          send(res, requestId, errorResult(new ApiError(404, 'route_not_found', 'Esa ruta del sandbox no existe. El panel está en /_sandbox.')));
         } else if (answer.html !== undefined) {
-          res.writeHead(answer.status, { 'Content-Type': 'text/html; charset=utf-8', 'X-Funnelchat-Sandbox': VERSION });
+          res.writeHead(answer.status, { 'Content-Type': 'text/html; charset=utf-8', 'X-Funnelchat-Sandbox': VERSION, [REQUEST_ID_HEADER]: requestId });
           res.end(answer.html);
         } else {
-          send(res, answer);
+          send(res, requestId, answer);
         }
       } catch (error) {
-        send(res, errorResult(error));
+        send(res, requestId, errorResult(error));
       }
       return;
     }
 
     if (url.pathname === '/' && method === 'GET') {
-      send(res, {
+      send(res, requestId, {
         status: 200,
         body: { name: 'funnelchat-sandbox', version: VERSION, api: '/api/v1', panel: '/_sandbox', spec: '/_sandbox/openapi.json' },
       });
@@ -183,10 +218,11 @@ export function createSandbox(options: CreateSandboxOptions = {}): Sandbox {
     }
 
     const { result, operation, requestBody } = await handleApi(req, url, headers);
-    send(res, result);
+    send(res, requestId, result);
     const durationMs = Date.now() - started;
     app.store.logRequest({
       at: new Date(started),
+      requestId,
       method,
       path: `${url.pathname}${url.search}`,
       status: result.status,
@@ -200,7 +236,7 @@ export function createSandbox(options: CreateSandboxOptions = {}): Sandbox {
 
   const server = createServer((req, res) => {
     onRequest(req, res).catch((error: unknown) => {
-      if (!res.headersSent) send(res, errorResult(error));
+      if (!res.headersSent) send(res, randomUUID(), errorResult(error));
       else res.end();
     });
   });

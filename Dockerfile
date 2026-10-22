@@ -6,6 +6,7 @@ RUN npm ci
 COPY tsconfig.json tsup.config.ts ./
 COPY src ./src
 COPY generated ./generated
+COPY spec/catalog.json ./spec/catalog.json
 RUN npm run build
 
 FROM node:20-alpine

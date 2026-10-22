@@ -23,7 +23,7 @@ describe('the API key', () => {
     const api = await startSandbox();
     const res = await api.call('GET', '/api/v1/devices', undefined, { Authorization: 'Bearer 987|fc_live_cualquierCosa123' });
     expect(res.status).toBe(200);
-    expect(res.body.map((d: { id: number; provider: number }) => [d.id, d.provider])).toEqual([
+    expect(res.body.data.map((d: { id: number; provider: number }) => [d.id, d.provider])).toEqual([
       [3, 2],
       [4, 1],
     ]);
@@ -42,7 +42,7 @@ describe('routes', () => {
   it('a path parameter that does not fit is 404, like a model binding', async () => {
     const api = await startSandbox();
     expect((await api.call('GET', '/api/v1/contacts/abc')).status).toBe(404);
-    expect((await api.call('GET', '/api/v1/contacts/999999')).body.error).toBe('not_found');
+    expect((await api.call('GET', '/api/v1/contacts/999999')).body).toEqual({ message: 'Objeto no encontrado.' });
     expect((await api.call('GET', '/api/v1/webhooks/not-a-uuid')).status).toBe(404);
   });
 
@@ -160,13 +160,18 @@ describe('the rules of the real API', () => {
   it('rate_limited with Retry-After after 10 messages per minute to the same contact on an official number', async () => {
     const api = await startSandbox({ rules: { antiblock: false } });
     await api.call('POST', '/_sandbox/inbound/message', { contact_id: 2001, device_id: 3 });
+    // Per calendar minute: start away from its end, so the eleven sends fall in the same minute.
+    while (new Date().getSeconds() >= 57) await new Promise((r) => setTimeout(r, 200));
     for (let i = 0; i < 10; i++) {
       expect((await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 3, contact_id: 2001, text: `m${i}` })).status).toBe(200);
     }
     const res = await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 3, contact_id: 2001, text: 'once' });
     expect(res.status).toBe(429);
     expect(res.body.error).toBe('rate_limited');
-    expect(Number(res.headers.get('retry-after'))).toBeGreaterThan(50);
+    // What is left of the minute: max(1, 60 - now % 60).
+    const left = 60 - new Date().getSeconds();
+    expect(Number(res.headers.get('retry-after'))).toBeGreaterThanOrEqual(left - 1);
+    expect(Number(res.headers.get('retry-after'))).toBeLessThanOrEqual(Math.max(1, left));
     // A QR number has no pace.
     for (let i = 0; i < 12; i++) expect((await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 4, contact_id: 2001, text: `q${i}` })).status).toBe(200);
   });

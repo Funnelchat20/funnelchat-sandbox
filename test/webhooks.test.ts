@@ -74,7 +74,13 @@ describe('subscriptions', () => {
     const types = res.body.data.map((e: { type: string }) => e.type);
     expect(types).toEqual(expect.arrayContaining(['message.received', 'message.status_changed', 'contact.created', 'device.connected', 'group_participant.joined', 'webhook.test']));
     const status = res.body.data.find((e: { type: string }) => e.type === 'message.status_changed');
-    expect(status).toMatchObject({ area: 'conversations', status: 'planned', subscribable: true });
+    expect(status).toMatchObject({ area: 'conversations', status: 'active', subscribable: true });
+    // accounts v1.4.24: 54 types, 49 active, in the order of the catalog (accounts, conversations, communities).
+    expect(res.body.meta).toMatchObject({ total: 54, active: 49 });
+    expect(Object.keys(res.body.data[0])).toEqual(['type', 'area', 'status', 'is_critical', 'label', 'description', 'subscribable', 'example']);
+    expect(types.slice(0, 2)).toEqual(['device.disconnected', 'device.connected']);
+    expect(types).toEqual(expect.arrayContaining(['whatsapp_form.completed', 'group_action.completed', 'group.message_received', 'group.reaction_added', 'group_join_request.created']));
+    expect(res.body.data.find((e: { type: string }) => e.type === 'billing.plan_blocked')).toMatchObject({ status: 'planned', example: null });
     expect(res.body.data.find((e: { type: string }) => e.type === 'webhook.test')).toMatchObject({ subscribable: false });
   });
 });

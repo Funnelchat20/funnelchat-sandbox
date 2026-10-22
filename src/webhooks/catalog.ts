@@ -1,62 +1,66 @@
 /**
- * The event catalog, from the `webhooks` of the merged spec (the snapshot plus the pending layers). It answers
- * `GET /api/v1/webhooks/events` with the shape of accounts' unified catalog, decides which types a subscription
- * accepts, and gives the example `data` of each type for `POST /_sandbox/events/{type}`.
+ * The event catalog of accounts in production (spec/catalog.json, transcribed from accounts v1.4.24): it answers
+ * `GET /api/v1/webhooks/events` exactly as accounts does, decides which types a subscription accepts, and gives the
+ * `data` the sandbox emits by default for each type (`POST /_sandbox/events/{type}`).
+ *
+ * The `example` of the catalog is what accounts publishes. For two types it is not what communities emits, and the
+ * sandbox emits what communities emits (communities v2.34.52 `GroupMessageReceivedEventPublisher`,
+ * `GroupReactionAddedEventPublisher`): `message.uid` instead of `message.id`, and every key of the message. For the
+ * planned types accounts publishes `example: null`; the sandbox takes their `data` from the spec, if it has them.
  */
+import catalogFile from '../../spec/catalog.json' with { type: 'json' };
 import { exampleFor } from '../openapi/example.js';
 import { spec, type Schema } from '../openapi/spec.js';
 import { isRecord } from '../util.js';
 
+export interface Envelope {
+  id: string;
+  type: string;
+  version: number;
+  occurred_at: string;
+  data: unknown;
+}
+
 export interface CatalogEntry {
   type: string;
   area: string;
-  /** `active`: the real API emits it today. `planned`: you can subscribe, but the real API does not emit it yet. */
+  /** `active`: accounts accepts and delivers it. `planned`: you can subscribe, but nothing is emitted yet. */
   status: 'active' | 'planned';
   is_critical: boolean;
   label: string;
   description: string;
   subscribable: boolean;
-  /** Taken from a pending layer, not from the snapshot. */
-  pending: boolean;
-  example: { id: string; type: string; version: number; occurred_at: string; data: unknown };
+  example: Envelope | null;
 }
+
+const GROUP = { uid: '120363000000000000@g.us', name: 'Grupo de ejemplo' };
+const PARTICIPANT = { identity: '5491100000000', identity_type: 'phone', name: 'Ana Ejemplo' };
+
+/** What communities emits where the catalog's example differs. */
+const EMITTED: Record<string, Record<string, unknown>> = {
+  'group.message_received': {
+    group: GROUP,
+    message: { uid: 'msg-ejemplo-01', type: 'text', text: 'Hola a todos', caption: null, media_url: null, mime_type: null, file_name: null, quoted_uid: null },
+    participant: PARTICIPANT,
+  },
+  'group.reaction_added': { group: GROUP, message: { uid: 'msg-ejemplo-01' }, participant: PARTICIPANT, reaction: '👍' },
+};
 
 const eventTypeOfKey = (key: string): string => key.replace(/\s*\(.*\)\s*$/, '');
 
-const AREA_ORDER = ['accounts', 'conversations', 'communities'];
-
-function build(): CatalogEntry[] {
-  const byType = new Map<string, CatalogEntry>();
+/** `data` of a type from the spec's `webhooks`, when the catalog has no example. */
+function specData(type: string): unknown {
   for (const [key, item] of Object.entries(spec.webhooks ?? {})) {
-    const type = eventTypeOfKey(key);
-    const post = item.post;
-    if (!post || byType.has(type)) continue;
-    const content = post.requestBody?.content?.['application/json'];
-    const rawStatus = post['x-fc-status'];
-    const planned = rawStatus === 'planned' || (rawStatus === undefined && /planificad/i.test(post.summary ?? ''));
+    if (eventTypeOfKey(key) !== type) continue;
+    const content = item.post?.requestBody?.content?.['application/json'];
+    if (isRecord(content?.example) && 'data' in content.example) return content.example.data;
     const dataSchema = isRecord(content?.schema) ? ((content.schema as Schema).properties as Record<string, Schema> | undefined)?.data : undefined;
-    const example = isRecord(content?.example)
-      ? (content.example as CatalogEntry['example'])
-      : { id: 'evt_000000000000000000000000', type, version: 1, occurred_at: '2026-10-01T12:00:00Z', data: exampleFor(dataSchema) ?? {} };
-    const isTest = type === 'webhook.test';
-    byType.set(type, {
-      type,
-      area: isTest ? 'accounts' : String(post['x-fc-domain'] ?? 'accounts'),
-      status: planned ? 'planned' : 'active',
-      is_critical: false,
-      label: type,
-      description: String(post.description ?? '').split('\n')[0] ?? '',
-      subscribable: !isTest,
-      pending: Boolean(post['x-fc-pending']),
-      example,
-    });
+    if (dataSchema) return exampleFor(dataSchema);
   }
-  return [...byType.values()].sort(
-    (a, b) => AREA_ORDER.indexOf(a.area) - AREA_ORDER.indexOf(b.area) || a.type.localeCompare(b.type),
-  );
+  return {};
 }
 
-export const catalog: CatalogEntry[] = build();
+export const catalog: CatalogEntry[] = catalogFile.entries as CatalogEntry[];
 
 export function catalogEntry(type: string): CatalogEntry | undefined {
   return catalog.find((entry) => entry.type === type);
@@ -66,17 +70,19 @@ export function isSubscribable(type: string): boolean {
   return catalogEntry(type)?.subscribable === true;
 }
 
+/** The `data` the sandbox emits for a type when you send nothing: a copy, so callers may change it. */
+export function emittedData(entry: CatalogEntry): unknown {
+  return structuredClone(EMITTED[entry.type] ?? entry.example?.data ?? specData(entry.type));
+}
+
 /** The body of `GET /api/v1/webhooks/events` (accounts `WebhookEventCatalogController`). */
 export function catalogResponse(): Record<string, unknown> {
-  const data = catalog.map(({ pending: _pending, ...entry }) => entry);
   return {
-    data,
+    data: catalog,
     meta: {
-      total: data.length,
-      active: data.filter((e) => e.status === 'active').length,
-      envelope_version: 'v1',
-      signature_header: 'X-Funnelchat-Signature',
-      signature_format: 't=<unix>,v1=<hex hmac-sha256 de "<t>.<cuerpo crudo>" con el secreto del endpoint>',
+      total: catalog.length,
+      active: catalog.filter((e) => e.status === 'active').length,
+      ...catalogFile.meta,
     },
   };
 }

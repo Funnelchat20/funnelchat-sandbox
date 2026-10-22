@@ -1,9 +1,8 @@
 /**
- * The rules the real API applies to a send with an API key (contract 1014 C2; conversations `ApiSendGuard`,
- * `ApiRecipientBinding`, `ApiSendRateLimiter`, `AntiBlockGuardService` and `lang/es/public_api.php` on
- * feat/armar-funnelchat-f1 @ eadef46c, PR #2284, and feat/envio-devuelve-id @ d3ac33994 — both NOT merged), in
- * their order: number without connection → recipient → pace → 24-hour window → spam brakes. The first rejection
- * wins, nothing is stored and nothing is sent.
+ * The rules the real API applies to a send with an API key (conversations v1.18.10, in production: `ApiKeySendAcceptor`,
+ * `ApiRecipientBinding`, `ApiSendGuard`, `ApiSendRateLimiter`, `AntiBlockGuardService`, `MacService` and
+ * `lang/es/public_api.php`), in their order: number without connection → recipient → pace → 24-hour window → spam
+ * brakes → the MAC lockout. The first rejection wins, nothing is stored and nothing is sent.
  *
  * Also the failures you can force: `reject` answers one of those errors right away; `fail` accepts the message and
  * then ends it `failed`, with a reason of Funnelchat or a real error code of Meta.
@@ -44,18 +43,35 @@ export const REJECTIONS: Record<string, { status: number; message: string }> = {
     status: 422,
     message: 'No se envió: el número no está conectado con WhatsApp. Revisa la conexión del número en Funnelchat.',
   },
+  not_sent: {
+    status: 422,
+    message: 'No se envió el mensaje. Revisa el contacto y el número, y vuelve a intentarlo.',
+  },
+  recipient_unreachable: {
+    status: 422,
+    message: 'No se envió: el contacto no tiene un teléfono ni un identificador de WhatsApp al que este número pueda escribir.',
+  },
+  // The MAC (monthly active contacts) of the account: literal in ConversationController / MessageController, no Retry-After.
+  mac_lockout_24h: {
+    status: 429,
+    message: 'Tu cuenta está en bloqueo de 24h por agotamiento de MACs.',
+  },
+  mac_limit_reached: {
+    status: 429,
+    message: 'Agotaste tus MACs disponibles. El mensaje fue guardado pero no se pudo enviar.',
+  },
 };
 
-/** `error.reason` of a message Funnelchat accepted and then stopped, with a plain title (the sandbox's text). */
+/** `error.reason` of a message Funnelchat accepted and then stopped, with its title (`public_api.send_failure`, es). */
 export const FAILURE_REASONS: Record<string, string> = {
-  device_unavailable: 'El número no está conectado con WhatsApp.',
-  insufficient_balance: 'No hay saldo suficiente para enviar este mensaje por el número oficial.',
-  window_closed: 'Pasaron más de 24 horas desde el último mensaje del contacto: para escribirle hace falta una plantilla aprobada.',
+  device_unavailable: 'El número no estaba conectado con WhatsApp al momento de enviar.',
+  insufficient_balance: 'Saldo insuficiente en tu billetera de WhatsApp.',
+  window_closed: 'La ventana de 24 horas se cerró antes del envío: envía una plantilla.',
   recipient_unreachable: 'El contacto no tiene un teléfono al que este número pueda escribir.',
   template_not_found: 'La plantilla ya no existe.',
-  template_unresolved_placeholder: 'Una variable de la plantilla no se pudo completar.',
-  not_queued: 'El mensaje no se pudo poner en cola.',
-  not_sent: 'El mensaje no se envió.',
+  template_unresolved_placeholder: 'La plantilla tiene variables que no se pudieron completar.',
+  not_queued: 'No se pudo poner el mensaje en cola.',
+  not_sent: 'Funnelchat no pudo enviar el mensaje.',
 };
 
 /** Frequent error codes of the WhatsApp Cloud API, with the `title` Meta sends. */
@@ -113,14 +129,26 @@ export function takeForcedFailure(app: SandboxApp, headers: Record<string, strin
   if (reject) return { mode: 'reject', code: parseForced('reject', reject, 'X-Sandbox-Reject') };
   const fail = headers['x-sandbox-fail'];
   if (fail) return { mode: 'fail', code: parseForced('fail', fail, 'X-Sandbox-Fail') };
-  const armed = app.store.failures.find((f) => f.remaining > 0 && (f.contactId === null || f.contactId === contactId));
+  const armed = app.store.failures.find((f) => f.mode !== 'edge' && f.remaining > 0 && (f.contactId === null || f.contactId === contactId));
   if (!armed) return null;
   armed.remaining--;
   if (armed.remaining <= 0) app.store.failures = app.store.failures.filter((f) => f !== armed);
-  return { mode: armed.mode, code: armed.code };
+  return { mode: armed.mode as 'reject' | 'fail', code: armed.code };
 }
 
 export type SendProfile = 'free_form' | 'template';
+
+/**
+ * The MAC gate of `MacService::evaluateOutboundGate`: while the account is in its 24-hour lockout, a send to a
+ * contact that is not active in the cycle answers `429 mac_lockout_24h`; a contact marked inactive by MAC gets the
+ * same answer. Templates have no MAC gate with a key.
+ */
+export function macRejection(app: SandboxApp, contact: Contact): ApiError | null {
+  const { mac } = app.store;
+  if (mac.inactiveContacts.has(contact.id)) return rejection('mac_lockout_24h');
+  if (mac.lockout && !mac.activeContacts.has(contact.id)) return rejection('mac_lockout_24h');
+  return null;
+}
 
 export interface SendCheck {
   device: Device;
@@ -163,7 +191,7 @@ function bodyIdentifiesContact(contact: Contact, phone: unknown, whatsappId: unk
 
 const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
-/** Official numbers: up to 60 messages per second, and 10 per minute to the same contact (Meta's pair rate). */
+/** Official numbers (`config/send_guards.php`): up to 60 messages per second, and 10 per calendar minute to the same contact. */
 const CLOUD_PER_SECOND = 60;
 const CLOUD_PAIR_PER_MINUTE = 10;
 /** The brakes of `AntiBlockGuardService` for API keys, per contact in 24 hours. */
@@ -183,10 +211,11 @@ export function checkSend(app: SandboxApp, check: SendCheck, now = Date.now()): 
     const count = check.contentHashes.length;
     const second = (store.pace.get(`${device.id}`) ?? []).filter((t) => now - t < 1000);
     if (second.length + count > CLOUD_PER_SECOND) return rejection('rate_limited', 1);
-    const pair = (store.pace.get(`${device.id}:${contact.id}`) ?? []).filter((t) => now - t < MINUTE);
+    // Per calendar minute: `Retry-After` is what is left of it (`max(1, 60 - now % 60)`).
+    const minuteStart = now - (now % MINUTE);
+    const pair = (store.pace.get(`${device.id}:${contact.id}`) ?? []).filter((t) => t >= minuteStart);
     if (pair.length + count > CLOUD_PAIR_PER_MINUTE) {
-      const oldest = pair[Math.max(0, pair.length + count - CLOUD_PAIR_PER_MINUTE - 1)] ?? now;
-      return rejection('rate_limited', Math.max(1, Math.ceil((oldest + MINUTE - now) / 1000)));
+      return rejection('rate_limited', Math.max(1, 60 - Math.floor((now % MINUTE) / 1000)));
     }
   }
 

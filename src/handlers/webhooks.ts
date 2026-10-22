@@ -2,9 +2,8 @@
  * Webhook subscriptions: the unified subscriptions of accounts (`/api/v1/webhooks`), the same routes the SDKs and
  * the n8n trigger use.
  *
- * PENDING OF THE SPEC: these routes come from accounts origin/main (in production since 13-10, accounts #978), not
- * from the snapshot; their types are in spec/pending.json (funnelchat-node). The catalog (`/webhooks/events`) is in
- * the snapshot.
+ * In production (accounts v1.4.24). Their types are in spec/pending.json (funnelchat-node), not in the snapshot; the
+ * catalog (`/webhooks/events`) is spec/catalog.json, transcribed from accounts.
  */
 import type { SandboxApp } from '../app.js';
 import { body, listContext, noContent, ok, type HandlerContext, type HandlerTable } from '../http/context.js';

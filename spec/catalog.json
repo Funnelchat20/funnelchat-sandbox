@@ -1,0 +1,1377 @@
+{
+  "description": "El catálogo de eventos de GET /api/v1/webhooks/events tal como lo responde accounts en producción: cada entrada con sus claves y en su orden, y `example` como lo publica accounts (null en las planificadas). Transcrito del código, no de una respuesta: si accounts cambia el catálogo, se transcribe de nuevo desde el tag nuevo.",
+  "source": {
+    "repository": "Funnelchat20/accounts",
+    "tag": "v1.4.24",
+    "commit": "300cc8435",
+    "files": [
+      "back/app/Modules/Webhook/Catalogs/WebhookEventCatalog.php",
+      "back/app/Modules/Webhook/Catalogs/Areas/AccountsEvents.php",
+      "back/app/Modules/Webhook/Catalogs/Areas/ConversationsEvents.php",
+      "back/app/Modules/Webhook/Catalogs/Areas/CommunitiesEvents.php",
+      "back/app/Modules/Webhook/Http/Controllers/WebhookEventCatalogController.php"
+    ],
+    "platform_gate": "v0.8.0 (back/composer.lock)",
+    "transcribed_at": "2026-10-22"
+  },
+  "meta": {
+    "envelope_version": "v1",
+    "signature_header": "X-Funnelchat-Signature",
+    "signature_format": "t=<unix>,v1=<hex hmac-sha256 de \"<t>.<cuerpo crudo>\" con el secreto del endpoint>"
+  },
+  "entries": [
+    {
+      "type": "device.disconnected",
+      "area": "accounts",
+      "status": "active",
+      "is_critical": true,
+      "label": "Número desconectado",
+      "description": "Uno de los números de WhatsApp de la cuenta se desconectó y dejó de poder enviar o recibir.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "device.disconnected",
+        "version": 1,
+        "occurred_at": "2026-10-05T03:00:00Z",
+        "data": {
+          "device": {
+            "id": 4521,
+            "name": "Ventas",
+            "number": "5491100000000"
+          },
+          "disconnected_at": "2026-10-05T03:00:00+00:00"
+        }
+      }
+    },
+    {
+      "type": "device.connected",
+      "area": "accounts",
+      "status": "active",
+      "is_critical": false,
+      "label": "Número conectado",
+      "description": "Uno de los números de WhatsApp de la cuenta quedó conectado: al escanear el código QR o al terminar el alta de un número de WhatsApp Cloud.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "device.connected",
+        "version": 1,
+        "occurred_at": "2026-10-05T03:00:00Z",
+        "data": {
+          "device": {
+            "id": 4521,
+            "name": "Ventas",
+            "number": "5491100000000"
+          },
+          "connected_at": "2026-10-05T03:00:00+00:00"
+        }
+      }
+    },
+    {
+      "type": "billing.payment_failed",
+      "area": "accounts",
+      "status": "active",
+      "is_critical": true,
+      "label": "Pago fallido",
+      "description": "Un cobro de la suscripción no pudo procesarse (solo suscripciones de Stripe). Se emite una vez por factura (el primer intento fallido); no se repite en los reintentos de cobro. No incluye las recargas de IA.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "billing.payment_failed",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "amount_cents": 2990,
+          "currency": "USD"
+        }
+      }
+    },
+    {
+      "type": "billing.plan_blocked",
+      "area": "accounts",
+      "status": "planned",
+      "is_critical": true,
+      "label": "Plan bloqueado",
+      "description": "El plan quedó bloqueado por un cobro no procesado.",
+      "subscribable": true,
+      "example": null
+    },
+    {
+      "type": "billing.upcoming_charge",
+      "area": "accounts",
+      "status": "active",
+      "is_critical": false,
+      "label": "Próximo cobro",
+      "description": "Se acerca el próximo cobro de la suscripción (solo suscripciones de Stripe); el aviso llega unos días antes de la fecha de cobro.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "billing.upcoming_charge",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "charge_date": "2026-11-05T00:00:00Z",
+          "amount_cents": 2990,
+          "currency": "USD"
+        }
+      }
+    },
+    {
+      "type": "subscription.expiring",
+      "area": "accounts",
+      "status": "planned",
+      "is_critical": false,
+      "label": "Suscripción por vencer",
+      "description": "La suscripción está próxima a vencer.",
+      "subscribable": true,
+      "example": null
+    },
+    {
+      "type": "subscription.trial_ending",
+      "area": "accounts",
+      "status": "active",
+      "is_critical": false,
+      "label": "Trial por terminar",
+      "description": "El período de prueba está por terminar; el aviso llega entre 1 y 3 días antes del final, según cómo se contrató (en las suscripciones de Stripe, el aviso de Stripe).",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "subscription.trial_ending",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "trial_ends_at": "2026-10-04T00:00:00Z"
+        }
+      }
+    },
+    {
+      "type": "subscription.reactivated",
+      "area": "accounts",
+      "status": "active",
+      "is_critical": false,
+      "label": "Suscripción reactivada",
+      "description": "Se revirtió la cancelación programada de la suscripción (solo suscripciones de Stripe): sigue vigente y se renueva en la fecha indicada.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "subscription.reactivated",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "renews_at": "2026-11-05T00:00:00Z"
+        }
+      }
+    },
+    {
+      "type": "subscription.cancellation_confirmed",
+      "area": "accounts",
+      "status": "active",
+      "is_critical": false,
+      "label": "Cancelación confirmada",
+      "description": "Quedó confirmada la cancelación de la suscripción (solo suscripciones de Stripe): se conserva el acceso hasta la fecha indicada.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "subscription.cancellation_confirmed",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "access_until": "2026-11-05T00:00:00Z"
+        }
+      }
+    },
+    {
+      "type": "subscription.dormant_ending",
+      "area": "accounts",
+      "status": "active",
+      "is_critical": false,
+      "label": "Período dormido por terminar",
+      "description": "El período de cuenta en reposo está por terminar (el aviso llega unos 7 días antes); en esa fecha se intenta el cobro indicado.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "subscription.dormant_ending",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "charge_date": "2026-10-08T00:00:00Z",
+          "amount_cents": 1990,
+          "currency": "USD"
+        }
+      }
+    },
+    {
+      "type": "ai_quota.low_balance",
+      "area": "accounts",
+      "status": "planned",
+      "is_critical": false,
+      "label": "Cuota de IA baja",
+      "description": "La cuota de mensajes de IA de la cuenta está por agotarse.",
+      "subscribable": true,
+      "example": null
+    },
+    {
+      "type": "ai_quota.topup_succeeded",
+      "area": "accounts",
+      "status": "planned",
+      "is_critical": false,
+      "label": "Recarga de IA exitosa",
+      "description": "Una recarga de cuota de IA se acreditó correctamente.",
+      "subscribable": true,
+      "example": null
+    },
+    {
+      "type": "ai_quota.topup_failed",
+      "area": "accounts",
+      "status": "planned",
+      "is_critical": true,
+      "label": "Recarga de IA fallida",
+      "description": "Una recarga de cuota de IA no pudo procesarse.",
+      "subscribable": true,
+      "example": null
+    },
+    {
+      "type": "mac.usage_80",
+      "area": "accounts",
+      "status": "active",
+      "is_critical": false,
+      "label": "Contactos activos al 80%",
+      "description": "La cuenta alcanzó el 80% de sus contactos activos mensuales del ciclo.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "mac.usage_80",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "used": 8000,
+          "limit": 10000,
+          "percentage": 80,
+          "cycle_started_at": "2026-10-01T00:00:00Z"
+        }
+      }
+    },
+    {
+      "type": "mac.usage_100",
+      "area": "accounts",
+      "status": "active",
+      "is_critical": true,
+      "label": "Contactos activos al 100%",
+      "description": "La cuenta agotó sus contactos activos mensuales del ciclo; se abre una gracia de 24 horas cuyo vencimiento viaja en `grace_expires_at`.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "mac.usage_100",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "used": 10000,
+          "limit": 10000,
+          "percentage": 100,
+          "cycle_started_at": "2026-10-01T00:00:00Z",
+          "grace_expires_at": "2026-10-02T12:00:00Z"
+        }
+      }
+    },
+    {
+      "type": "mac.expiring",
+      "area": "accounts",
+      "status": "active",
+      "is_critical": false,
+      "label": "Contactos activos por expirar",
+      "description": "Hay contactos activos mensuales que vencen en los próximos 7 días.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "mac.expiring",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "contacts_expiring": 1200,
+          "expires_at": "2026-10-08T03:00:00Z"
+        }
+      }
+    },
+    {
+      "type": "account.blocked",
+      "area": "accounts",
+      "status": "active",
+      "is_critical": true,
+      "label": "Cuenta bloqueada",
+      "description": "La cuenta quedó bloqueada por consumo: terminó la gracia de 24 horas tras agotar los contactos activos mensuales sin que se regularizara.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "account.blocked",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "reason": "mac_grace_expired",
+          "grace_started_at": "2026-10-01T12:00:00Z",
+          "grace_expired_at": "2026-10-02T12:00:00Z"
+        }
+      }
+    },
+    {
+      "type": "webhook.test",
+      "area": "accounts",
+      "status": "active",
+      "is_critical": false,
+      "label": "Evento de prueba",
+      "description": "Evento de prueba enviado por `POST webhooks/{id}/test`; no se puede suscribir.",
+      "subscribable": false,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "webhook.test",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "subscription": "00000000-0000-4000-8000-000000000001",
+          "sent_at": "2026-10-01T12:00:00Z"
+        }
+      }
+    },
+    {
+      "type": "message.received",
+      "area": "conversations",
+      "status": "active",
+      "is_critical": false,
+      "label": "Mensaje recibido",
+      "description": "Un contacto le escribió a un número de WhatsApp de la cuenta. `device_id` identifica ese número y puede venir `null`.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "message.received",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "message": {
+            "id": 1001,
+            "type": "text",
+            "text": "Hola, quiero más información",
+            "media": null
+          },
+          "contact": {
+            "id": 2001,
+            "name": "Contacto de ejemplo",
+            "phone": "+5491100000000"
+          },
+          "receiver": {
+            "phone": "+5491100000001"
+          },
+          "device_id": 4521
+        }
+      }
+    },
+    {
+      "type": "flow.completed",
+      "area": "conversations",
+      "status": "active",
+      "is_critical": false,
+      "label": "Flujo completado",
+      "description": "Un contacto terminó un flujo de automatización.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "flow.completed",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "flow": {
+            "id": 3001,
+            "name": "Flujo de ejemplo"
+          },
+          "contact": {
+            "id": 2001,
+            "name": "Contacto de ejemplo",
+            "phone": "+5491100000000"
+          }
+        }
+      }
+    },
+    {
+      "type": "broadcast.finished",
+      "area": "conversations",
+      "status": "active",
+      "is_critical": false,
+      "label": "Campaña finalizada",
+      "description": "Una campaña llegó a su estado final (enviada, fallida o con fallos parciales), con sus conteos.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "broadcast.finished",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "broadcast": {
+            "id": 6001,
+            "name": "Campaña de ejemplo"
+          },
+          "status": "partially_failed",
+          "reason": "completed",
+          "totals": {
+            "processed": 1200,
+            "failed": 30,
+            "skipped_unreachable": 12
+          }
+        }
+      }
+    },
+    {
+      "type": "contact.stage_changed",
+      "area": "conversations",
+      "status": "active",
+      "is_critical": false,
+      "label": "Contacto cambió de etapa",
+      "description": "Un contacto cambió de etapa en un tablero.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "contact.stage_changed",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "contact": {
+            "id": 2001,
+            "name": "Contacto de ejemplo",
+            "phone": "+5491100000000"
+          },
+          "board": {
+            "id": 5001,
+            "name": "Embudo de ejemplo"
+          },
+          "kind": "move",
+          "from_stage": {
+            "id": 6001,
+            "name": "Nuevo",
+            "position": 0
+          },
+          "to_stage": {
+            "id": 6002,
+            "name": "En seguimiento",
+            "position": 1
+          }
+        }
+      }
+    },
+    {
+      "type": "message.status_changed",
+      "area": "conversations",
+      "status": "active",
+      "is_critical": false,
+      "label": "Estado de mensaje cambiado",
+      "description": "Cambió el estado de entrega de un mensaje enviado: `status` es `sent`, `delivered`, `read` o `failed`. `previous_status` es el estado que el mensaje tenía justo antes de este cambio y es `null` en tres casos: es el primer aviso del mensaje, es el mismo estado que `status` (por ejemplo, el proveedor confirma el `sent` que ya registró el envío) o no se pudo leer. `error` solo viene cuando `status` es `failed`: `code` es el código numérico del proveedor y `title` su título, y cualquiera de los dos puede ser `null` si el proveedor no los informa. `error.reason` es `null` cuando el fallo lo informó el proveedor; cuando Funnelchat decidió que un mensaje enviado con clave no salía (por ejemplo, por saldo insuficiente o ventana de 24 horas cerrada) trae el motivo (`device_unavailable`, `insufficient_balance`, `window_closed`, `recipient_unreachable`, `template_not_found`, `template_unresolved_placeholder`, `not_queued` o `not_sent`), `code` es `null` y `title` es un texto llano en el idioma de la cuenta. Un mensaje enviado con clave que Funnelchat no llegó a enviar avisa `failed` con `previous_status` `null`. `client_reference` es el identificador propio que el integrador envió con el mensaje, para relacionar el evento con su envío; viene `null` si no envió ninguno.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "message.status_changed",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "message_id": 1001,
+          "contact_id": 2001,
+          "device_id": 4521,
+          "status": "failed",
+          "previous_status": "sent",
+          "error": {
+            "code": 131047,
+            "title": "Re-engagement message",
+            "reason": null
+          },
+          "occurred_at": "2026-10-01T12:00:00Z",
+          "client_reference": "pedido-1234"
+        }
+      }
+    },
+    {
+      "type": "conversation.closed",
+      "area": "conversations",
+      "status": "active",
+      "is_critical": false,
+      "label": "Conversación cerrada",
+      "description": "Se cerró la conversación con un contacto.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "conversation.closed",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "contact": {
+            "id": 2001,
+            "name": "Contacto de ejemplo",
+            "phone": "+5491100000000"
+          }
+        }
+      }
+    },
+    {
+      "type": "conversation.assigned",
+      "area": "conversations",
+      "status": "active",
+      "is_critical": false,
+      "label": "Conversación asignada",
+      "description": "Se asignó la conversación con un contacto a una persona o a la IA.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "conversation.assigned",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "contact": {
+            "id": 2001,
+            "name": "Contacto de ejemplo",
+            "phone": "+5491100000000"
+          },
+          "assignee": {
+            "type": "human",
+            "name": "Agente de ejemplo"
+          }
+        }
+      }
+    },
+    {
+      "type": "contact.tag_added",
+      "area": "conversations",
+      "status": "active",
+      "is_critical": false,
+      "label": "Etiqueta agregada a un contacto",
+      "description": "Se agregó una etiqueta a un contacto.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "contact.tag_added",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "contact": {
+            "id": 2001,
+            "name": "Contacto de ejemplo",
+            "phone": "+5491100000000"
+          },
+          "tag": {
+            "id": 4001,
+            "name": "Etiqueta de ejemplo"
+          },
+          "source": "manual"
+        }
+      }
+    },
+    {
+      "type": "broadcast.paused",
+      "area": "conversations",
+      "status": "active",
+      "is_critical": false,
+      "label": "Campaña pausada",
+      "description": "Una campaña se pausó por calidad del número.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "broadcast.paused",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "broadcast": {
+            "id": 6001,
+            "name": "Campaña de ejemplo"
+          },
+          "reason": "quality_degraded",
+          "quality": "YELLOW",
+          "quality_baseline": "GREEN"
+        }
+      }
+    },
+    {
+      "type": "contact.tag_removed",
+      "area": "conversations",
+      "status": "active",
+      "is_critical": false,
+      "label": "Etiqueta quitada de un contacto",
+      "description": "Se quitó una etiqueta de un contacto.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "contact.tag_removed",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "contact": {
+            "id": 2001,
+            "name": "Contacto de ejemplo",
+            "phone": "+5491100000000"
+          },
+          "tag": {
+            "id": 4001,
+            "name": "Etiqueta de ejemplo"
+          },
+          "source": "manual"
+        }
+      }
+    },
+    {
+      "type": "contact.created",
+      "area": "conversations",
+      "status": "active",
+      "is_critical": false,
+      "label": "Contacto creado",
+      "description": "Se creó un contacto.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "contact.created",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "contact": {
+            "id": 2001,
+            "name": "Contacto de ejemplo",
+            "phone": "+5491100000000",
+            "email": "contacto@example.com"
+          }
+        }
+      }
+    },
+    {
+      "type": "template.status_changed",
+      "area": "conversations",
+      "status": "active",
+      "is_critical": false,
+      "label": "Plantilla cambió de estado",
+      "description": "Cambió el estado de una plantilla de WhatsApp.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "template.status_changed",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "template": {
+            "id": 7001,
+            "uid": "1234567890",
+            "name": "plantilla_ejemplo",
+            "category": "MARKETING"
+          },
+          "previous_status": "PENDING",
+          "status": "APPROVED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "type": "flow.failed",
+      "area": "conversations",
+      "status": "active",
+      "is_critical": false,
+      "label": "Flujo fallido",
+      "description": "Un flujo de automatización falló.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "flow.failed",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "flow": {
+            "id": 3001,
+            "name": "Flujo de ejemplo"
+          },
+          "contact": {
+            "id": 2001,
+            "name": "Contacto de ejemplo",
+            "phone": "+5491100000000"
+          },
+          "reason": "execution_error"
+        }
+      }
+    },
+    {
+      "type": "whatsapp_form.completed",
+      "area": "conversations",
+      "status": "active",
+      "is_critical": false,
+      "label": "Formulario de WhatsApp completado",
+      "description": "Un contacto completó un formulario de WhatsApp que se le envió desde un número de la cuenta. `form.id` identifica el formulario y es el mismo en todas sus versiones; `form.version_id` es la versión que se le envió. `message_id` es el id público del mensaje con el que se envió el formulario (el mismo que devolvió el envío, si se hizo por API) y viene `null` si el envío no tuvo un mensaje público. `contact_id` identifica al contacto y `device_id`, al número. `answers` trae las respuestas en el orden del formulario, como una lista de `{key, label, value}`: `key` es la clave del campo y `label`, su etiqueta. `value` puede ser texto, número, booleano, una lista de textos (en las preguntas de opción múltiple) o `null`; las fechas llegan como texto en formato ISO 8601.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "whatsapp_form.completed",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "form": {
+            "id": 8001,
+            "name": "Formulario de ejemplo",
+            "version_id": 8105
+          },
+          "message_id": 1001,
+          "contact_id": 2001,
+          "device_id": 4521,
+          "answers": [
+            {
+              "key": "nombre",
+              "label": "Nombre",
+              "value": "Ana Ejemplo"
+            },
+            {
+              "key": "personas",
+              "label": "Cantidad de personas",
+              "value": 3
+            },
+            {
+              "key": "acepta_novedades",
+              "label": "Quiero recibir novedades",
+              "value": true
+            },
+            {
+              "key": "intereses",
+              "label": "Intereses",
+              "value": [
+                "Planes",
+                "Precios"
+              ]
+            },
+            {
+              "key": "fecha_visita",
+              "label": "Fecha de la visita",
+              "value": "2026-10-15"
+            },
+            {
+              "key": "comentarios",
+              "label": "Comentarios",
+              "value": null
+            }
+          ],
+          "occurred_at": "2026-10-01T12:00:00Z"
+        }
+      }
+    },
+    {
+      "type": "group.created",
+      "area": "communities",
+      "status": "active",
+      "is_critical": false,
+      "label": "Grupo creado",
+      "description": "Se creó un grupo de una campaña.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "group.created",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "group": {
+            "uid": "120363000000000000@g.us",
+            "name": "Grupo de ejemplo",
+            "type": "group"
+          },
+          "campaign": {
+            "uuid": "xK9mQz",
+            "name": "Campaña de ejemplo"
+          },
+          "source": "manual"
+        }
+      }
+    },
+    {
+      "type": "group.invite_link_down",
+      "area": "communities",
+      "status": "active",
+      "is_critical": false,
+      "label": "Link de invitación caído",
+      "description": "El link de invitación de un grupo dejó de funcionar.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "group.invite_link_down",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "group": {
+            "uid": "120363000000000000@g.us",
+            "name": "Grupo de ejemplo",
+            "type": "group"
+          },
+          "campaign": {
+            "uuid": "xK9mQz",
+            "name": "Campaña de ejemplo"
+          },
+          "reason": "link_revoked",
+          "renewal_attempted": true
+        }
+      }
+    },
+    {
+      "type": "group.invite_link_renewed",
+      "area": "communities",
+      "status": "active",
+      "is_critical": false,
+      "label": "Link de invitación renovado",
+      "description": "Se renovó el link de invitación de un grupo.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "group.invite_link_renewed",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "group": {
+            "uid": "120363000000000000@g.us",
+            "name": "Grupo de ejemplo",
+            "type": "group"
+          },
+          "campaign": {
+            "uuid": "xK9mQz",
+            "name": "Campaña de ejemplo"
+          },
+          "invite_link": "https://chat.whatsapp.com/EJEMPLO01",
+          "previous_invite_link": "https://chat.whatsapp.com/EJEMPLO00",
+          "trigger": "automatic",
+          "recovered": true
+        }
+      }
+    },
+    {
+      "type": "group_participant.joined",
+      "area": "communities",
+      "status": "active",
+      "is_critical": false,
+      "label": "Participante se unió",
+      "description": "Una persona entró a un grupo.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "group_participant.joined",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "group": {
+            "uid": "120363000000000000@g.us",
+            "name": "Grupo de ejemplo"
+          },
+          "campaign": {
+            "uuid": "xK9mQz"
+          },
+          "participant": {
+            "identity": "5491100000000",
+            "identity_type": "phone",
+            "name": "Ana Ejemplo"
+          }
+        }
+      }
+    },
+    {
+      "type": "group_participant.left",
+      "area": "communities",
+      "status": "active",
+      "is_critical": false,
+      "label": "Participante salió",
+      "description": "Una persona salió de un grupo.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "group_participant.left",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "group": {
+            "uid": "120363000000000000@g.us",
+            "name": "Grupo de ejemplo"
+          },
+          "campaign": {
+            "uuid": "xK9mQz"
+          },
+          "participant": {
+            "identity": "5491100000000",
+            "identity_type": "phone",
+            "name": "Ana Ejemplo"
+          }
+        }
+      }
+    },
+    {
+      "type": "scheduled_message.group_delivery_failed",
+      "area": "communities",
+      "status": "active",
+      "is_critical": false,
+      "label": "Mensaje programado no entregado a un grupo",
+      "description": "Un mensaje programado no pudo entregarse a un grupo. Reemplaza la alerta «mensaje fallido» de las campañas y avisa en más casos.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "scheduled_message.group_delivery_failed",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "scheduled_message": {
+            "uuid": "mP4wRt"
+          },
+          "group": {
+            "uid": "120363000000000000@g.us",
+            "name": "Grupo de ejemplo"
+          },
+          "reason": "send_failed",
+          "partial": false,
+          "occurrence": "2026-10-01T12:00:00Z"
+        }
+      }
+    },
+    {
+      "type": "scheduled_message.response_received",
+      "area": "communities",
+      "status": "active",
+      "is_critical": false,
+      "label": "Respuesta a un mensaje programado",
+      "description": "Se recibió una respuesta a un mensaje programado.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "scheduled_message.response_received",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "scheduled_message": {
+            "uuid": "mP4wRt"
+          },
+          "group": {
+            "uid": "120363000000000000@g.us"
+          },
+          "participant": {
+            "identity": "5491100000000",
+            "identity_type": "phone",
+            "name": "Ana Ejemplo"
+          },
+          "response": {
+            "type": "rsvp",
+            "options": [],
+            "rsvp": "yes"
+          }
+        }
+      }
+    },
+    {
+      "type": "poll.voted",
+      "area": "communities",
+      "status": "active",
+      "is_critical": false,
+      "label": "Voto en una encuesta",
+      "description": "Alguien votó en una encuesta enviada a un grupo.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "poll.voted",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "poll": {
+            "uid": "poll-ejemplo-01"
+          },
+          "group": {
+            "uid": "120363000000000000@g.us"
+          },
+          "scheduled_message": {
+            "uuid": "mP4wRt"
+          },
+          "participant": {
+            "identity": "5491100000000",
+            "identity_type": "phone",
+            "name": "Ana Ejemplo"
+          },
+          "options": [
+            "Opción A"
+          ]
+        }
+      }
+    },
+    {
+      "type": "pipeline.finished",
+      "area": "communities",
+      "status": "active",
+      "is_critical": false,
+      "label": "Pipeline finalizado",
+      "description": "Terminó la ejecución de un pipeline de una campaña.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "pipeline.finished",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "campaign": {
+            "uuid": "xK9mQz"
+          },
+          "pipeline": {
+            "uuid": "bN7vLs",
+            "name": "Pipeline de ejemplo"
+          },
+          "outcome": "completed",
+          "actions": {
+            "total": 5,
+            "succeeded": 4,
+            "failed": 1,
+            "skipped": 0,
+            "cancelled": 0
+          }
+        }
+      }
+    },
+    {
+      "type": "group.blocked",
+      "area": "communities",
+      "status": "active",
+      "is_critical": false,
+      "label": "Grupo bloqueado",
+      "description": "Un grupo de una campaña quedó bloqueado y no puede usarse.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "group.blocked",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "group": {
+            "uid": "120363000000000000@g.us",
+            "name": "Grupo de ejemplo"
+          },
+          "campaign": {
+            "uuid": "xK9mQz"
+          },
+          "reason": "whatsapp_restriction"
+        }
+      }
+    },
+    {
+      "type": "group.recovered",
+      "area": "communities",
+      "status": "active",
+      "is_critical": false,
+      "label": "Grupo recuperado",
+      "description": "Un grupo que estaba bloqueado volvió a estar disponible.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "group.recovered",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "group": {
+            "uid": "120363000000000000@g.us",
+            "name": "Grupo de ejemplo"
+          },
+          "campaign": {
+            "uuid": "xK9mQz"
+          },
+          "reason": "restriction_lifted"
+        }
+      }
+    },
+    {
+      "type": "campaign.status_changed",
+      "area": "communities",
+      "status": "active",
+      "is_critical": false,
+      "label": "Cambio de estado de campaña",
+      "description": "Una campaña cambió de estado.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "campaign.status_changed",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "campaign": {
+            "uuid": "xK9mQz",
+            "name": "Campaña de ejemplo"
+          },
+          "from": "active",
+          "to": "paused"
+        }
+      }
+    },
+    {
+      "type": "scheduled_message.finished",
+      "area": "communities",
+      "status": "active",
+      "is_critical": false,
+      "label": "Mensaje programado finalizado",
+      "description": "Terminó el envío de un mensaje programado a sus grupos, con su resultado y el conteo de grupos con fallas.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "scheduled_message.finished",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "scheduled_message": {
+            "uuid": "mP4wRt",
+            "name": "Mensaje de ejemplo"
+          },
+          "outcome": "completed",
+          "groups": {
+            "total": 10,
+            "failed": 1,
+            "partially_failed": 2
+          },
+          "occurrence": "2026-10-01T12:00:00Z"
+        }
+      }
+    },
+    {
+      "type": "group_action.failed",
+      "area": "communities",
+      "status": "active",
+      "is_critical": false,
+      "label": "Acción sobre un grupo fallida",
+      "description": "Una acción sobre un grupo falló entera (si terminó con resultados por persona, llega `group_action.completed`). Si la pidió la API, `action.uuid` es el mismo `action_id` que devolvió al pedirla y `pipeline` viene `null`. Si la ejecutó una campaña o un pipeline, `action.uuid` viene `null`, y `pipeline` trae ese pipeline (`uuid` y `name`) o viene `null` fuera de un pipeline. `reason` es el motivo de la falla. `group` y `campaign` pueden venir `null`.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "group_action.failed",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "campaign": {
+            "uuid": "xK9mQz",
+            "name": "Campaña de ejemplo"
+          },
+          "pipeline": null,
+          "group": {
+            "uid": "120363000000000000@g.us",
+            "name": "Grupo de ejemplo"
+          },
+          "action": {
+            "uuid": "00000000-0000-4000-8000-000000000001",
+            "type": "add_participants"
+          },
+          "reason": "motivo_de_ejemplo"
+        }
+      }
+    },
+    {
+      "type": "daily_report.generated",
+      "area": "communities",
+      "status": "active",
+      "is_critical": false,
+      "label": "Reporte diario generado",
+      "description": "Se generó el reporte diario de la cuenta (clics, ingresos y salidas).",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "daily_report.generated",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "period": {
+            "date": "2026-10-01",
+            "timezone": "America/Argentina/Buenos_Aires"
+          },
+          "clicks": 120,
+          "joins": 80,
+          "leaves": 10,
+          "conversion_rate": 0.67
+        }
+      }
+    },
+    {
+      "type": "campaign.no_groups_available",
+      "area": "communities",
+      "status": "active",
+      "is_critical": false,
+      "label": "Campaña sin grupos disponibles",
+      "description": "Una campaña no tiene grupos a los que dirigir a las personas que entran por su link.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "campaign.no_groups_available",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "campaign": {
+            "uuid": "xK9mQz",
+            "name": "Campaña de ejemplo"
+          },
+          "reason": "none_selectable"
+        }
+      }
+    },
+    {
+      "type": "group.full",
+      "area": "communities",
+      "status": "active",
+      "is_critical": false,
+      "label": "Grupo lleno",
+      "description": "Un grupo pasó de no estar lleno a estarlo.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "group.full",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "group": {
+            "uid": "120363000000000000@g.us",
+            "name": "Grupo de ejemplo",
+            "type": "tipo_de_ejemplo"
+          },
+          "campaign": {
+            "uuid": "xK9mQz",
+            "name": "Campaña de ejemplo"
+          },
+          "trigger": "participants_limit",
+          "participants": 1024
+        }
+      }
+    },
+    {
+      "type": "group_action.completed",
+      "area": "communities",
+      "status": "active",
+      "is_critical": false,
+      "label": "Acción sobre un grupo completada",
+      "description": "Terminó una acción sobre un grupo. `action.uuid` es el mismo `action_id` que devolvió la API al pedirla, y `action.type` dice qué acción fue. `result` depende del tipo de acción: en las que reciben una lista de teléfonos (agregar o quitar participantes, nombrar o quitar administradores) trae `participants`, con el resultado por persona: `identity`, `identity_type`, `status` (`added`, `removed`, `promoted` o `demoted` según la acción, o `failed`) y `reason`, que es `null` salvo cuando `status` es `failed`; al crear un grupo o renovar su link de invitación trae `invite_link`; al enviar un mensaje trae `message.uid`; en las demás (cambiar el nombre, la descripción, la foto o los ajustes) viene como objeto vacío (`{}`). `group` y `campaign` pueden venir `null`.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "group_action.completed",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "action": {
+            "uuid": "00000000-0000-4000-8000-000000000001",
+            "type": "add_participants"
+          },
+          "group": {
+            "uid": "120363000000000000@g.us",
+            "name": "Grupo de ejemplo"
+          },
+          "campaign": {
+            "uuid": "xK9mQz",
+            "name": "Campaña de ejemplo"
+          },
+          "result": {
+            "participants": [
+              {
+                "identity": "5491100000000",
+                "identity_type": "phone",
+                "status": "added",
+                "reason": null
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "group.message_received",
+      "area": "communities",
+      "status": "active",
+      "is_critical": false,
+      "label": "Mensaje recibido en un grupo",
+      "description": "Una persona escribió un mensaje en un grupo.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "group.message_received",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "group": {
+            "uid": "120363000000000000@g.us",
+            "name": "Grupo de ejemplo"
+          },
+          "participant": {
+            "identity": "5491100000000",
+            "identity_type": "phone",
+            "name": "Ana Ejemplo"
+          },
+          "message": {
+            "id": "msg-ejemplo-01",
+            "type": "text",
+            "text": "Hola a todos"
+          }
+        }
+      }
+    },
+    {
+      "type": "group.reaction_added",
+      "area": "communities",
+      "status": "active",
+      "is_critical": false,
+      "label": "Reacción en un grupo",
+      "description": "Una persona reaccionó a un mensaje de un grupo.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "group.reaction_added",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "group": {
+            "uid": "120363000000000000@g.us",
+            "name": "Grupo de ejemplo"
+          },
+          "participant": {
+            "identity": "5491100000000",
+            "identity_type": "phone",
+            "name": "Ana Ejemplo"
+          },
+          "message": {
+            "id": "msg-ejemplo-01"
+          },
+          "reaction": "👍"
+        }
+      }
+    },
+    {
+      "type": "group_join_request.created",
+      "area": "communities",
+      "status": "active",
+      "is_critical": false,
+      "label": "Solicitud para unirse a un grupo",
+      "description": "Una persona pidió unirse a un grupo oficial que pide aprobación para entrar, y su solicitud quedó pendiente. Si el grupo es de una campaña, también llega a las suscripciones filtradas por esa campaña. Se aprueba o rechaza por API con el teléfono de la persona, cuando el número anuncia `groups.join_requests` en `\"list_and_decide\"`; el resultado por persona llega en `group_action.completed`.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "group_join_request.created",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "group": {
+            "uid": "120363000000000000@g.us",
+            "name": "Grupo de ejemplo"
+          },
+          "participant": {
+            "identity": "5491100000000",
+            "identity_type": "phone",
+            "name": "Ana Ejemplo"
+          }
+        }
+      }
+    },
+    {
+      "type": "group_join_request.revoked",
+      "area": "communities",
+      "status": "active",
+      "is_critical": false,
+      "label": "Solicitud para unirse retirada",
+      "description": "Una persona retiró su solicitud pendiente para unirse a un grupo antes de que se aprobara o rechazara. Trae los mismos campos que `group_join_request.created`.",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "group_join_request.revoked",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+          "group": {
+            "uid": "120363000000000000@g.us",
+            "name": "Grupo de ejemplo"
+          },
+          "participant": {
+            "identity": "5491100000000",
+            "identity_type": "phone",
+            "name": "Ana Ejemplo"
+          }
+        }
+      }
+    }
+  ]
+}

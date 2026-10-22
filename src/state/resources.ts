@@ -180,6 +180,40 @@ export function templateResource(template: Template, currentDeviceId?: number): 
   };
 }
 
+/** accounts `DeviceCapabilities::forDevice`: what the public API can do with a number, per provider. */
+const MESSAGES_QR = { text: true, media: true, buttons: true, lists: true, templates: false, location: true, voice_note: true, polls: true, events: true, contact_card: true, reactions: true };
+const MESSAGES_CLOUD = { text: true, media: true, buttons: true, lists: true, templates: true, location: true, voice_note: true, polls: false, events: false, contact_card: true, reactions: false };
+const GROUPS_QR = { create: true, add_participants: 'direct', remove_participants: true, admins: true, photo: true, settings: true, invite_link: true, send: true, join_requests: false };
+/** Official numbers without communities' `cloud_api_groups` beta (the sandbox account does not have it). */
+const GROUPS_NONE = { create: false, add_participants: false, remove_participants: false, admins: false, photo: false, settings: false, invite_link: false, send: false, join_requests: false };
+
+export function deviceCapabilities(device: Device): Record<string, unknown> {
+  const cloud = device.kind === 'cloud';
+  return {
+    messages: { ...(cloud ? MESSAGES_CLOUD : MESSAGES_QR) },
+    groups: { ...(cloud ? GROUPS_NONE : GROUPS_QR) },
+    statuses: ['sent', 'delivered', 'read', 'failed'],
+  };
+}
+
+/** accounts `DeviceHealthSummaryBuilder`: `null` for any number that is not of Meta. */
+function deviceHealth(device: Device): Record<string, unknown> | null {
+  if (device.kind !== 'cloud') return null;
+  return {
+    state: device.connected ? 'available' : 'unknown',
+    reason: null,
+    reason_truncated: false,
+    reason_key: null,
+    quality_level: 'high',
+    name_state: 'approved',
+    messaging_limit_tier: 'TIER_1K',
+    messaging_limit_per_day: 1000,
+    last_fetched_at: iso8601(device.createdAt),
+    stale: false,
+  };
+}
+
+/** accounts v1.4.24 `DeviceResource`, in its order. */
 export function deviceResource(device: Device): Record<string, unknown> {
   return {
     id: device.id,
@@ -196,7 +230,17 @@ export function deviceResource(device: Device): Record<string, unknown> {
     is_business: device.kind === 'cloud' ? 1 : 0,
     connected: device.connected ? 1 : 0,
     active: 1,
-    health: device.connected ? 'healthy' : 'disconnected',
+    health: deviceHealth(device),
+    number_key: device.number,
+    number_key_confirmed: true,
+    is_coexistence: false,
+    slot_state: 'held',
+    pool_suspended: false,
+    pool_suspension_reason: null,
+    pool_keep: false,
+    qr_allowed: device.kind === 'qr',
+    can_change_to_meta: false,
+    capabilities: deviceCapabilities(device),
   };
 }
 
