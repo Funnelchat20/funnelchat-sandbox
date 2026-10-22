@@ -543,6 +543,8 @@ src/sandbox/     the /_sandbox routes and the panel
 test/            vitest
 ```
 
+**Publishing:** push a `vX.Y.Z` tag on `main` that matches the `version` in `package.json`, and GitHub Actions publishes it to npm with provenance (`.github/workflows/publish.yml`).
+
 ## License
 
 [MIT](LICENSE).
