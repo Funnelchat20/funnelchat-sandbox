@@ -2,12 +2,15 @@
   "name": "funnelchat-sandbox",
   "version": "0.1.0",
   "description": "Servidor local que imita la API pública de Funnelchat y manda webhooks firmados, sin efectos reales",
-  "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT",
   "author": "Funnelchat",
+  "homepage": "https://developers-portal.funnelchat.app/docs/",
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@github.com/Funnelchat20/funnelchat-sandbox.git"
+    "url": "git+https://github.com/Funnelchat20/funnelchat-sandbox.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Funnelchat20/funnelchat-sandbox/issues"
   },
   "keywords": [
     "funnelchat",
@@ -22,7 +25,7 @@
     "node": ">=20.11"
   },
   "bin": {
-    "funnelchat-sandbox": "./dist/cli.js"
+    "funnelchat-sandbox": "dist/cli.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -34,10 +37,12 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "dist",
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
     "spec/procedencia.json",
     "funnelchat-sandbox.config.example.json",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "generate": "node scripts/generate.mjs",
@@ -48,7 +53,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prepack": "npm run build"
   },
   "dependencies": {
     "ajv": "^8.17.1",
