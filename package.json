@@ -3,14 +3,18 @@
   "version": "0.1.0",
   "description": "Servidor local que imita la API pública de Funnelchat y manda webhooks firmados, sin efectos reales",
   "license": "MIT",
-  "author": "Funnelchat",
+  "author": {
+    "name": "Funnelchat",
+    "email": "soporte@funnelchat.com"
+  },
   "homepage": "https://developers-portal.funnelchat.app/docs/",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Funnelchat20/funnelchat-sandbox.git"
   },
   "bugs": {
-    "url": "https://github.com/Funnelchat20/funnelchat-sandbox/issues"
+    "url": "https://github.com/Funnelchat20/funnelchat-sandbox/issues",
+    "email": "soporte@funnelchat.com"
   },
   "keywords": [
     "funnelchat",
