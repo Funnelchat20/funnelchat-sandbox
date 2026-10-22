@@ -1,4 +1,4 @@
-# Publishes funnelchat-sandbox to npm with provenance when a version tag (vX.Y.Z) is pushed.
+# Publishes @funnelchat-hq/sandbox to npm with provenance when a version tag (vX.Y.Z) is pushed.
 name: Publish to npm
 
 on:

@@ -1,4 +1,4 @@
-# funnelchat-sandbox
+# @funnelchat-hq/sandbox
 
 A local server that imitates the Funnelchat public API and sends signed webhooks, with no real effects. Use it to build and test your integration without a real account, without WhatsApp and without spending anything: nothing goes out to WhatsApp, everything stays in memory.
 
@@ -18,13 +18,13 @@ A local server that imitates the Funnelchat public API and sends signed webhooks
 You need Node 20.11 or later.
 
 ```bash
-npx funnelchat-sandbox
+npx @funnelchat-hq/sandbox
 ```
 
-Or, in your project, as a development dependency:
+Or, in your project, as a development dependency (the command it installs is `funnelchat-sandbox`):
 
 ```bash
-npm install --save-dev funnelchat-sandbox
+npm install --save-dev @funnelchat-hq/sandbox
 npx funnelchat-sandbox
 ```
 
@@ -59,7 +59,7 @@ Inside the container it listens on `0.0.0.0`. If your webhook receiver runs on y
 **From your tests**, with no other process:
 
 ```ts
-import { createSandbox } from 'funnelchat-sandbox';
+import { createSandbox } from '@funnelchat-hq/sandbox';
 
 const sandbox = createSandbox({ config: { port: 0, log: false, statusDelays: { sent: 0.05, delivered: 0.05, read: 0.05 } } });
 const { url } = await sandbox.listen(); // port 0: a free port
@@ -122,7 +122,7 @@ Change only the base URL. Everything else is the same as against the real API.
 **Node** ([funnelchat-node](https://github.com/Funnelchat20/funnelchat-node)):
 
 ```ts
-import { Funnelchat } from '@funnelchat/sdk';
+import { Funnelchat } from '@funnelchat-hq/sdk';
 
 const funnelchat = new Funnelchat({ apiKey: '1|fc_live_sandbox', baseUrl: 'http://localhost:4010' });
 ```
@@ -133,7 +133,7 @@ const funnelchat = new Funnelchat({ apiKey: '1|fc_live_sandbox', baseUrl: 'http:
 $funnelchat = new \Funnelchat\Funnelchat(apiKey: '1|fc_live_sandbox', baseUrl: 'http://localhost:4010');
 ```
 
-**The n8n node** ([n8n-nodes-funnelchat](https://github.com/Funnelchat20/n8n-nodes-funnelchat)): in the credential, the custom environment with the base URL `http://localhost:4010` (or `http://host.docker.internal:4010` if n8n runs in Docker and the sandbox on your machine). The trigger creates its subscription with `POST /api/v1/webhooks`, which the sandbox accepts over `http`. Since n8n sends no headers of its own, arm the failures beforehand with [`POST /_sandbox/failures`](#forcing-failures).
+**The n8n node** ([n8n-nodes-funnelchat](https://github.com/Funnelchat20/n8n-nodes-funnelchat), `@funnelchat-hq/n8n-nodes-funnelchat` on npm): in the credential, the custom environment with the base URL `http://localhost:4010` (or `http://host.docker.internal:4010` if n8n runs in Docker and the sandbox on your machine). The trigger creates its subscription with `POST /api/v1/webhooks`, which the sandbox accepts over `http`. Since n8n sends no headers of its own, arm the failures beforehand with [`POST /_sandbox/failures`](#forcing-failures).
 
 ## What is inside
 
@@ -392,13 +392,13 @@ Besides, as in the API: creating a contact emits `contact.created`, closing a co
 An Express receiver that verifies the signature with the SDK, a subscription, an incoming message and the answer with its statuses.
 
 ```bash
-npx funnelchat-sandbox --status-delays 1,1,1
+npx @funnelchat-hq/sandbox --status-delays 1,1,1
 ```
 
 ```ts
 // receiver.ts
 import express from 'express';
-import { Funnelchat, WebhookVerificationError } from '@funnelchat/sdk';
+import { Funnelchat, WebhookVerificationError } from '@funnelchat-hq/sdk';
 
 const funnelchat = new Funnelchat({ apiKey: '1|fc_live_sandbox', baseUrl: 'http://localhost:4010' });
 const app = express();

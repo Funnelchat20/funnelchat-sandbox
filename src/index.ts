@@ -1,8 +1,8 @@
 /**
- * funnelchat-sandbox as a library: start the sandbox from your own tests.
+ * @funnelchat-hq/sandbox as a library: start the sandbox from your own tests.
  *
  * ```ts
- * import { createSandbox } from 'funnelchat-sandbox';
+ * import { createSandbox } from '@funnelchat-hq/sandbox';
  * const sandbox = createSandbox({ config: { port: 0, log: false } });
  * const { url } = await sandbox.listen();
  * // ... point the SDK at `url` ...
