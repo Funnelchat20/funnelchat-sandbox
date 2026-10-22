@@ -65,7 +65,7 @@ export const edgeError = (code: string) => {
 };
 
 export const methodNotAllowed = (method: string, allowed: string[]) =>
-  new ApiError(405, 'method_not_allowed', `El método ${method} no está disponible para esta ruta. Usá ${allowed.join(', ')}.`, {}, { Allow: allowed.join(', ') });
+  new ApiError(405, 'method_not_allowed', `El método ${method} no está disponible para esta ruta. Usa ${allowed.join(', ')}.`, {}, { Allow: allowed.join(', ') });
 
 /** `422` of a validation: Laravel's `{message, errors}`, inside the `{error, message}` body of the sandbox. */
 export const validationFailed = (errors: FieldErrors) => new ApiError(422, 'validation_failed', summarize(errors), { errors });

@@ -85,7 +85,7 @@ function send(res: ServerResponse, requestId: string, result: { status: number; 
 function errorResult(error: unknown): HandlerResult {
   if (error instanceof ApiError) return { status: error.status, body: error.body(), headers: error.headers };
   console.error('[sandbox] error inesperado:', error);
-  return { status: 500, body: { error: 'server_error', message: 'El sandbox tuvo un error inesperado. Mirá la consola.' } };
+  return { status: 500, body: { error: 'server_error', message: 'El sandbox tuvo un error inesperado. Mira la consola.' } };
 }
 
 /** A webhook secret is shown once, to whoever asked for it: the request log of the panel keeps it hidden. */

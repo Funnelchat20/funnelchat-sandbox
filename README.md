@@ -13,7 +13,7 @@ Un servidor local que imita la API pública de Funnelchat y manda webhooks firma
 
 ## Arrancarlo
 
-Necesitás Node 20.11 o posterior.
+Necesitas Node 20.11 o posterior.
 
 ```bash
 npx funnelchat-sandbox
@@ -52,7 +52,7 @@ docker run --rm -p 4010:4010 funnelchat-sandbox
 docker run --rm -p 4010:4010 -v "$PWD/funnelchat-sandbox.config.json:/app/funnelchat-sandbox.config.json:ro" funnelchat-sandbox
 ```
 
-Dentro del contenedor escucha en `0.0.0.0`. Si tu receptor de webhooks corre en tu máquina, desde el contenedor es `http://host.docker.internal:<puerto>` (en Linux, agregá `--add-host=host.docker.internal:host-gateway`).
+Dentro del contenedor escucha en `0.0.0.0`. Si tu receptor de webhooks corre en tu máquina, desde el contenedor es `http://host.docker.internal:<puerto>` (en Linux, agrega `--add-host=host.docker.internal:host-gateway`).
 
 **Desde tus tests**, sin otro proceso:
 
@@ -61,7 +61,7 @@ import { createSandbox } from 'funnelchat-sandbox';
 
 const sandbox = createSandbox({ config: { port: 0, log: false, statusDelays: { sent: 0.05, delivered: 0.05, read: 0.05 } } });
 const { url } = await sandbox.listen(); // port 0: un puerto libre
-// … apuntá tu SDK a `url` …
+// … apunta tu SDK a `url` …
 await sandbox.close();
 ```
 
@@ -82,7 +82,7 @@ await sandbox.close();
 | `--template-approval <s>` | Segundos hasta aprobar una plantilla creada por la API. Un `-` la deja pendiente. | `5` |
 | `-q`, `--quiet` | Sin la línea por pedido y por entrega en la consola. | — |
 
-Las opciones ganan sobre el archivo. El archivo tiene las mismas opciones y, además, suscripciones que se crean al arrancar (y después de cada reinicio) con un secreto fijo, para que tu receptor siga funcionando cuando reiniciás el sandbox:
+Las opciones ganan sobre el archivo. El archivo tiene las mismas opciones y, además, suscripciones que se crean al arrancar (y después de cada reinicio) con un secreto fijo, para que tu receptor siga funcionando cuando reinicias el sandbox:
 
 ```json
 {
@@ -116,7 +116,7 @@ Todas las claves ven la misma cuenta y tienen todos los permisos.
 
 ## Apuntar los SDKs al sandbox
 
-Cambiá solo la URL base. Lo demás es igual que contra la API real.
+Cambia solo la URL base. Lo demás es igual que contra la API real.
 
 **Node** ([funnelchat-node](https://github.com/Funnelchat20/funnelchat-node)):
 
@@ -149,7 +149,7 @@ Cada sesión arranca con esto:
 
 `POST /_sandbox/reset` vuelve a esto y cancela todo lo que estaba programado.
 
-**Con estado** (lo que creás, cambiás o borrás queda): contactos (`/api/v1/contacts…`, con sus etiquetas, campos y la ventana `meta-window`), conversaciones (`/api/v1/conversations…`), mensajes (envío, historial, reacciones, reenvío, tarjetas y la consulta por id), etiquetas, campos personalizados, plantillas, [formularios de WhatsApp](#formularios-de-whatsapp), números (`GET /api/v1/devices`) y suscripciones de webhooks con su historial.
+**Con estado** (lo que creas, cambias o borras queda): contactos (`/api/v1/contacts…`, con sus etiquetas, campos y la ventana `meta-window`), conversaciones (`/api/v1/conversations…`), mensajes (envío, historial, reacciones, reenvío, tarjetas y la consulta por id), etiquetas, campos personalizados, plantillas, [formularios de WhatsApp](#formularios-de-whatsapp), números (`GET /api/v1/devices`) y suscripciones de webhooks con su historial.
 
 **Los números** son los de accounts: `GET /api/v1/devices` siempre pagina (`{data, links, meta}`, `perPage` de 1 a 100), y cada número trae `capabilities` con lo que la API puede hacer por él:
 
@@ -163,7 +163,7 @@ Cada sesión arranca con esto:
 
 El oficial (`3`) no tiene grupos (la cuenta del sandbox no está en la beta de grupos oficiales); el QR (`4`) sí, y no tiene plantillas. `health` es `null` en el QR.
 
-**Las acciones de grupo por API** (crear un grupo, participantes, administradores, nombre, descripción, foto, ajustes, link de invitación, enviar al grupo y las solicitudes de unión) existen en communities pero están apagadas en producción: con cualquier clave responden `403 route_not_available`, igual que acá. Lo mismo las encuestas y los eventos (`/message/poll`, `/message/event`).
+**Las acciones de grupo por API** (crear un grupo, participantes, administradores, nombre, descripción, foto, ajustes, link de invitación, enviar al grupo y las solicitudes de unión) existen en communities pero están apagadas en producción: con cualquier clave responden `403 route_not_available`, igual que aquí. Lo mismo las encuestas y los eventos (`/message/poll`, `/message/event`).
 
 ```json
 { "error": "route_not_available", "message": "Esta ruta no está disponible para API keys en el piloto. No es un permiso que falte: ninguna key la habilita." }
@@ -219,7 +219,7 @@ curl -s http://localhost:4010/api/v1/contacts/2001/message \
 - Lo mismo vale para `POST /api/v1/message/send-message` (`{message}`), las plantillas (`POST /api/v1/devices/{device}/templates/{template}/send-template`, `{message}`), los formularios (`POST /api/v1/contacts/{contact}/message/form`, `{message}`), las tarjetas (`{messages: [...]}`, uno por tarjeta) y el reenvío (un ítem por destino, con su `message`, o `status: "blocked"` y `message: null`).
 - `client_reference` es opcional: de 1 a 64 caracteres ASCII visibles, sin espacios. Si no cumple, `422 errors.client_reference`.
 - Una nota (`"note": true`) se guarda con `status: null` y no se envía.
-- El `id` de cada evento es el mismo para el mismo mensaje y el mismo estado: deduplicá por `id`.
+- El `id` de cada evento es el mismo para el mismo mensaje y el mismo estado: deduplica por `id`.
 
 ### Un archivo por URL
 
@@ -277,12 +277,12 @@ curl … -H 'X-Sandbox-Fail: window_closed'
 | `X-Sandbox-Edge` | Qué pasa |
 |---|---|
 | `origin_unreachable` | `502 {"error": "origin_unreachable", "message": "La API no está disponible en este momento."}`. El pedido no llegó: no se aplicó nada. |
-| `origin_unreachable_applied` | El mismo `502`, pero la escritura **sí** se aplicó y solo se perdió la respuesta. Así probás la regla del portal: un `502` en una escritura se trata como un timeout, y se lee el estado antes de repetirla. |
+| `origin_unreachable_applied` | El mismo `502`, pero la escritura **sí** se aplicó y solo se perdió la respuesta. Así pruebas la regla del portal: un `502` en una escritura se trata como un timeout, y se lee el estado antes de repetirla. |
 | `edge_misconfigured` | `500 {"error": "edge_misconfigured", "message": "La API no está disponible en este momento."}` |
 
 Ninguno trae `Retry-After`.
 
-Si no podés mandar cabeceras (por ejemplo desde n8n), armá las próximas fallas antes:
+Si no puedes mandar cabeceras (por ejemplo desde n8n), arma las próximas fallas antes:
 
 ```bash
 curl -s http://localhost:4010/_sandbox/failures -H 'Content-Type: application/json' \
@@ -291,11 +291,11 @@ curl -s http://localhost:4010/_sandbox/failures -H 'Content-Type: application/js
   -d '{"mode": "edge", "code": "origin_unreachable", "applied": true, "count": 1}'
 ```
 
-`GET /_sandbox/failures` lista las armadas, `GET /_sandbox/failures/codes` los códigos que acepta cada modo y `DELETE /_sandbox/failures` las borra. También podés mover un mensaje a mano: `POST /_sandbox/messages/{id}/status` con `{"status": "delivered"}` (o `"failed"` con `"error": "131026"`); nunca retrocede.
+`GET /_sandbox/failures` lista las armadas, `GET /_sandbox/failures/codes` los códigos que acepta cada modo y `DELETE /_sandbox/failures` las borra. También puedes mover un mensaje a mano: `POST /_sandbox/messages/{id}/status` con `{"status": "delivered"}` (o `"failed"` con `"error": "131026"`); nunca retrocede.
 
 ## Formularios de WhatsApp
 
-Las rutas de conversations, con estado. Un formulario es una familia (`family_id`, la que enviás) con versiones (`id`, la que editás). Solo los números oficiales los toman: con el QR, `422 NUMBER_NOT_ELIGIBLE`.
+Las rutas de conversations, con estado. Un formulario es una familia (`family_id`, la que envías) con versiones (`id`, la que editas). Solo los números oficiales los toman: con el QR, `422 NUMBER_NOT_ELIGIBLE`.
 
 | Ruta | Qué hace |
 |---|---|
@@ -324,7 +324,7 @@ Emite `whatsapp_form.completed` una sola vez por envío, con `form` (`id` es el 
 
 ## Webhooks
 
-Te suscribís con las mismas rutas que usan los SDKs y el trigger de n8n (las suscripciones unificadas de accounts):
+Te suscribes con las mismas rutas que usan los SDKs y el trigger de n8n (las suscripciones unificadas de accounts):
 
 | Ruta | Qué hace |
 |---|---|
@@ -361,10 +361,10 @@ X-Funnelchat-Delivery: 7c9e6679-7425-40de-944b-e07fc1f90ae7
 }
 ```
 
-- **La firma** es la del portal: `v1` es el HMAC-SHA256, con el secreto completo (con `whsec_`), de `"<t>." + cuerpo crudo`. Verificala con `Funnelchat.webhooks.verify` (Node), `Webhook::verify` (PHP) o los snippets del portal. Los tests del sandbox la verifican con el `verify` del SDK de Node y con `verificar-firma.js` del portal, sobre los vectores de `tests/test_firmas.py`.
-- **Los reintentos** son los del portal: hasta 4 intentos, esperando 60 s, 300 s y 1800 s (con `--retry-delays` los acortás). Se reintenta ante un error de red, un timeout (10 s), un `5xx` o un `429`; cualquier otro `4xx` o un `3xx` es definitivo. Cada intento lleva el mismo cuerpo y el mismo `id`, una firma nueva y otro `X-Funnelchat-Delivery`.
+- **La firma** es la del portal: `v1` es el HMAC-SHA256, con el secreto completo (con `whsec_`), de `"<t>." + cuerpo crudo`. Verifícala con `Funnelchat.webhooks.verify` (Node), `Webhook::verify` (PHP) o los snippets del portal. Los tests del sandbox la verifican con el `verify` del SDK de Node y con `verificar-firma.js` del portal, sobre los vectores de `tests/test_firmas.py`.
+- **Los reintentos** son los del portal: hasta 4 intentos, esperando 60 s, 300 s y 1800 s (con `--retry-delays` los acortas). Se reintenta ante un error de red, un timeout (10 s), un `5xx` o un `429`; cualquier otro `4xx` o un `3xx` es definitivo. Cada intento lleva el mismo cuerpo y el mismo `id`, una firma nueva y otro `X-Funnelchat-Delivery`.
 - **Cinco entregas fallidas seguidas** deshabilitan la suscripción (`status: disabled`, `disabled_reason: too_many_failures`), como en accounts. Un `PUT` con `"status": "active"` la vuelve a prender.
-- El sandbox acepta URLs `http` y locales, para que apuntes a tu máquina. La API real solo acepta `https` públicas: probalo con `--require-https`.
+- El sandbox acepta URLs `http` y locales, para que apuntes a tu máquina. La API real solo acepta `https` públicas: pruébalo con `--require-https`.
 - **Los eventos que emite solo el sandbox** son los de su estado: `message.received`, `message.status_changed`, `whatsapp_form.completed`, `contact.*`, `conversation.*`, `template.status_changed`, `device.*` y los que dispares desde `/_sandbox`. Cualquier otro tipo del catálogo se emite con `POST /_sandbox/events/{tipo}`.
 
 ## Simular lo que llega
@@ -461,12 +461,12 @@ Y en `http://localhost:4010/_sandbox` ves cada pedido y cada entrega con lo que 
 ## Qué no imita
 
 - **No manda nada a WhatsApp** y no cobra: los estados `sent`, `delivered` y `read` los inventa el sandbox, con las demoras que configures. En la API real, un mensaje que sigue `queued` después de una hora se lee con `status: null`; en el sandbox siempre avanza.
-- **Una sola cuenta y todos los permisos:** cualquier clave bien formada entra, no se revoca y no hay `403 permission_denied`. Las claves de API no se crean acá, y las suscripciones no se filtran por las áreas de la clave (la API real responde `422` en `events` si la clave no tiene `{área}:read` del evento). El único `403 route_not_available` es el de las rutas que ninguna clave habilita.
-- **No hay topes diarios de llamadas** (`429 daily_cap_exceeded`), ni `503 gate_unavailable`, ni saldo: para probar esos casos, forzá la falla. Del MAC está el bloqueo (`429 mac_lockout_24h`); `429 mac_limit_reached` solo se fuerza, y la API real además guarda en el historial una fila de error por cada envío frenado por MAC, que el sandbox no guarda.
-- **El estado es solo memoria:** se pierde al cerrar el proceso o con `POST /_sandbox/reset`. Para que tu receptor no pierda el secreto, poné la suscripción en el archivo de configuración.
+- **Una sola cuenta y todos los permisos:** cualquier clave bien formada entra, no se revoca y no hay `403 permission_denied`. Las claves de API no se crean aquí, y las suscripciones no se filtran por las áreas de la clave (la API real responde `422` en `events` si la clave no tiene `{área}:read` del evento). El único `403 route_not_available` es el de las rutas que ninguna clave habilita.
+- **No hay topes diarios de llamadas** (`429 daily_cap_exceeded`), ni `503 gate_unavailable`, ni saldo: para probar esos casos, fuerza la falla. Del MAC está el bloqueo (`429 mac_lockout_24h`); `429 mac_limit_reached` solo se fuerza, y la API real además guarda en el historial una fila de error por cada envío frenado por MAC, que el sandbox no guarda.
+- **El estado es solo memoria:** se pierde al cerrar el proceso o con `POST /_sandbox/reset`. Para que tu receptor no pierda el secreto, pon la suscripción en el archivo de configuración.
 - **Las rutas sin estado** responden un ejemplo armado del esquema, siempre el mismo, aunque no corresponda a tus datos.
-- **Los mensajes de validación** son los de Laravel en castellano, armados desde el esquema: pueden no coincidir palabra por palabra con los de la API (decidí por el código HTTP y por `error`, no por `message`). El `422` de validación de la API real es el de Laravel, `{message, errors}`, sin `error`; el sandbox suma `"error": "validation_failed"`.
-- **Las URLs de webhook** pueden ser `http` y locales, sin la protección contra destinos internos de la API real (probá con `--require-https`). No expongas el sandbox a internet: las rutas `/_sandbox` no piden clave y el sandbox le hace `POST` a cualquier URL que le suscriban.
+- **Los mensajes de validación** son los de Laravel en castellano, armados desde el esquema: pueden no coincidir palabra por palabra con los de la API (decide por el código HTTP y por `error`, no por `message`). El `422` de validación de la API real es el de Laravel, `{message, errors}`, sin `error`; el sandbox suma `"error": "validation_failed"`.
+- **Las URLs de webhook** pueden ser `http` y locales, sin la protección contra destinos internos de la API real (prueba con `--require-https`). No expongas el sandbox a internet: las rutas `/_sandbox` no piden clave y el sandbox le hace `POST` a cualquier URL que le suscriban.
 - **El catálogo** está transcrito del código de accounts v1.4.24 (`spec/catalog.json`), no leído de una respuesta: si accounts lo cambia, hay que transcribirlo de nuevo.
 - **No hay grupos ni campañas con estado:** sus eventos se disparan desde `/_sandbox`, las acciones de grupo responden `403 route_not_available` como en producción, y las demás rutas responden ejemplos.
 - **Los formularios no hablan con Meta:** `sync` y `publish` salen bien salvo que el linter encuentre un error, y el linter es una versión corta del real (pantallas sin título, sin final, sin preguntas, con conexión al servidor). No hay métricas (`…/metrics`) ni formularios dinámicos.

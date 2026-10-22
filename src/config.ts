@@ -263,7 +263,7 @@ export function parseArgs(argv: string[]): CliArgs {
         o.log = false;
         break;
       default:
-        throw new ConfigError(`Opción desconocida: ${arg}. Probá --help.`);
+        throw new ConfigError(`Opción desconocida: ${arg}. Prueba --help.`);
     }
   }
   return args;

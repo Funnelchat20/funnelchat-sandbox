@@ -117,7 +117,7 @@ function inboundMessage(app: SandboxApp, req: SandboxRequest): SandboxResponse {
   if (b.contact_id !== undefined) contact = contactOf(app, b.contact_id);
   else {
     const phone = digits(b.phone);
-    if (!phone) throw fieldError('phone', 'Mandá phone (el teléfono de quien escribe) o contact_id.');
+    if (!phone) throw fieldError('phone', 'Manda phone (el teléfono de quien escribe) o contact_id.');
     contact = app.store.findContactByPhone(phone) ?? createContact(app, { phone, name: b.name ?? null });
   }
   const occurredAt = b.occurred_at ? new Date(String(b.occurred_at)) : new Date();
@@ -223,8 +223,8 @@ const ROUTES: Route[] = [
     pattern: /^\/_sandbox\/events\/([a-z0-9_.]+)$/,
     handle: (app, req, [type]) => {
       const entry = catalogEntry(type as string);
-      if (!entry) throw notFound(`${type} no está en el catálogo. Mirá GET /_sandbox/events.`);
-      if (!entry.subscribable) throw fieldError('type', `${type} no se puede suscribir: usá POST /api/v1/webhooks/{id}/test.`);
+      if (!entry) throw notFound(`${type} no está en el catálogo. Mira GET /_sandbox/events.`);
+      if (!entry.subscribable) throw fieldError('type', `${type} no se puede suscribir: usa POST /api/v1/webhooks/{id}/test.`);
       const data = deepMerge(emittedData(entry), obj(req.body).data);
       return { status: 202, body: { event: emitted(app.webhooks.emit(entry.type, data)), data } };
     },
@@ -383,7 +383,7 @@ export async function handleSandbox(app: SandboxApp, req: SandboxRequest): Promi
   if (candidates.length === 0) return null;
   const route = candidates.find((r) => r.method === req.method);
   if (!route) {
-    throw new ApiError(405, 'method_not_allowed', `Usá ${candidates.map((r) => r.method).join(', ')} en ${req.path}.`);
+    throw new ApiError(405, 'method_not_allowed', `Usa ${candidates.map((r) => r.method).join(', ')} en ${req.path}.`);
   }
   const params = (route.pattern.exec(req.path) ?? []).slice(1);
   return route.handle(app, req, params);

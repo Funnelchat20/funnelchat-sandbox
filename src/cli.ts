@@ -70,7 +70,7 @@ main().catch((error: unknown) => {
   }
   const code = (error as { code?: string }).code;
   if (code === 'EADDRINUSE') {
-    console.error('funnelchat-sandbox: el puerto está ocupado. Probá con --port <otro>.');
+    console.error('funnelchat-sandbox: el puerto está ocupado. Prueba con --port <otro>.');
     process.exit(1);
   }
   console.error(error);

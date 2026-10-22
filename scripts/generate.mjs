@@ -179,7 +179,7 @@ function mergeLayer(merged, layer, layerName, report) {
 
   for (const [name, schema] of Object.entries(layer.components?.schemas ?? {})) {
     if (merged.components.schemas[name]) {
-      throw new Error(`${layerName}: el esquema ${name} ya existe; renombralo.`);
+      throw new Error(`${layerName}: el esquema ${name} ya existe; renómbralo.`);
     }
     merged.components.schemas[name] = schema;
   }
@@ -310,7 +310,7 @@ function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.spec) importSpec(args.spec);
   if (args.pending) importPending(args.pending);
-  if (!existsSync(SPEC_FILE)) throw new Error('Falta spec/funnelchat.json: corré `npm run generate -- --spec <archivo>`.');
+  if (!existsSync(SPEC_FILE)) throw new Error('Falta spec/funnelchat.json: corre `npm run generate -- --spec <archivo>`.');
 
   const specBytes = readFileSync(SPEC_FILE);
   const pendingBytes = existsSync(PENDING_FILE) ? readFileSync(PENDING_FILE) : null;
@@ -321,7 +321,7 @@ function main() {
     console.warn('aviso: spec/funnelchat.json no coincide con el sha256 de spec/procedencia.json (¿la editaron a mano?).');
   }
   if (pendingBytes && provenance.pending && provenance.pending.sha256 !== sha256(pendingBytes)) {
-    console.warn('aviso: spec/pending.json no coincide con el sha256 de spec/procedencia.json: es la capa del SDK de Node, cambiala allá y volvé a copiarla con --pending.');
+    console.warn('aviso: spec/pending.json no coincide con el sha256 de spec/procedencia.json: es la capa del SDK de Node, cámbiala allá y vuelve a copiarla con --pending.');
   }
 
   const layers = [];
@@ -355,7 +355,7 @@ function main() {
 
   if (args.check) {
     if (!existsSync(OUT_FILE) || readFileSync(OUT_FILE, 'utf8') !== output) {
-      console.error('generated/openapi.json está desactualizado: corré `npm run generate`.');
+      console.error('generated/openapi.json está desactualizado: corre `npm run generate`.');
       process.exit(1);
     }
     console.log('generated/openapi.json está al día.');

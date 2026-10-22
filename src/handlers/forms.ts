@@ -385,7 +385,7 @@ export function completeForm(app: SandboxApp, input: Record<string, unknown>): R
       : input.message_id !== undefined
         ? runs.find((r) => r.messageId === Number(input.message_id))
         : runs.filter((r) => r.status === 'pending' && (input.contact_id === undefined || r.contactId === Number(input.contact_id))).pop();
-  if (!run) throw new ApiError(404, 'not_found', 'No hay un envío de formulario con ese run_id, message_id o contact_id. Enviá uno con POST /api/v1/contacts/{contact}/message/form.');
+  if (!run) throw new ApiError(404, 'not_found', 'No hay un envío de formulario con ese run_id, message_id o contact_id. Envía uno con POST /api/v1/contacts/{contact}/message/form.');
   const form = app.store.forms.get(run.versionId) as FormVersion;
   if (run.status === 'completed') return { run: runDetail(app, run), event: null };
   if (input.answers !== undefined && !isRecord(input.answers)) throw fieldError('answers', 'answers tiene que ser un objeto {nombre de la pregunta: valor}.');

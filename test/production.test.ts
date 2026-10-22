@@ -126,7 +126,7 @@ describe('the MAC of the account', () => {
     expect(template.status).toBe(200);
 
     // The forward is not a 429: that destination comes back blocked.
-    const source = (await api.call('POST', `/api/v1/contacts/${other}/message`, { device_id: 4, contact_id: other, text: 'Reenviame' })).body.message.id;
+    const source = (await api.call('POST', `/api/v1/contacts/${other}/message`, { device_id: 4, contact_id: other, text: 'Reenvíame' })).body.message.id;
     const forward = await api.call('POST', `/api/v1/contacts/${other}/messages/${source}/forward`, { targets: [{ contact_id: 2001, device_id: 4 }, { contact_id: other, device_id: 4 }] });
     expect(forward.status).toBe(200);
     expect(forward.body[0]).toEqual({ contact_id: 2001, mode: 'native', status: 'blocked', reason: 'mac_lockout_24h', message: null });
