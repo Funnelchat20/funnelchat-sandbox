@@ -29,7 +29,7 @@ npx funnelchat-sandbox
 ```
 
 ```
-funnelchat-sandbox 0.1.0 at http://127.0.0.1:4010
+funnelchat-sandbox 0.1.1 at http://127.0.0.1:4010
   API:    http://127.0.0.1:4010/api/v1/...   (Authorization: Bearer 1|fc_live_sandbox, or any well-formed key)
   panel:  http://127.0.0.1:4010/_sandbox
   example numbers: 3 (official, with the 24-hour window) and 4 (QR, no window); contact 2001; template 45
@@ -163,7 +163,7 @@ Every session starts with this:
 
 The official number (`3`) has no groups (the sandbox account is not in the official groups beta); the QR one (`4`) does, and has no templates. `health` is `null` on the QR number.
 
-**The group actions by API** (create a group, participants, admins, name, description, photo, settings, invite link, sending to the group and the join requests) exist in communities but are off in production: with any key they answer `403 route_not_available`, as they do here. So do polls and events (`/message/poll`, `/message/event`).
+**Polls and events** (`/message/poll`, `/message/event`) are closed to API keys in production: with any key they answer `403 route_not_available`, as they do here.
 
 ```json
 { "error": "route_not_available", "message": "Esta ruta no está disponible para API keys en el piloto. No es un permiso que falte: ninguna key la habilita." }
@@ -466,7 +466,7 @@ And at `http://localhost:4010/_sandbox` you see each request and each delivery w
 - **The validation messages** are Laravel's in Spanish, built from the schema: they may not match the API's word for word (decide by the HTTP status and by `error`, not by `message`). The real API's validation `422` is Laravel's, `{message, errors}`, without `error`; the sandbox adds `"error": "validation_failed"`.
 - **Webhook URLs** may be `http` and local, without the real API's protection against internal destinations (try `--require-https`). Do not expose the sandbox to the internet: the `/_sandbox` routes take no key and the sandbox `POST`s to any URL subscribed to it.
 - **The catalog** is transcribed from the code of accounts v1.4.24 (`spec/catalog.json`), not read from a response: if accounts changes it, it has to be transcribed again.
-- **There are no groups or campaigns with state:** their events are fired from `/_sandbox`, the group actions answer `403 route_not_available` as in production, and the other routes answer examples.
+- **There are no groups or campaigns with state:** their events are fired from `/_sandbox`, and their routes answer examples.
 - **Forms do not talk to Meta:** `sync` and `publish` succeed unless the linter finds an error, and the linter is a short version of the real one (screens without a title, without an ending, without questions, with a connection to the server). There are no metrics (`…/metrics`) and no dynamic forms.
 - **Files are not downloaded:** the type comes from the extension or from `file_type`. The «known» extensions (the ones that give `415` instead of `422 errors.file_type`) are the common ones; the API uses symfony/mime's full list.
 - **The pace and the brakes** use the numbers of conversations in production (`config/send_guards.php`, `config/antiblock.php`); the official number paired with a QR one in coexistence (15 per second, shared) is not there.
@@ -487,7 +487,6 @@ Besides, `spec/catalog.json` is the event catalog of accounts v1.4.24, with its 
 | `message.status_changed` and `device_id` in `message.received` | conversations v1.18.10 | In production; `message.status_changed` is `active`. |
 | The file by URL: `file_type`, `file_name`, their `422`s and the `415` | conversations v1.18.10 (`SendFileType`) | In production. |
 | Forms: `/api/v1/forms…`, `POST /api/v1/contacts/{contact}/message/form` and `whatsapp_form.completed` | conversations v1.18.10 | In production. The portal does not document them yet. |
-| The group actions and join requests, off (`403 route_not_available`) | communities v2.34.52 | In production, off. |
 | `capabilities` and the new keys of the numbers | accounts v1.4.24 (`DeviceResource`, `DeviceCapabilities`) | In production. |
 | `X-Request-Id` and the edge's errors (`route_not_found`, `origin_unreachable`, `edge_misconfigured`) | api-edge v0.3.0, platform-gate v0.8.0 | In production. |
 

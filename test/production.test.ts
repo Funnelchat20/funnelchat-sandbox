@@ -1,7 +1,7 @@
 /**
  * What production answers since 21-10 (accounts v1.4.24, conversations v1.18.10, communities v2.34.52, api-edge
  * v0.3.0): X-Request-Id, the edge's errors, the file by URL, the MAC, the bodies of each route, the numbers'
- * capabilities and the group actions that are off.
+ * capabilities and the polls and events the gate closes.
  */
 import { describe, expect, it } from 'vitest';
 import { startReceiver, startSandbox, subscribe } from './helpers.js';
@@ -185,16 +185,10 @@ describe('numbers and groups', () => {
     expect(await api.call('GET', '/api/v1/devices/99')).toMatchObject({ status: 404, body: { message: 'Object not found' } });
   });
 
-  it('group actions, join requests, polls and events answer 403 route_not_available', async () => {
+  it('polls and events answer 403 route_not_available', async () => {
     const api = await startSandbox();
-    for (const [method, path] of [
-      ['POST', '/api/v1/groups'],
-      ['POST', '/api/v1/groups/120363000000000000@g.us/participants'],
-      ['GET', '/api/v1/groups/120363000000000000@g.us/join-requests'],
-      ['GET', '/api/v1/groups/actions/00000000-0000-4000-8000-000000000001'],
-      ['POST', '/api/v1/contacts/2001/message/poll'],
-    ] as const) {
-      const res = await api.call(method, path, method === 'POST' ? {} : undefined);
+    for (const path of ['/api/v1/contacts/2001/message/poll', '/api/v1/contacts/2001/message/event']) {
+      const res = await api.call('POST', path, {});
       expect(res.status, path).toBe(403);
       expect(res.body.error).toBe('route_not_available');
     }

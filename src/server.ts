@@ -13,7 +13,7 @@ import { SandboxApp, type Logger } from './app.js';
 import { defaultConfig, mergeConfig, type ConfigInput, type SandboxConfig } from './config.js';
 import { contactHandlers } from './handlers/contacts.js';
 import { formHandlers } from './handlers/forms.js';
-import { GATE_CLOSED, groupHandlers } from './handlers/groups.js';
+import { GATE_CLOSED, gateHandlers } from './handlers/gate.js';
 import { messageHandlers } from './handlers/messages.js';
 import { webhookHandlers } from './handlers/webhooks.js';
 import type { HandlerResult, HandlerTable } from './http/context.js';
@@ -32,7 +32,7 @@ const MAX_BODY_BYTES = 1024 * 1024;
 /** `Authorization: Bearer <id>|fc_live_...`: any well-formed key is accepted. */
 const API_KEY = /^Bearer\s+(\d+)\|fc_live_[A-Za-z0-9]+$/;
 
-const handlers: HandlerTable = { ...contactHandlers, ...messageHandlers, ...formHandlers, ...groupHandlers, ...webhookHandlers };
+const handlers: HandlerTable = { ...contactHandlers, ...messageHandlers, ...formHandlers, ...gateHandlers, ...webhookHandlers };
 
 class BodyError extends ApiError {}
 
