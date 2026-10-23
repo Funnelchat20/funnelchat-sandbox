@@ -39,6 +39,8 @@ export interface Device {
   externalReference: string | null;
   /** Official numbers only (`null` for QR). */
   health: HealthState | null;
+  /** The sign-up link that connected it last: `connect_link_id` of every `device.*` event. */
+  lastConnectLinkId: number | null;
   wabaId: string | null;
   phoneNumberId: string | null;
   firstConnectedAt: Date | null;
@@ -49,7 +51,7 @@ export type ConnectLinkStatus = 'pending' | 'completed' | 'failed' | 'expired' |
 
 /** A sign-up link (contract A1 `connect-links`): it creates (or reconnects) a number when the page completes. */
 export interface ConnectLink {
-  id: string;
+  id: number;
   type: 'meta' | 'qr';
   status: ConnectLinkStatus;
   /** sha256 of the token: the raw token is only in the `url` of the create answer. */
@@ -74,6 +76,7 @@ export interface IdempotentAnswer {
   fingerprint: string;
   status: number;
   body: unknown;
+  headers: Record<string, string>;
   storedAt: Date;
 }
 
@@ -293,12 +296,14 @@ export class Store {
   forms = new Map<number, FormVersion>();
   formFamilies = new Map<number, FormFamily>();
   formRuns = new Map<number, FormRun>();
-  connectLinks = new Map<string, ConnectLink>();
-  /** Answers by `Idempotency-Key` (one account: the key alone). */
+  connectLinks = new Map<number, ConnectLink>();
+  /** When each `POST /connect-links` arrived in the last minute: the per-minute limit. */
+  linkAttempts: number[] = [];
+  /** Answers by `Idempotency-Key`, per resource (`devices`, `connect-links`): one account. */
   idempotency = new Map<string, IdempotentAnswer>();
 
   /** The number quota of the account and the switch of the Meta sign-up (`POST /_sandbox/numbers`). */
-  numbers = { limit: 5, included: true, trial: false, metaConnect: true };
+  numbers = { limit: 5, included: true, trial: false, metaConnect: true, linksPerMinute: 10 };
 
   /** Last inbound message per `contactId:deviceId`: the 24-hour window. */
   lastInbound = new Map<string, Date>();
@@ -327,6 +332,7 @@ export class Store {
     formVersion: new Sequence(8101),
     formRun: new Sequence(1),
     device: new Sequence(5),
+    connectLink: new Sequence(1),
   };
 
   constructor(readonly historyLimit = 200) {}
@@ -374,6 +380,7 @@ export function seed(store: Store, now = new Date()): void {
     fromPool: false,
     externalReference: null,
     health: 'available',
+    lastConnectLinkId: null,
     wabaId: '100000000000001',
     phoneNumberId: '100000000000003',
     firstConnectedAt: now,
@@ -390,6 +397,7 @@ export function seed(store: Store, now = new Date()): void {
     fromPool: false,
     externalReference: null,
     health: null,
+    lastConnectLinkId: null,
     wabaId: null,
     phoneNumberId: null,
     firstConnectedAt: now,

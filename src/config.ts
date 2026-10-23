@@ -53,6 +53,8 @@ export interface SandboxConfig {
     trial: boolean;
     /** `false`: `POST /connect-links` with `type: meta` answers `503 meta_connect_disabled`, like production while Meta is off. */
     metaConnect: boolean;
+    /** `POST /connect-links` per minute (accounts: 10); one more answers Laravel's `429 Too Many Attempts.`. */
+    linksPerMinute: number;
   };
   /**
    * Where the sign-up page is reachable, for the `url` of a link (`<publicUrl>/connect/<token>`). Never taken from the
@@ -77,7 +79,7 @@ export function defaultConfig(): SandboxConfig {
     rules: { window: true, antiblock: true, rateLimit: true },
     templateApprovalSeconds: 5,
     subscriptions: [],
-    numbers: { limit: 5, included: true, trial: false, metaConnect: true },
+    numbers: { limit: 5, included: true, trial: false, metaConnect: true, linksPerMinute: 10 },
     publicUrl: null,
     historyLimit: 200,
     log: true,
@@ -165,10 +167,11 @@ export function mergeConfig(base: SandboxConfig, input: ConfigInput): SandboxCon
   }
   if (input.numbers !== undefined) {
     const n = input.numbers;
-    if (!isRecord(n)) throw new ConfigError('numbers must be an object {limit, included, trial, metaConnect}.');
-    if (n.limit !== undefined) {
-      if (!Number.isInteger(n.limit) || (n.limit as number) < 0) throw new ConfigError('numbers.limit must be an integer, 0 or more.');
-      out.numbers.limit = n.limit as number;
+    if (!isRecord(n)) throw new ConfigError('numbers must be an object {limit, included, trial, metaConnect, linksPerMinute}.');
+    for (const key of ['limit', 'linksPerMinute'] as const) {
+      if (n[key] === undefined) continue;
+      if (!Number.isInteger(n[key]) || (n[key] as number) < 0) throw new ConfigError(`numbers.${key} must be an integer, 0 or more.`);
+      out.numbers[key] = n[key] as number;
     }
     for (const key of ['included', 'trial', 'metaConnect'] as const) {
       if (n[key] !== undefined) out.numbers[key] = Boolean(n[key]);

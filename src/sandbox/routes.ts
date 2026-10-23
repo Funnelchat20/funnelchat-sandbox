@@ -9,7 +9,18 @@ import { createContact, eventContact } from '../handlers/contacts.js';
 import { completeForm } from '../handlers/forms.js';
 import { setTemplateStatus } from '../handlers/messages.js';
 import { createMessage, transition } from '../messaging/lifecycle.js';
-import { connectDevice, disconnectDevice, DISCONNECT_REASONS, HEALTH_STATES, placesInUse, poolLimit, refreshLink, setHealth, type DisconnectReason } from '../numbers/numbers.js';
+import {
+  connectDevice,
+  disconnectDevice,
+  DISCONNECT_REASONS,
+  HEALTH_STATES,
+  pendingQrIds,
+  placesInUse,
+  poolLimit,
+  refreshLink,
+  setHealth,
+  type DisconnectReason,
+} from '../numbers/numbers.js';
 import { FAILURE_REASONS, REJECTIONS, failureFor, parseForced } from '../messaging/rules.js';
 import { connectLinkResource, contactResource, deliveryResource, deviceResource, publicMessage } from '../state/resources.js';
 import type { ArmedFailure, Contact, HealthState, TemplateStatus } from '../state/store.js';
@@ -62,10 +73,12 @@ function numbersState(app: SandboxApp): Record<string, unknown> {
   return {
     limit: numbers.limit,
     in_use: placesInUse(app),
+    pending_device_ids: pendingQrIds(app),
     included: numbers.included,
     trial: numbers.trial,
     pool_limit: poolLimit(app),
     meta_connect: numbers.metaConnect,
+    links_per_minute: numbers.linksPerMinute,
   };
 }
 
@@ -398,9 +411,10 @@ const ROUTES: Route[] = [
     handle: (app, req) => {
       const b = obj(req.body);
       const { numbers } = app.store;
-      if (b.limit !== undefined) {
-        if (!Number.isInteger(b.limit) || (b.limit as number) < 0) throw fieldError('limit', 'limit must be an integer, 0 or more.');
-        numbers.limit = b.limit as number;
+      for (const [field, key] of [['limit', 'limit'], ['links_per_minute', 'linksPerMinute']] as const) {
+        if (b[field] === undefined) continue;
+        if (!Number.isInteger(b[field]) || (b[field] as number) < 0) throw fieldError(field, `${field} must be an integer, 0 or more.`);
+        numbers[key] = b[field] as number;
       }
       for (const [field, key] of [['included', 'included'], ['trial', 'trial'], ['meta_connect', 'metaConnect']] as const) {
         if (b[field] === undefined) continue;

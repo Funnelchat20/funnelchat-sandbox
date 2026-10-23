@@ -4,7 +4,7 @@
   "webhooks": { "retryDelays": [5, 15, 30], "timeoutSeconds": 10 },
   "rules": { "window": true, "antiblock": true, "rateLimit": true },
   "templateApprovalSeconds": 5,
-  "numbers": { "limit": 5, "included": true, "trial": false, "metaConnect": true },
+  "numbers": { "limit": 5, "included": true, "trial": false, "metaConnect": true, "linksPerMinute": 10 },
   "publicUrl": null,
   "subscriptions": [
     {

@@ -71,3 +71,9 @@ export const methodNotAllowed = (method: string, allowed: string[]) =>
 export const validationFailed = (errors: FieldErrors) => new ApiError(422, 'validation_failed', summarize(errors), { errors });
 
 export const fieldError = (field: string, message: string) => validationFailed({ [field]: [message] });
+
+/**
+ * The `422` of the routes of the sign-up by API (accounts, amendment v0.1 of the contract): `invalid_request` with the
+ * errors per field. An operation of the spec that answers it says so with `x-fc-validation-error`.
+ */
+export const invalidRequest = (errors: FieldErrors) => new ApiError(422, 'invalid_request', summarize(errors), { errors });

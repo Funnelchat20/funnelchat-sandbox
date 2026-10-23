@@ -1,33 +1,47 @@
 /**
- * Sign-up links (`/api/v1/connect-links`), from the contract of the sign-up by API (22-10, section A1) while accounts
- * writes it: a link of the account, with no number yet, that creates the number when the hosted page completes
- * (`/connect/{token}`, numbers/page.ts), or reconnects the number of `device_id`.
+ * Sign-up links (`/api/v1/connect-links`), from the contract of the sign-up by API (22-10, section A1) and its
+ * amendment v0.1 (23-10, read from accounts `feat/alta-de-numeros-api` `52d49b319`): a link of the account, with no
+ * number yet, that creates the number when the hosted page completes (`/connect/{token}`, numbers/page.ts), or
+ * reconnects the number of `device_id`.
  *
- * Statuses: `pending` → `completed` | `failed`, or `expired` (past `expires_at`) or `revoked` (`DELETE`). The raw token
- * is only in the `url` of the create answer; the sandbox keeps its sha256.
+ * Statuses: `pending` → `completed` | `failed`, or `expired` (past `expires_at`) or `revoked` (`DELETE`). The id is an
+ * integer. The raw token is only in the `url` of the create answer; the sandbox keeps its sha256.
  */
+import type { SandboxApp } from '../app.js';
 import { body, listContext, noContent, ok, type HandlerTable } from '../http/context.js';
-import { ApiError, notFound, validationFailed } from '../http/errors.js';
+import { ApiError, invalidRequest, notFound, RawApiError } from '../http/errors.js';
 import { idempotent } from '../http/idempotency.js';
 import { paginate } from '../http/paginate.js';
-import { checkQuota, checkSameNumber, newToken, OPEN_LINKS_LIMIT, openLinks, refreshLink, sha256 } from '../numbers/numbers.js';
+import {
+  checkQuota,
+  checkSameNumber,
+  invalidReferenceDevice,
+  newToken,
+  OPEN_LINKS_LIMIT,
+  openLinks,
+  refreshLink,
+  sha256,
+} from '../numbers/numbers.js';
 import { connectLinkResource } from '../state/resources.js';
 import type { ConnectLink } from '../state/store.js';
-import type { SandboxApp } from '../app.js';
-import { uuid } from '../util.js';
 
 const DEFAULT_EXPIRES_IN_MINUTES = 1440;
 
 function linkOf(app: SandboxApp, id: unknown): ConnectLink {
-  const link = app.store.connectLinks.get(String(id));
+  const link = app.store.connectLinks.get(Number(id));
   if (!link) throw notFound('No encontramos ese link de alta en la cuenta.');
   return refreshLink(link);
 }
 
-const present = (value: unknown): boolean => value !== undefined && value !== null;
+/** Laravel's `prohibited` lets through a missing field, `null`, `""` and `[]`; anything else (even `false`) is present. */
+const present = (value: unknown): boolean => value !== undefined && value !== null && value !== '' && !(Array.isArray(value) && value.length === 0);
 
-/** The rules between fields that the schema does not express (contract A1). */
-function checkLinkBody(app: SandboxApp, b: Record<string, unknown>): void {
+/**
+ * The rules between fields that the schema does not express, by `type` (amendment v0.1):
+ * `allowed_connection_types` required with `meta` and prohibited with `qr`; `provision_us_number` prohibited with
+ * `qr`; `same_number_as` prohibited with `meta` and excluding `device_id`; `return_url` only `https`.
+ */
+function checkLinkBody(b: Record<string, unknown>): void {
   const errors: Record<string, string[]> = {};
   const meta = b.type === 'meta';
   if (meta && !present(b.allowed_connection_types)) {
@@ -36,9 +50,9 @@ function checkLinkBody(app: SandboxApp, b: Record<string, unknown>): void {
   if (!meta && present(b.allowed_connection_types)) {
     errors.allowed_connection_types = ['El campo allowed_connection_types está prohibido cuando type es qr.'];
   }
-  if (!meta && b.provision_us_number === true) errors.provision_us_number = ['El campo provision_us_number solo se acepta cuando type es meta.'];
-  if (meta && present(b.same_number_as)) errors.same_number_as = ['El campo same_number_as solo se acepta cuando type es qr.'];
-  if (present(b.same_number_as) && present(b.device_id)) errors.same_number_as = ['El campo same_number_as está prohibido cuando se envía device_id.'];
+  if (!meta && present(b.provision_us_number)) errors.provision_us_number = ['El campo provision_us_number está prohibido cuando type es qr.'];
+  if (meta && present(b.same_number_as)) errors.same_number_as = ['El campo same_number_as está prohibido cuando type es meta.'];
+  else if (present(b.same_number_as) && present(b.device_id)) errors.same_number_as = ['El campo same_number_as prohíbe que device_id esté presente.'];
   if (present(b.return_url)) {
     let url: URL | null = null;
     try {
@@ -48,24 +62,39 @@ function checkLinkBody(app: SandboxApp, b: Record<string, unknown>): void {
     }
     if (!url || url.protocol !== 'https:') errors.return_url = ['El campo return_url debe ser una URL https.'];
   }
-  if (present(b.device_id)) {
-    const device = app.store.devices.get(Number(b.device_id));
-    if (!device) errors.device_id = ['El campo device_id no corresponde a un número de la cuenta.'];
-    else if ((device.kind === 'qr') !== (b.type === 'qr')) errors.device_id = ['El type del link tiene que coincidir con el método del número a reconectar.'];
+  if (Object.keys(errors).length) throw invalidRequest(errors);
+}
+
+/** `throttle`: N creations per minute per account; one more gets Laravel's own `429`, without `error`. */
+function throttle(app: SandboxApp): void {
+  const now = Date.now();
+  const { store } = app;
+  store.linkAttempts = store.linkAttempts.filter((at) => now - at < 60_000);
+  if (store.linkAttempts.length >= store.numbers.linksPerMinute) {
+    const retryAfter = Math.max(1, Math.ceil((60_000 - (now - (store.linkAttempts[0] as number))) / 1000));
+    throw new RawApiError(429, { message: 'Too Many Attempts.' }, { 'Retry-After': String(retryAfter) });
   }
-  if (Object.keys(errors).length) throw validationFailed(errors);
+  store.linkAttempts.push(now);
 }
 
 export const connectLinkHandlers: HandlerTable = {
-  'POST /api/v1/connect-links': (ctx) =>
-    idempotent(ctx, () => {
+  'POST /api/v1/connect-links': (ctx) => {
+    throttle(ctx.app);
+    return idempotent(ctx, 'connect-links', () => {
       const { app } = ctx;
       const b = body(ctx);
-      checkLinkBody(app, b);
+      checkLinkBody(b);
       if (b.type === 'meta' && !app.store.numbers.metaConnect) {
         throw new ApiError(503, 'meta_connect_disabled', 'El alta de números oficiales por link no está disponible todavía.');
       }
       const reconnect = present(b.device_id);
+      if (reconnect) {
+        const device = app.store.devices.get(Number(b.device_id));
+        if (!device) throw invalidReferenceDevice();
+        if ((device.kind === 'qr') !== (b.type === 'qr')) {
+          throw new ApiError(422, 'connection_type_mismatch', 'El type del link tiene que coincidir con el método del número a reconectar.');
+        }
+      }
       const sameNumberAs = present(b.same_number_as) ? checkSameNumber(app, b.same_number_as).id : null;
       // A reconnection, or QR on a number in coexistence, takes no new place.
       if (!reconnect && sameNumberAs === null) checkQuota(app);
@@ -84,9 +113,9 @@ export const connectLinkHandlers: HandlerTable = {
         }
       }
       const token = newToken();
-      const minutes = b.expires_in_minutes === undefined || b.expires_in_minutes === null ? DEFAULT_EXPIRES_IN_MINUTES : Number(b.expires_in_minutes);
+      const minutes = present(b.expires_in_minutes) ? Number(b.expires_in_minutes) : DEFAULT_EXPIRES_IN_MINUTES;
       const link: ConnectLink = {
-        id: uuid(),
+        id: app.store.ids.connectLink.next(),
         type: b.type === 'meta' ? 'meta' : 'qr',
         status: 'pending',
         tokenHash: sha256(token),
@@ -105,17 +134,18 @@ export const connectLinkHandlers: HandlerTable = {
       app.store.connectLinks.set(link.id, link);
       app.logger.info(`sign-up link ${link.id} (${link.type}) → ${app.publicUrl}/connect/…`);
       const { id, type, status, ...rest } = connectLinkResource(link);
-      return ok({ data: { id, type, status, url: `${app.publicUrl}/connect/${token}`, ...rest } }, 201);
-    }),
+      return { status: 201, body: { data: { id, type, status, url: `${app.publicUrl}/connect/${token}`, ...rest } }, headers: { 'Cache-Control': 'no-store' } };
+    });
+  },
 
-  // Paginated like the other lists, oldest first; filters by `status` and `external_reference`.
+  // Paginated like the other lists, newest first (by id); filters by `status` and `external_reference`.
   'GET /api/v1/connect-links': (ctx) => {
     const { status, external_reference: reference } = ctx.query;
     const list = [...ctx.app.store.connectLinks.values()]
       .map((link) => refreshLink(link))
       .filter((link) => !status || link.status === status)
       .filter((link) => reference === undefined || reference === '' || link.externalReference === String(reference))
-      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+      .sort((a, b) => b.id - a.id);
     return ok(paginate(list, listContext(ctx), connectLinkResource));
   },
 

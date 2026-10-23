@@ -21,7 +21,7 @@ import { messageHandlers } from './handlers/messages.js';
 import { webhookHandlers } from './handlers/webhooks.js';
 import type { HandlerResult, HandlerTable } from './http/context.js';
 import { takeEdgeFailure } from './http/edge.js';
-import { ApiError, edgeError, methodNotAllowed, notFound, routeNotAvailable, routeNotFound, unauthenticated, validationFailed } from './http/errors.js';
+import { ApiError, edgeError, invalidRequest, methodNotAllowed, notFound, routeNotAvailable, routeNotFound, unauthenticated, validationFailed } from './http/errors.js';
 import { parseQuery } from './http/query.js';
 import { handleConnectPage, isConnectPath } from './numbers/page.js';
 import { exampleFor } from './openapi/example.js';
@@ -169,7 +169,7 @@ export function createSandbox(options: CreateSandboxOptions = {}): Sandbox {
       const validation = validateRequest(op.operation, match.params, parseQuery(url.searchParams), requestBody, requestBodySchema(op.operation));
       if (!validation.ok) {
         if (validation.kind === 'not_found') throw notFound();
-        throw validationFailed(validation.errors);
+        throw op.operation['x-fc-validation-error'] === 'invalid_request' ? invalidRequest(validation.errors) : validationFailed(validation.errors);
       }
       const handler = handlers[`${op.method.toUpperCase()} ${op.path}`];
       const ctx = {
@@ -225,10 +225,14 @@ export function createSandbox(options: CreateSandboxOptions = {}): Sandbox {
       try {
         const body = method === 'POST' ? parseBody(await readBody(req), headers['content-type']) : undefined;
         const answer = handleConnectPage(app, method, url.pathname, headers, url.searchParams, body);
-        const pageHeaders: Record<string, string> = { 'X-Funnelchat-Sandbox': VERSION, ...answer.headers, [REQUEST_ID_HEADER]: requestId };
-        if (answer.html !== undefined) pageHeaders['Content-Type'] = 'text/html; charset=utf-8';
-        res.writeHead(answer.status, pageHeaders);
-        res.end(answer.html);
+        if (answer.body !== undefined) {
+          send(res, requestId, answer);
+        } else {
+          const pageHeaders: Record<string, string> = { 'X-Funnelchat-Sandbox': VERSION, ...answer.headers, [REQUEST_ID_HEADER]: requestId };
+          if (answer.html !== undefined) pageHeaders['Content-Type'] = 'text/html; charset=utf-8';
+          res.writeHead(answer.status, pageHeaders);
+          res.end(answer.html);
+        }
       } catch (error) {
         send(res, requestId, errorResult(error));
       }

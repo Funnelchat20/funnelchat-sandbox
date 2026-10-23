@@ -23120,7 +23120,7 @@
    "post": {
     "operationId": "pendingSandboxDevices.store",
     "summary": "Create a number by QR",
-    "description": "Creates a number of the account to connect by QR, with `connected: false`; ask for its code with `GET /devices/{device}/qr`. Same path and same rejections as the panel: the quota counts phones (QR and Meta of the same phone count once). `same_number_as` adds QR to an official number in coexistence without taking a place. An official number is created only with a sign-up link.\n\n**Pending of the spec**: from the contract of the sign-up by API (22-10, A1), while accounts writes it; its OpenAPI will be the final source.",
+    "description": "Creates a number of the account to connect by QR, with `connected: false`; ask for its code with `GET /devices/{device}/qr`. Same path and same rejections as the panel: the quota counts phones (QR and Meta of the same phone count once). `same_number_as` adds QR to an official number in coexistence without taking a place. An official number is created only with a sign-up link.\n\n**Pending of the spec**: from the contract of the sign-up by API (22-10, A1), while accounts writes it; its OpenAPI will be the final source.\n\nAmendment v0.1 (23-10): as accounts did it in `feat/alta-de-numeros-api` `52d49b319`. The pool keeps at most one unconnected QR number per account: another one answers `409 pending_number_exists` with its `device_id`. Without an active plan, `403` without `error`.",
     "tags": [
      "Device"
     ],
@@ -23200,10 +23200,18 @@
          ]
         }
        }
+      },
+      "headers": {
+       "Idempotent-Replayed": {
+        "description": "`true` when the answer is a replay of the same `Idempotency-Key`.",
+        "schema": {
+         "type": "string"
+        }
+       }
       }
      },
      "403": {
-      "description": "`numbers_not_included` or `number_limit_reached`",
+      "description": "`numbers_not_included`, `number_limit_reached` (with `limit`, `used` and `pending_device_ids`) or `connect_not_allowed`",
       "content": {
        "application/json": {
         "schema": {
@@ -23213,7 +23221,7 @@
       }
      },
      "409": {
-      "description": "`operation_in_progress`",
+      "description": "`pending_number_exists` (with `device_id`) or `operation_in_progress`",
       "content": {
        "application/json": {
         "schema": {
@@ -23223,7 +23231,17 @@
       }
      },
      "422": {
-      "description": "`validation_failed`, `qr_requires_coexistence`, `method_already_present` (with `device_id`) or `idempotency_key_mismatch`",
+      "description": "`invalid_request` (with `errors`), `invalid_reference_device`, `qr_requires_coexistence`, `method_already_present` (with `device_id`), `number_suspended_by_plan`, `idempotency_key_mismatch` or `invalid_idempotency_key`",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PendingSandboxAccountsError"
+        }
+       }
+      }
+     },
+     "500": {
+      "description": "`provider_error`",
       "content": {
        "application/json": {
         "schema": {
@@ -23232,7 +23250,8 @@
        }
       }
      }
-    }
+    },
+    "x-fc-validation-error": "invalid_request"
    }
   },
   "/api/v1/devices/{device}/me": {
@@ -23770,14 +23789,7 @@
     ],
     "responses": {
      "200": {
-      "description": "",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
+      "description": "Deleted: an empty body, as today. Emits `device.deleted`."
      },
      "401": {
       "$ref": "#/components/responses/AccountsAuthenticationException"
@@ -23794,7 +23806,8 @@
     "x-fc-destructive": true,
     "summary": "Eliminar un número",
     "x-fc-proposito": "Usalo para dar de baja un número de la cuenta de forma definitiva. Es irreversible y requiere el permiso `accounts:operate`.",
-    "x-fc-domain": "accounts"
+    "x-fc-domain": "accounts",
+    "x-fc-pending-response": "accounts-alta-de-numeros"
    }
   },
   "/api/v1/devices/{device}/reset": {
@@ -28018,7 +28031,7 @@
    "get": {
     "operationId": "pendingSandboxDevices.qr",
     "summary": "The QR code of a number",
-    "description": "Creates the instance if needed and gives its QR code. Only for QR numbers: an official one answers `422 provider_unsupported`. Scanning it gives control of a WhatsApp, so it asks for `accounts:operate`.\n\n**Pending of the spec**: from the contract of the sign-up by API (22-10, A1), while accounts writes it; its OpenAPI will be the final source.",
+    "description": "Creates the instance if needed and gives its QR code. Only for QR numbers: an official one answers `422 provider_unsupported`. Scanning it gives control of a WhatsApp, so it asks for `accounts:operate`.\n\n**Pending of the spec**: from the contract of the sign-up by API (22-10, A1), while accounts writes it; its OpenAPI will be the final source.\n\nAmendment v0.1 (23-10): as accounts did it in `feat/alta-de-numeros-api` `52d49b319`. `connected` is a boolean here (`0`/`1` in the number).",
     "tags": [
      "Device"
     ],
@@ -28046,6 +28059,16 @@
        }
       }
      },
+     "403": {
+      "description": "`number_limit_reached`, `connect_not_allowed` or `payment_required`",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PendingSandboxAccountsError"
+        }
+       }
+      }
+     },
      "404": {
       "description": "It does not exist in the account",
       "content": {
@@ -28056,8 +28079,28 @@
        }
       }
      },
+     "409": {
+      "description": "`trial_number_blocked`, `qr_requires_coexistence`, `number_suspended_by_plan`, `device_inactive` or `provisioning_quota_exceeded`",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PendingSandboxAccountsError"
+        }
+       }
+      }
+     },
      "422": {
       "description": "`provider_unsupported`",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PendingSandboxAccountsError"
+        }
+       }
+      }
+     },
+     "502": {
+      "description": "`provider_error`",
       "content": {
        "application/json": {
         "schema": {
@@ -28073,7 +28116,7 @@
    "get": {
     "operationId": "pendingSandboxConnectLinks.index",
     "summary": "List the sign-up links",
-    "description": "Paginated like the other lists. Filters by `status` and `external_reference`.\n\n**Pending of the spec**: from the contract of the sign-up by API (22-10, A1), while accounts writes it; its OpenAPI will be the final source.",
+    "description": "Paginated like the other lists (`perPage`, 25 by default, up to 100), newest first (by id). Filters by `status` and `external_reference`.\n\nAmendment v0.1 (23-10): as accounts did it in `feat/alta-de-numeros-api` `52d49b319`.",
     "tags": [
      "ConnectLink"
     ],
@@ -28150,12 +28193,13 @@
        }
       }
      }
-    }
+    },
+    "x-fc-validation-error": "invalid_request"
    },
    "post": {
     "operationId": "pendingSandboxConnectLinks.store",
     "summary": "Create a sign-up link",
-    "description": "A link of the account that creates the number when your customer completes the page (`url`), or reconnects the number of `device_id` without taking a new place. The quota is checked now (except for a reconnection) and again at the end. Up to 20 open links per account. With `type: meta` while the Meta sign-up is off, `503 meta_connect_disabled`.\n\n**Pending of the spec**: from the contract of the sign-up by API (22-10, A1), while accounts writes it; its OpenAPI will be the final source.",
+    "description": "A link of the account that creates the number when your customer completes the page (`url`), or reconnects the number of `device_id` without taking a new place. The quota is checked now (except for a reconnection) and again at the end. Up to 20 open links per account. With `type: meta` while the Meta sign-up is off, `503 meta_connect_disabled`.\n\n**Pending of the spec**: from the contract of the sign-up by API (22-10, A1), while accounts writes it; its OpenAPI will be the final source.\n\nAmendment v0.1 (23-10): as accounts did it in `feat/alta-de-numeros-api` `52d49b319`. Body rules: `allowed_connection_types` required with `meta` and prohibited with `qr` (one or two distinct values); `provision_us_number` prohibited with `qr`; `same_number_as` prohibited with `meta` and excluding `device_id`; `return_url` `https`, up to 2048. Up to 10 creations per minute: one more answers Laravel's `429 {\"message\": \"Too Many Attempts.\"}`. The answer carries `Cache-Control: no-store`.",
     "tags": [
      "ConnectLink"
     ],
@@ -28207,7 +28251,7 @@
          },
          "provision_us_number": {
           "type": "boolean",
-          "description": "`meta` only: offer a US number of the pool (3 per account, 1 on trial accounts)."
+          "description": "`meta` only (prohibited with `qr`): offer a US number of the pool (3 per account, 1 on trial accounts)."
          },
          "device_id": {
           "type": [
@@ -28221,7 +28265,7 @@
            "integer",
            "null"
           ],
-          "description": "`qr` only: add QR to a number in coexistence."
+          "description": "`qr` only (prohibited with `meta`), and not with `device_id`: add QR to a number in coexistence."
          },
          "external_reference": {
           "type": [
@@ -28270,6 +28314,20 @@
          ]
         }
        }
+      },
+      "headers": {
+       "Cache-Control": {
+        "schema": {
+         "type": "string",
+         "const": "no-store"
+        }
+       },
+       "Idempotent-Replayed": {
+        "description": "`true` when the answer is a replay of the same `Idempotency-Key`.",
+        "schema": {
+         "type": "string"
+        }
+       }
       }
      },
      "403": {
@@ -28293,7 +28351,7 @@
       }
      },
      "422": {
-      "description": "`validation_failed`, `qr_requires_coexistence`, `method_already_present` or `idempotency_key_mismatch`",
+      "description": "`invalid_request` (with `errors`), `invalid_reference_device`, `connection_type_mismatch`, `qr_requires_coexistence`, `method_already_present`, `idempotency_key_mismatch` or `invalid_idempotency_key`",
       "content": {
        "application/json": {
         "schema": {
@@ -28303,11 +28361,18 @@
       }
      },
      "429": {
-      "description": "`too_many_open_links`",
+      "description": "`too_many_open_links`, or the per-minute limit (`{\"message\": \"Too Many Attempts.\"}`)",
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/PendingSandboxAccountsError"
+         "oneOf": [
+          {
+           "$ref": "#/components/schemas/PendingSandboxAccountsError"
+          },
+          {
+           "$ref": "#/components/schemas/PendingSandboxTooManyAttempts"
+          }
+         ]
         }
        }
       }
@@ -28322,7 +28387,8 @@
        }
       }
      }
-    }
+    },
+    "x-fc-validation-error": "invalid_request"
    }
   },
   "/api/v1/connect-links/{link}": {
@@ -28342,7 +28408,7 @@
       "in": "path",
       "required": true,
       "schema": {
-       "type": "string"
+       "type": "integer"
       }
      }
     ],
@@ -28380,7 +28446,7 @@
    "delete": {
     "operationId": "pendingSandboxConnectLinks.destroy",
     "summary": "Revoke a sign-up link",
-    "description": "Revokes a `pending` link. `409` if it is not pending any more.\n\n**Pending of the spec**: from the contract of the sign-up by API (22-10, A1), while accounts writes it; its OpenAPI will be the final source.",
+    "description": "Revokes a `pending` link: `204` without a body. `409 link_not_pending` if it is not pending any more; `404` if it does not exist.\n\nAmendment v0.1 (23-10): as accounts did it in `feat/alta-de-numeros-api` `52d49b319`.",
     "tags": [
      "ConnectLink"
     ],
@@ -28393,7 +28459,7 @@
       "in": "path",
       "required": true,
       "schema": {
-       "type": "string"
+       "type": "integer"
       }
      }
     ],
@@ -30652,10 +30718,10 @@
            },
            "connect_link_id": {
             "type": [
-             "string",
+             "integer",
              "null"
             ],
-            "description": "The sign-up link it came from; `null` otherwise.",
+            "description": "[part 2] The sign-up link that connected this number last, or `null`. Optional until accounts deploys it.",
             "x-fc-pending": "accounts-alta-de-numeros"
            }
           },
@@ -30680,7 +30746,7 @@
           "external_reference": "cliente-8841"
          },
          "connected_at": "2026-10-22T03:00:00+00:00",
-         "connect_link_id": "9b2f6c1e-4a7d-4e8b-9c21-5d6f0a9b1c3e"
+         "connect_link_id": 812
         }
        }
       }
@@ -30758,8 +30824,18 @@
              "meta_account_not_registered",
              "shadow_ban_protection",
              "provider_error",
-             "unknown"
+             "unknown",
+             "disconnected_by_user"
             ],
+            "description": "`disconnected_by_user` [part 2]: «Desconectar» or «Borrar datos» of an official number in the panel.",
+            "x-fc-pending": "accounts-alta-de-numeros"
+           },
+           "connect_link_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "[part 2] The sign-up link that connected this number last, or `null`. Optional until accounts deploys it.",
             "x-fc-pending": "accounts-alta-de-numeros"
            }
           },
@@ -30784,7 +30860,8 @@
           "external_reference": "cliente-8841"
          },
          "disconnected_at": "2026-10-22T03:00:00+00:00",
-         "reason": "meta_account_not_registered"
+         "reason": "meta_account_not_registered",
+         "connect_link_id": null
         }
        }
       }
@@ -31316,6 +31393,13 @@
            "deleted_at": {
             "type": "string",
             "format": "date-time"
+           },
+           "connect_link_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "[part 2] The sign-up link that connected this number last, or `null`. Optional until accounts deploys it."
            }
           },
           "required": [
@@ -31338,7 +31422,8 @@
           "connection": "qr",
           "external_reference": "cliente-8841"
          },
-         "deleted_at": "2026-10-22T03:00:00+00:00"
+         "deleted_at": "2026-10-22T03:00:00+00:00",
+         "connect_link_id": 812
         }
        }
       }
@@ -31349,7 +31434,7 @@
   "device.health_changed": {
    "post": {
     "summary": "device.health_changed",
-    "description": "The aggregated health of an official number changed (not on every webhook of Meta).\n\n**Pending of the spec**: from the contract of the sign-up by API (22-10, A3), while accounts writes it; its OpenAPI will be the final source.",
+    "description": "The aggregated health of an official number changed (not on every webhook of Meta).\n\n**Pending of the spec**: from the contract of the sign-up by API (22-10, A3), while accounts writes it; its OpenAPI will be the final source. Pending of the user: PR #1103 of accounts (open) defines `state: { previous, current }`; accounts implemented this contract. One of the two has to be chosen before merging.",
     "x-fc-status": "live",
     "x-fc-domain": "accounts",
     "x-fc-pending": "accounts-alta-de-numeros",
@@ -31425,6 +31510,13 @@
            "changed_at": {
             "type": "string",
             "format": "date-time"
+           },
+           "connect_link_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "[part 2] The sign-up link that connected this number last, or `null`. Optional until accounts deploys it."
            }
           },
           "required": [
@@ -31451,7 +31543,8 @@
          },
          "previous_state": "available",
          "state": "limited",
-         "changed_at": "2026-10-22T03:00:00+00:00"
+         "changed_at": "2026-10-22T03:00:00+00:00",
+         "connect_link_id": 812
         }
        }
       }
@@ -40590,7 +40683,7 @@
        },
        "expires_in": {
         "type": "integer",
-        "description": "Seconds after which to ask for it again."
+        "description": "Seconds after which to ask for it again: 20 with a QR, 3 while the session starts, 0 once connected. Never `null`."
        }
       },
       "required": [
@@ -40609,7 +40702,7 @@
     "description": "A sign-up link, without its token.",
     "properties": {
      "id": {
-      "type": "string"
+      "type": "integer"
      },
      "type": {
       "type": "string",
@@ -40653,7 +40746,7 @@
        "integer",
        "null"
       ],
-      "description": "The number to reconnect, or the one the link created; `null` until it completes."
+      "description": "Only for a reconnection, or once the link is `completed`."
      },
      "external_reference": {
       "type": [
@@ -40718,7 +40811,7 @@
     "description": "The link as created: the only answer that carries `url`, with the raw token.",
     "properties": {
      "id": {
-      "type": "string"
+      "type": "integer"
      },
      "type": {
       "type": "string",
@@ -40762,7 +40855,7 @@
        "integer",
        "null"
       ],
-      "description": "The number to reconnect, or the one the link created; `null` until it completes."
+      "description": "Only for a reconnection, or once the link is `completed`."
      },
      "external_reference": {
       "type": [
@@ -40809,7 +40902,7 @@
      "url": {
       "type": "string",
       "format": "uri",
-      "description": "`https://<public host>/connect/<token>`. Shown once."
+      "description": "`https://api.funnelchat.com/connect/<token>`, a 43-character base64url token. Shown once."
      }
     },
     "required": [
@@ -40826,6 +40919,45 @@
      "created_at",
      "completed_at",
      "url"
+    ]
+   },
+   "PendingSandboxInvalidRequest": {
+    "type": "object",
+    "description": "The `422` of these routes: `invalid_request` with the errors per field.",
+    "properties": {
+     "error": {
+      "type": "string",
+      "const": "invalid_request"
+     },
+     "message": {
+      "type": "string"
+     },
+     "errors": {
+      "type": "object",
+      "additionalProperties": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      }
+     }
+    },
+    "required": [
+     "error",
+     "message",
+     "errors"
+    ]
+   },
+   "PendingSandboxTooManyAttempts": {
+    "type": "object",
+    "description": "Laravel's `429` of the per-minute limit: only `message`, \"Too Many Attempts.\", with `Retry-After`.",
+    "properties": {
+     "message": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "message"
     ]
    }
   },
@@ -41246,7 +41378,7 @@
   "inputs": {
    "spec/funnelchat.json": "8bbbae569b4cab520884db98f28204156c1bd6c629578bee609343c193e0dadb",
    "spec/pending.json": "a14bc4dbc3025d3e958ffda8afd1fa9fdab34af264418060825f3300799aceb0",
-   "spec/pending-sandbox.json": "5ced095bd4a5bf14544cf85079faea872bc834cd8bcb61b90ed11dd4623683c4"
+   "spec/pending-sandbox.json": "bbba905922ded29dc009eaaba44e85adeafe16f1b52323b79fa8763dcb1ab6ca"
   },
   "snapshot_commit": "0ef4abb008870ed8c7cae49a08900a81e5e57ed8",
   "pending_commit": "88557ce7819c5a4061e84c58053a1b6c49f35ec2",
@@ -41320,12 +41452,13 @@
    "POST /api/v1/devices/{device}/templates/{template}/send-template (respuestas: 200) [pending-sandbox.json]",
    "POST /api/v1/contacts/{contact}/message/contact-card (respuestas: 200) [pending-sandbox.json]",
    "POST /api/v1/contacts/{contact}/messages/{message}/forward (respuestas: 200) [pending-sandbox.json]",
+   "DELETE /api/v1/devices/{device} (respuestas: 200) [pending-sandbox.json]",
    "webhook device.deleted [pending-sandbox.json]",
    "webhook device.health_changed [pending-sandbox.json]",
    "webhook message.received (data: device_id) [pending-sandbox.json]",
    "webhook message.status_changed (data: error) [pending-sandbox.json]",
    "webhook device.connected (data: device, connect_link_id) [pending-sandbox.json]",
-   "webhook device.disconnected (data: device, reason) [pending-sandbox.json]"
+   "webhook device.disconnected (data: device, reason, connect_link_id) [pending-sandbox.json]"
   ]
  }
 }

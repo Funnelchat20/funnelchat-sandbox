@@ -5,17 +5,22 @@
  * - the quota of the plan counts phones, not rows: QR and Meta of the same phone count once, and a number created by
  *   QR that was not scanned yet takes its own place;
  * - `same_number_as` adds QR to a number in coexistence without taking a place;
- * - the four `device.*` events carry `device { id, name, number, connection, external_reference }`.
+ * - the four `device.*` events carry `device { id, name, number, connection, external_reference }` and
+ *   `connect_link_id`: the link that connected the number last, or `null`.
+ *
+ * Amended by v0.1 of the contract (23-10, read from accounts `feat/alta-de-numeros-api` `52d49b319`): the errors,
+ * the integer id of a link, `pending_number_exists`, and [part 2, in progress] `connect_link_id` in the four events
+ * and the reason `disconnected_by_user`.
  */
 import { createHash, randomBytes } from 'node:crypto';
 import type { SandboxApp } from '../app.js';
-import { ApiError, fieldError } from '../http/errors.js';
+import { ApiError } from '../http/errors.js';
 import { eventDevice } from '../state/resources.js';
 import type { ConnectLink, Connection, Device, HealthState } from '../state/store.js';
 import { isoSeconds } from '../util.js';
 
 /** Closed list of `device.disconnected` `reason` (contract A3). */
-export const DISCONNECT_REASONS = ['qr_logged_out', 'meta_account_not_registered', 'shadow_ban_protection', 'provider_error', 'unknown'] as const;
+export const DISCONNECT_REASONS = ['qr_logged_out', 'meta_account_not_registered', 'shadow_ban_protection', 'provider_error', 'unknown', 'disconnected_by_user'] as const;
 export type DisconnectReason = (typeof DISCONNECT_REASONS)[number];
 
 export const HEALTH_STATES: HealthState[] = ['available', 'limited', 'blocked', 'unknown'];
@@ -47,24 +52,50 @@ export function placesInUse(app: SandboxApp): number {
   return new Set([...app.store.devices.values()].map(placeOf)).size;
 }
 
+/** A QR number never connected yet: the pool keeps at most one per account. */
+const isPendingQr = (device: Device): boolean => device.kind === 'qr' && !device.connected && device.firstConnectedAt === null;
+
+export function pendingQrIds(app: SandboxApp): number[] {
+  return [...app.store.devices.values()].filter(isPendingQr).map((d) => d.id);
+}
+
 /** The two `403` of the quota (accounts `CreateDeviceInPool`), before anything is created. */
 export function checkQuota(app: SandboxApp): void {
   const { numbers } = app.store;
   if (!numbers.included) {
     throw new ApiError(403, 'numbers_not_included', 'Tu plan no incluye números de WhatsApp.');
   }
-  if (placesInUse(app) >= numbers.limit) {
-    throw new ApiError(403, 'number_limit_reached', `Alcanzaste el límite de ${numbers.limit} números de tu plan.`, { limit: numbers.limit });
+  const used = placesInUse(app);
+  if (used >= numbers.limit) {
+    throw new ApiError(403, 'number_limit_reached', `Alcanzaste el límite de ${numbers.limit} números de tu plan.`, {
+      limit: numbers.limit,
+      used,
+      pending_device_ids: pendingQrIds(app),
+    });
   }
 }
+
+/**
+ * The pool gives the same unconnected QR number back instead of creating another one; so two customers never get the
+ * same QR, the API answers `409 pending_number_exists` with its id.
+ */
+export function checkPendingNumber(app: SandboxApp): void {
+  const [pending] = pendingQrIds(app);
+  if (pending !== undefined) {
+    throw new ApiError(409, 'pending_number_exists', 'Ya tienes un número por QR sin conectar: conéctalo o bórralo antes de crear otro.', { device_id: pending });
+  }
+}
+
+/** `device_id` or `same_number_as` that is not a number of the account. */
+export const invalidReferenceDevice = () => new ApiError(422, 'invalid_reference_device', 'El número indicado no existe en la cuenta.');
 
 /**
  * `same_number_as`: QR can be added only to an official number in coexistence that has no QR yet. Returns the number
  * whose phone the new QR takes.
  */
-export function checkSameNumber(app: SandboxApp, id: unknown, field = 'same_number_as'): Device {
+export function checkSameNumber(app: SandboxApp, id: unknown): Device {
   const target = app.store.devices.get(Number(id));
-  if (!target) throw fieldError(field, `El campo ${field} no corresponde a un número de la cuenta.`);
+  if (!target) throw invalidReferenceDevice();
   if (target.kind === 'qr') {
     throw new ApiError(422, 'method_already_present', 'Ese número ya tiene QR.', { device_id: target.id });
   }
@@ -101,6 +132,7 @@ export function createDevice(app: SandboxApp, input: NewDevice): Device {
     fromPool: input.fromPool ?? false,
     externalReference: input.externalReference ?? null,
     health: cloud ? (connected ? 'available' : 'unknown') : null,
+    lastConnectLinkId: null,
     wabaId: cloud ? `1000000000${String(id).padStart(5, '0')}` : null,
     phoneNumberId: cloud ? `2000000000${String(id).padStart(5, '0')}` : null,
     firstConnectedAt: connected ? now : null,
@@ -116,27 +148,30 @@ export function fakeNumber(device: Device): string {
   return device.fromPool ? `1555010${tail}` : `54911555${tail}`;
 }
 
-/** Connects a number and emits `device.connected`. Nothing happens if it was already connected. */
-export function connectDevice(app: SandboxApp, device: Device, options: { number?: string | null; connectLinkId?: string | null } = {}) {
+/** `data` of every `device.*` event: the number and the link that connected it last. */
+const eventData = (device: Device, rest: Record<string, unknown>) => ({ device: eventDevice(device), ...rest, connect_link_id: device.lastConnectLinkId });
+
+/**
+ * Connects a number and emits `device.connected`. A link that connects it becomes its `connect_link_id`; a connection
+ * without a link keeps the last one. Nothing happens if it was already connected.
+ */
+export function connectDevice(app: SandboxApp, device: Device, options: { number?: string | null; connectLinkId?: number | null } = {}) {
   if (device.connected) return null;
   const at = new Date();
+  if (options.connectLinkId) device.lastConnectLinkId = options.connectLinkId;
   if (options.number) device.number = options.number;
   device.number ??= fakeNumber(device);
   device.connected = true;
   device.firstConnectedAt ??= at;
   if (device.kind === 'cloud' && (device.health === null || device.health === 'unknown')) device.health = 'available';
-  return app.webhooks.emit(
-    'device.connected',
-    { device: eventDevice(device), connected_at: isoSeconds(at), connect_link_id: options.connectLinkId ?? null },
-    { occurredAt: at },
-  );
+  return app.webhooks.emit('device.connected', eventData(device, { connected_at: isoSeconds(at) }), { occurredAt: at });
 }
 
 export function disconnectDevice(app: SandboxApp, device: Device, reason: DisconnectReason) {
   if (!device.connected) return null;
   const at = new Date();
   device.connected = false;
-  return app.webhooks.emit('device.disconnected', { device: eventDevice(device), disconnected_at: isoSeconds(at), reason }, { occurredAt: at });
+  return app.webhooks.emit('device.disconnected', eventData(device, { disconnected_at: isoSeconds(at), reason }), { occurredAt: at });
 }
 
 /** Emits `device.health_changed` only when the aggregated state changes. */
@@ -145,7 +180,7 @@ export function setHealth(app: SandboxApp, device: Device, state: HealthState) {
   if (previous === state) return null;
   device.health = state;
   const at = new Date();
-  return app.webhooks.emit('device.health_changed', { device: eventDevice(device), previous_state: previous, state, changed_at: isoSeconds(at) }, { occurredAt: at });
+  return app.webhooks.emit('device.health_changed', eventData(device, { previous_state: previous, state, changed_at: isoSeconds(at) }), { occurredAt: at });
 }
 
 /**
@@ -154,7 +189,7 @@ export function setHealth(app: SandboxApp, device: Device, state: HealthState) {
  */
 export function deleteDevice(app: SandboxApp, device: Device) {
   const at = new Date();
-  const event = app.webhooks.emit('device.deleted', { device: eventDevice(device), deleted_at: isoSeconds(at) }, { occurredAt: at });
+  const event = app.webhooks.emit('device.deleted', eventData(device, { deleted_at: isoSeconds(at) }), { occurredAt: at });
   app.store.devices.delete(device.id);
   for (const link of app.store.connectLinks.values()) {
     if (link.reconnect && link.deviceId === device.id && link.status === 'pending') {
@@ -263,7 +298,7 @@ export function completeLink(app: SandboxApp, link: ConnectLink, input: LinkOutc
 export function returnUrlFor(link: ConnectLink): string | null {
   if (!link.returnUrl) return null;
   const url = new URL(link.returnUrl);
-  url.searchParams.set('connect_link_id', link.id);
+  url.searchParams.set('connect_link_id', String(link.id));
   url.searchParams.set('status', link.status === 'completed' ? 'completed' : 'failed');
   if (link.deviceId !== null && link.status === 'completed') url.searchParams.set('device_id', String(link.deviceId));
   if (link.errorCode && link.status !== 'completed') url.searchParams.set('error_code', link.errorCode);

@@ -102,7 +102,7 @@ Options win over the file. The file has the same options and, besides, subscript
 }
 ```
 
-The file also takes `numbers`, the quota of the account for [connecting numbers](#connecting-numbers): `{"limit": 5, "included": true, "trial": false, "metaConnect": true}`, and `publicUrl`.
+The file also takes `numbers`, the quota of the account for [connecting numbers](#connecting-numbers): `{"limit": 5, "included": true, "trial": false, "metaConnect": true, "linksPerMinute": 10}`, and `publicUrl`.
 
 There is a complete one in [funnelchat-sandbox.config.example.json](funnelchat-sandbox.config.example.json). The file `funnelchat-sandbox.config.json` is in `.gitignore`: do not commit a secret, even a test one.
 
@@ -326,32 +326,61 @@ It emits `whatsapp_form.completed` once per send, with `form` (`id` is the `fami
 ## Connecting numbers
 
 Create and connect WhatsApp numbers through the API: a number by QR, or a sign-up link your customer opens. This is
-**not in production yet**: the sandbox follows the contract of 22-10 while accounts builds it, and accounts' OpenAPI
-will be the final word (see [Pending of the spec](#pending-of-the-spec)).
+**not in production yet**: the sandbox follows the contract of 22-10 and its amendment v0.1 of 23-10, read from what
+accounts built (`feat/alta-de-numeros-api` `52d49b319`), including what accounts is still adding (`connect_link_id`
+in the four events, `disconnected_by_user`, `POST /connect/{token}/complete`). accounts' OpenAPI will be the final
+word (see [Pending of the spec](#pending-of-the-spec)).
 
 | Route | What it does |
 |---|---|
 | `POST /api/v1/devices` | A number by QR: `{"connection": "qr"}`, optional `alias`, `external_reference` and `same_number_as`. `201 {"data": <number>}` with `connected: 0` and no phone yet. |
-| `GET /api/v1/devices/{device}/qr` | `{"data": {"connected", "qr_code", "expires_in"}}`: a PNG as a data URI (`null` once connected). It is fake: nothing scans it. An official number answers `422 provider_unsupported`. |
+| `GET /api/v1/devices/{device}/qr` | `{"data": {"connected", "qr_code", "expires_in"}}`: a PNG as a data URI, `null` and `expires_in: 0` once connected. It is fake: nothing scans it. An official number answers `422 provider_unsupported`. |
 | `GET /api/v1/devices?external_reference=…` | Only the numbers with exactly that reference. `PUT /api/v1/devices/{device}` changes it (`null` clears it). |
-| `DELETE /api/v1/devices/{device}` | Deletes it, frees its place and emits `device.deleted`. |
-| `POST /api/v1/connect-links` | A sign-up link. `type` (`qr` or `meta`); with `meta`, `allowed_connection_types` (`coexistence`, `dedicated` or both) and `provision_us_number`; `device_id` to reconnect a number; `same_number_as` (`qr` only); `external_reference`; `return_url` (`https` only); `expires_in_minutes` (30 to 10080, 1440 by default). The `url` with the token is only in this answer. |
-| `GET /api/v1/connect-links`, `GET …/{link}` | The links without their token, paginated, filtered by `status` and `external_reference`. `status`: `pending`, `completed`, `failed`, `expired` or `revoked`. |
-| `DELETE /api/v1/connect-links/{link}` | Revokes a `pending` link: `204`, and `409 link_not_pending` otherwise. |
+| `DELETE /api/v1/devices/{device}` | `200` with an empty body: deletes it, frees its place and emits `device.deleted`. |
+| `POST /api/v1/connect-links` | A sign-up link, `201 {"data": <link>}` with `Cache-Control: no-store`. The `url` with the token is only in this answer. |
+| `GET /api/v1/connect-links`, `GET …/{link}` | The links without their token, newest first, paginated, filtered by `status` and `external_reference`. The `id` is an integer. `status`: `pending`, `completed`, `failed`, `expired` (`error_code: link_expired`) or `revoked` (`error_code: revoked`). |
+| `DELETE /api/v1/connect-links/{link}` | Revokes a `pending` link: `204`, `409 link_not_pending` otherwise, `404` if it does not exist. |
+
+**The body of a link**, by `type`:
+
+| Field | `type: qr` | `type: meta` |
+|---|---|---|
+| `allowed_connection_types` | prohibited | required: `coexistence`, `dedicated` or both, without repeating |
+| `provision_us_number` | prohibited (even `false`) | optional: a US number of the pool (3 per account, 1 on trial accounts) |
+| `same_number_as` | optional, not with `device_id`: QR on a number in coexistence | prohibited |
+| `device_id` | optional: reconnects that number (`422 connection_type_mismatch` if it is not QR) | the same, for an official number |
+| `external_reference` | optional, up to 255 | optional, up to 255 |
+| `return_url` | optional, `https`, up to 2048 | the same |
+| `expires_in_minutes` | 30 to 10080, 1440 by default | the same |
+
+`null` counts as missing, like Laravel's `prohibited`. A broken rule answers
+`422 {"error": "invalid_request", "message": "…", "errors": {"field": ["…"]}}`, and so does `POST /devices`. A
+`device_id` or `same_number_as` that is not a number of the account answers `422 invalid_reference_device`.
 
 **Each number has** `external_reference` (your text, not unique) and `connection` (`qr`, `coexistence` or
-`dedicated`). The four `device.*` events carry both inside `device`, and `device.connected` also brings
-`connect_link_id`.
+`dedicated`). The four `device.*` events carry both inside `device`, and `connect_link_id` (the link that connected
+the number last, or `null`). `device.disconnected` brings `reason`: `qr_logged_out`, `meta_account_not_registered`,
+`shadow_ban_protection`, `provider_error`, `unknown` or `disconnected_by_user`. Type the new keys as optional:
+production does not send them until accounts deploys.
 
 **The quota** counts phones: QR and Meta of the same phone count once. The sandbox account allows 5 and the two
-example numbers use two; change it with `POST /_sandbox/numbers`. The rejections are `403 numbers_not_included`,
-`403 number_limit_reached`, `422 qr_requires_coexistence` (QR on an official number that is not in coexistence) and
-`422 method_already_present` (with `device_id`). A reconnection, and QR on a number in coexistence, take no place.
-Up to 20 open links: one more answers `429 too_many_open_links`. With `"meta_connect": false`, a `meta` link answers
-`503 meta_connect_disabled`, as production will while the Meta sign-up is off.
+example numbers use two; change it with `POST /_sandbox/numbers`. The rejections:
 
-**`Idempotency-Key`** works on both `POST`: the same key with the same body gives back the same answer without
-creating anything (only successful answers are kept); with another body, `422 idempotency_key_mismatch`.
+- `403 numbers_not_included`, and `403 number_limit_reached` with `limit`, `used` and `pending_device_ids`;
+- `409 pending_number_exists` with `device_id`: there is already a QR number not connected yet, so connect it or
+  delete it first;
+- `422 qr_requires_coexistence` (QR on an official number that is not in coexistence) and
+  `422 method_already_present` (with `device_id`).
+
+A reconnection, and QR on a number in coexistence, take no place. Up to 20 open links (`429 too_many_open_links`)
+and 10 creations per minute (Laravel's `429 {"message": "Too Many Attempts."}`, with `Retry-After`). With
+`"meta_connect": false`, a `meta` link answers `503 meta_connect_disabled`, as production does while the Meta sign-up
+is off.
+
+**`Idempotency-Key`** works on both `POST`, per resource: the same key with the same body gives back the same `2xx`
+with `Idempotent-Replayed: true`, without creating anything; with another body, `422 idempotency_key_mismatch`; a
+malformed key (empty, over 255 or with spaces), `422 invalid_idempotency_key`. A rejection is not kept: fix it and
+retry with the same key.
 
 A number by QR, its code and the scan (the scan is a sandbox route):
 
@@ -368,17 +397,21 @@ A sign-up link and its page:
 ```bash
 curl -s -X POST localhost:4010/api/v1/connect-links -H "$KEY" -H 'Content-Type: application/json' \
   -d '{"type": "meta", "allowed_connection_types": ["coexistence", "dedicated"], "external_reference": "cliente-8841", "return_url": "https://your-app.example/connected"}'
-# {"data": {"id": "…", "status": "pending", "url": "http://localhost:4010/connect/<token>", …}}
-curl -si 'http://localhost:4010/connect/<token>?connection=coexistence'
-# 303 Location: https://your-app.example/connected?connect_link_id=…&status=completed&device_id=6
+# {"data": {"id": 1, "type": "meta", "status": "pending", "url": "http://localhost:4010/connect/<token>", …}}
+curl -si -X POST 'http://localhost:4010/connect/<token>/start' -d connection=coexistence
+# 303 Location: https://your-app.example/connected?connect_link_id=1&status=completed&device_id=6
 ```
 
-**The page `/connect/{token}`** is a test page that connects at once, on the first visit: it creates the number (or
-reconnects it), marks the link `completed`, emits `device.connected` and redirects to `return_url` with the result,
-or says it on the page. It works once; then it answers `410`. In the query (or in the body of
-`POST /connect/{token}/complete`) you choose what happens: `outcome=failed` with `error_code` (`qr_timeout` or
-`meta_error` by default), `connection` when the link allows both, and `number`. With `Authorization` or `X-Api-Key`
-it answers `403`: the page never takes a key.
+**The page** is a test page. Opening `GET /connect/{token}` does not use the link, as in production, so a
+messenger's preview cannot burn it: it shows a button (and, for a `meta` link that allows both, the choice of
+connection) and takes the token out of the address bar (`/connect/reopen`). The button, `POST /connect/{token}/start`,
+connects at once: it creates the number (or reconnects it), marks the link `completed`, emits `device.connected` and
+redirects to `return_url` with `connect_link_id`, `status`, `device_id` (if it completed) and `error_code` (if it
+failed), or says it on the page. `POST /connect/{token}/complete` does the same. A link works once; then the page
+answers `410`. In the body (form or JSON) or the query you choose what happens: `outcome=failed` with `error_code`
+(`qr_timeout` or `meta_error` by default), `connection` when the link allows both, and `number`. With `Authorization`
+or `X-Api-Key` it answers `403 credentials_not_allowed`. Its headers are production's: `Cache-Control: no-store, private`,
+`Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, `X-Robots-Tag: noindex`, HSTS, COOP and a CSP with a nonce.
 
 With the Node SDK, once it has the new methods:
 
@@ -386,7 +419,7 @@ With the Node SDK, once it has the new methods:
 const device = await funnelchat.devices.create({ connection: 'qr', external_reference: 'cliente-8841' });
 const { qr_code } = await funnelchat.devices.qr(device.id);
 const link = await funnelchat.connectLinks.create({ type: 'qr', return_url: 'https://your-app.example/connected' });
-await fetch(link.url, { redirect: 'manual' }); // the sandbox page connects at once
+await fetch(`${link.url}/start`, { method: 'POST', redirect: 'manual' }); // the button of the sandbox page
 ```
 
 ## Webhooks
@@ -445,9 +478,9 @@ These routes take no key: they belong to the sandbox, not to the API.
 | `POST /_sandbox/forms/complete` | The contact completes a sent form: emits `whatsapp_form.completed` (see [WhatsApp forms](#whatsapp-forms)). |
 | `POST /_sandbox/mac`, `GET /_sandbox/mac` | The account's MAC: `{"lockout": true, "active_contact_ids": [2001], "inactive_contact_ids": []}`. With `lockout`, sends to contacts that are not active answer `429 mac_lockout_24h`; an inactive contact always gets it. |
 | `POST /_sandbox/contacts/{id}/tags` with `{"tag_id": 4001}`, `DELETE /_sandbox/contacts/{id}/tags/{tag}` | Someone tags the contact in the panel: `contact.tag_added` and `contact.tag_removed`. |
-| `POST /_sandbox/devices/{id}/disconnect`, `…/connect` | The number disconnects (`{"reason": "meta_account_not_registered"}`; `qr_logged_out` for QR and `unknown` for official ones by default) or connects, which is the scan of a QR (`{"number": "5491155550101"}`, a fake one otherwise): `device.disconnected` and `device.connected`. Disconnected, sends answer `422 device_unavailable`. |
+| `POST /_sandbox/devices/{id}/disconnect`, `…/connect` | The number disconnects (`{"reason": "disconnected_by_user"}`, any of the list; `qr_logged_out` for QR and `unknown` for official ones by default) or connects, which is the scan of a QR (`{"number": "5491155550101"}`, a fake one otherwise): `device.disconnected` and `device.connected`. Disconnected, sends answer `422 device_unavailable`. |
 | `POST /_sandbox/devices/{id}/health` | The health of an official number changes: `{"state": "limited"}` (`available`, `limited`, `blocked`, `unknown`) emits `device.health_changed`, only if it changed. |
-| `POST /_sandbox/numbers`, `GET /_sandbox/numbers` | The quota of the account: `{"limit": 3, "included": true, "trial": false, "meta_connect": true}`. `GET` also says how many places are in use. |
+| `POST /_sandbox/numbers`, `GET /_sandbox/numbers` | The quota of the account: `{"limit": 3, "included": true, "trial": false, "meta_connect": true, "links_per_minute": 10}`. `GET` also says how many places are in use and which QR numbers are pending. |
 | `POST /_sandbox/templates/{id}/status` | Meta approves or rejects a template: `{"status": "REJECTED", "reason": "…"}` emits `template.status_changed`. |
 | `POST /_sandbox/events/{type}` | Any event of the catalog, with its example; what you send in `{"data": {…}}` overrides it. `GET /_sandbox/events` lists them. `group.message_received` and `group.reaction_added` go out with the shape communities emits (`message.uid` and every key of the message), not with the example of the accounts catalog, which uses `message.id`. |
 | `POST /_sandbox/window` | Opens or closes the window by hand: `{"contact_id": 2001, "device_id": 3, "open": false}`. |
@@ -540,7 +573,7 @@ And at `http://localhost:4010/_sandbox` you see each request and each delivery w
 - **There are no groups or campaigns with state:** their events are fired from `/_sandbox`, and their routes answer examples.
 - **Forms do not talk to Meta:** `sync` and `publish` succeed unless the linter finds an error, and the linter is a short version of the real one (screens without a title, without an ending, without questions, with a connection to the server). There are no metrics (`…/metrics`) and no dynamic forms.
 - **Files are not downloaded:** the type comes from the extension or from `file_type`. The «known» extensions (the ones that give `415` instead of `422 errors.file_type`) are the common ones; the API uses symfony/mime's full list.
-- **Connecting numbers** follows a contract, not production: no real QR, no Meta Embedded Signup and no 15-minute hold of a pool number. A QR link that fails does not create (and delete) a number, the creation of links has no per-minute limit, links do not die when a key is revoked, and `409 operation_in_progress` only appears if two calls with the same `Idempotency-Key` overlap.
+- **Connecting numbers** follows a contract, not production: no real QR, no Meta Embedded Signup and no 15-minute hold of a pool number. The page has no `POST /connect/{token}/qr` (the button connects at once). A QR link that fails does not create (and delete) a number, links do not die when a key is revoked, the per-minute limit counts only the calls that pass the schema, and `409 operation_in_progress` only appears if two calls with the same `Idempotency-Key` overlap. The errors that depend on the plan, the payment or the provider (`connect_not_allowed`, `number_suspended_by_plan`, `payment_required`, `device_inactive`, `provider_error`…) are documented but never answered.
 - **The pace and the brakes** use the numbers of conversations in production (`config/send_guards.php`, `config/antiblock.php`); the official number paired with a QR one in coexistence (15 per second, shared) is not there.
 
 ## Pending of the spec
@@ -560,7 +593,7 @@ Besides, `spec/catalog.json` is the event catalog of accounts v1.4.24, with its 
 | The file by URL: `file_type`, `file_name`, their `422`s and the `415` | conversations v1.18.10 (`SendFileType`) | In production. |
 | Forms: `/api/v1/forms…`, `POST /api/v1/contacts/{contact}/message/form` and `whatsapp_form.completed` | conversations v1.18.10 | In production. The portal does not document them yet. |
 | `capabilities` and the new keys of the numbers | accounts v1.4.24 (`DeviceResource`, `DeviceCapabilities`) | In production. |
-| Connecting numbers: `POST /api/v1/devices`, `GET …/{device}/qr`, `external_reference`, `/api/v1/connect-links…`, `/connect/{token}`, `Idempotency-Key`, `device.deleted`, `device.health_changed` and the new keys of `device.connected` and `device.disconnected` | The contract of the sign-up by API of 22-10 (A1, A3) | Not in production: accounts is building it. |
+| Connecting numbers: `POST /api/v1/devices`, `GET …/{device}/qr`, `external_reference`, `/api/v1/connect-links…`, `/connect/{token}`, `Idempotency-Key`, `device.deleted`, `device.health_changed` and the new keys of `device.connected` and `device.disconnected` | The contract of the sign-up by API of 22-10 (A1, A3) and its amendment v0.1 of 23-10 (accounts `feat/alta-de-numeros-api` `52d49b319`) | Not in production. `connect_link_id` in the four events, `disconnected_by_user` and `/complete` are accounts' part 2, in progress. |
 | `X-Request-Id` and the edge's errors (`route_not_found`, `origin_unreachable`, `edge_misconfigured`) | api-edge v0.3.0, platform-gate v0.8.0 | In production. |
 
 ## Regenerating
