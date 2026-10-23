@@ -75,8 +75,10 @@ describe('subscriptions', () => {
     expect(types).toEqual(expect.arrayContaining(['message.received', 'message.status_changed', 'contact.created', 'device.connected', 'group_participant.joined', 'webhook.test']));
     const status = res.body.data.find((e: { type: string }) => e.type === 'message.status_changed');
     expect(status).toMatchObject({ area: 'conversations', status: 'active', subscribable: true });
-    // accounts v1.4.24: 54 types, 49 active, in the order of the catalog (accounts, conversations, communities).
-    expect(res.body.meta).toMatchObject({ total: 54, active: 49 });
+    // accounts v1.4.24: 54 types, 49 active, in the order of the catalog (accounts, conversations, communities); plus
+    // device.deleted and device.health_changed of the sign-up by API (contract A3, 22-10).
+    expect(res.body.meta).toMatchObject({ total: 56, active: 51 });
+    expect(types.slice(0, 4)).toEqual(['device.disconnected', 'device.connected', 'device.deleted', 'device.health_changed']);
     expect(Object.keys(res.body.data[0])).toEqual(['type', 'area', 'status', 'is_critical', 'label', 'description', 'subscribable', 'example']);
     expect(types.slice(0, 2)).toEqual(['device.disconnected', 'device.connected']);
     expect(types).toEqual(expect.arrayContaining(['whatsapp_form.completed', 'group_action.completed', 'group.message_received', 'group.reaction_added', 'group_join_request.created']));

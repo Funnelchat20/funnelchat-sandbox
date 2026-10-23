@@ -23102,7 +23102,137 @@
     },
     "summary": "Listar números",
     "x-fc-proposito": "Sirve para listar tus números de WhatsApp con su proveedor, si están conectados y activos y su estado de salud, y obtener los IDs que usan las demás operaciones.",
-    "x-fc-domain": "accounts"
+    "x-fc-domain": "accounts",
+    "parameters": [
+     {
+      "name": "external_reference",
+      "in": "query",
+      "required": false,
+      "description": "Only the numbers with exactly this reference.",
+      "schema": {
+       "type": "string",
+       "maxLength": 255
+      },
+      "x-fc-pending": "accounts-alta-de-numeros"
+     }
+    ]
+   },
+   "post": {
+    "operationId": "pendingSandboxDevices.store",
+    "summary": "Create a number by QR",
+    "description": "Creates a number of the account to connect by QR, with `connected: false`; ask for its code with `GET /devices/{device}/qr`. Same path and same rejections as the panel: the quota counts phones (QR and Meta of the same phone count once). `same_number_as` adds QR to an official number in coexistence without taking a place. An official number is created only with a sign-up link.\n\n**Pending of the spec**: from the contract of the sign-up by API (22-10, A1), while accounts writes it; its OpenAPI will be the final source.",
+    "tags": [
+     "Device"
+    ],
+    "x-fc-domain": "accounts",
+    "x-fc-permission": "accounts:operate",
+    "x-fc-pending": "accounts-alta-de-numeros",
+    "parameters": [
+     {
+      "name": "Idempotency-Key",
+      "in": "header",
+      "required": false,
+      "description": "Up to 255 characters, kept 24 hours. The same key with the same body gives back the same answer without creating anything; with another body, `422 idempotency_key_mismatch`; while the first call runs, `409 operation_in_progress`.",
+      "schema": {
+       "type": "string",
+       "maxLength": 255
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "connection": {
+          "type": "string",
+          "enum": [
+           "qr"
+          ],
+          "description": "For now the only value."
+         },
+         "alias": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "maxLength": 255
+         },
+         "external_reference": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "maxLength": 255,
+          "description": "Free text to find your customer: not unique. It comes back in the number, in `GET /devices?external_reference=` and in every `device.*` event."
+         },
+         "same_number_as": {
+          "type": [
+           "integer",
+           "null"
+          ],
+          "description": "An official number in coexistence that gets QR too."
+         }
+        },
+        "required": [
+         "connection"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Created, not connected yet",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "data": {
+           "$ref": "#/components/schemas/DeviceResource"
+          }
+         },
+         "required": [
+          "data"
+         ]
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "`numbers_not_included` or `number_limit_reached`",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PendingSandboxAccountsError"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "`operation_in_progress`",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PendingSandboxAccountsError"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "`validation_failed`, `qr_requires_coexistence`, `method_already_present` (with `device_id`) or `idempotency_key_mismatch`",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PendingSandboxAccountsError"
+        }
+       }
+      }
+     }
+    }
    }
   },
   "/api/v1/devices/{device}/me": {
@@ -23433,6 +23563,14 @@
          "capi_consent": {
           "type": "boolean",
           "description": "Meta Conversions API (CAPI) opt-in consent — capi-meta-connection Inc 3\n(design.md D3). Optional: only meaningful on the Meta branch, and even\nthere it is a no-op unless the `capi` feature flag is enabled for the\naccount (defense in depth, see updateMetaDevice below)."
+         },
+         "external_reference": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "maxLength": 255,
+          "description": "Free text to find your customer; `null` clears it."
          }
         }
        }
@@ -23610,7 +23748,8 @@
     "x-fc-destructive": false,
     "summary": "Actualizar un número",
     "x-fc-proposito": "Sirve para actualizar los datos de un número (alias, color, imagen) o completar sus datos de WhatsApp Business, como WABA y phone number ID, y el consentimiento de Conversions API.",
-    "x-fc-domain": "accounts"
+    "x-fc-domain": "accounts",
+    "x-fc-pending": "accounts-alta-de-numeros"
    },
    "delete": {
     "operationId": "device.destroy",
@@ -27874,6 +28013,416 @@
      }
     }
    }
+  },
+  "/api/v1/devices/{device}/qr": {
+   "get": {
+    "operationId": "pendingSandboxDevices.qr",
+    "summary": "The QR code of a number",
+    "description": "Creates the instance if needed and gives its QR code. Only for QR numbers: an official one answers `422 provider_unsupported`. Scanning it gives control of a WhatsApp, so it asks for `accounts:operate`.\n\n**Pending of the spec**: from the contract of the sign-up by API (22-10, A1), while accounts writes it; its OpenAPI will be the final source.",
+    "tags": [
+     "Device"
+    ],
+    "x-fc-domain": "accounts",
+    "x-fc-permission": "accounts:operate",
+    "x-fc-pending": "accounts-alta-de-numeros",
+    "parameters": [
+     {
+      "name": "device",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PendingSandboxDeviceQr"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "It does not exist in the account",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PendingSandboxModelNotFound"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "`provider_unsupported`",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PendingSandboxAccountsError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/connect-links": {
+   "get": {
+    "operationId": "pendingSandboxConnectLinks.index",
+    "summary": "List the sign-up links",
+    "description": "Paginated like the other lists. Filters by `status` and `external_reference`.\n\n**Pending of the spec**: from the contract of the sign-up by API (22-10, A1), while accounts writes it; its OpenAPI will be the final source.",
+    "tags": [
+     "ConnectLink"
+    ],
+    "x-fc-domain": "accounts",
+    "x-fc-permission": "accounts:read",
+    "x-fc-pending": "accounts-alta-de-numeros",
+    "parameters": [
+     {
+      "name": "status",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "enum": [
+        "pending",
+        "completed",
+        "failed",
+        "expired",
+        "revoked"
+       ]
+      }
+     },
+     {
+      "name": "external_reference",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "maxLength": 255
+      }
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 1
+      }
+     },
+     {
+      "name": "perPage",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 100
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "data": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/PendingSandboxConnectLink"
+           }
+          },
+          "links": {
+           "type": "object"
+          },
+          "meta": {
+           "type": "object"
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "operationId": "pendingSandboxConnectLinks.store",
+    "summary": "Create a sign-up link",
+    "description": "A link of the account that creates the number when your customer completes the page (`url`), or reconnects the number of `device_id` without taking a new place. The quota is checked now (except for a reconnection) and again at the end. Up to 20 open links per account. With `type: meta` while the Meta sign-up is off, `503 meta_connect_disabled`.\n\n**Pending of the spec**: from the contract of the sign-up by API (22-10, A1), while accounts writes it; its OpenAPI will be the final source.",
+    "tags": [
+     "ConnectLink"
+    ],
+    "x-fc-domain": "accounts",
+    "x-fc-permission": "accounts:operate",
+    "x-fc-pending": "accounts-alta-de-numeros",
+    "parameters": [
+     {
+      "name": "Idempotency-Key",
+      "in": "header",
+      "required": false,
+      "description": "Up to 255 characters, kept 24 hours. The same key with the same body gives back the same answer without creating anything; with another body, `422 idempotency_key_mismatch`; while the first call runs, `409 operation_in_progress`.",
+      "schema": {
+       "type": "string",
+       "maxLength": 255
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "type": {
+          "type": "string",
+          "enum": [
+           "meta",
+           "qr"
+          ]
+         },
+         "allowed_connection_types": {
+          "type": [
+           "array",
+           "null"
+          ],
+          "items": {
+           "type": "string",
+           "enum": [
+            "coexistence",
+            "dedicated"
+           ]
+          },
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "description": "Required with `type: meta`, forbidden with `qr`. With both, your customer chooses."
+         },
+         "provision_us_number": {
+          "type": "boolean",
+          "description": "`meta` only: offer a US number of the pool (3 per account, 1 on trial accounts)."
+         },
+         "device_id": {
+          "type": [
+           "integer",
+           "null"
+          ],
+          "description": "Reconnect this number. `type` must match its method."
+         },
+         "same_number_as": {
+          "type": [
+           "integer",
+           "null"
+          ],
+          "description": "`qr` only: add QR to a number in coexistence."
+         },
+         "external_reference": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "maxLength": 255
+         },
+         "return_url": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "format": "uri",
+          "maxLength": 2048,
+          "description": "`https` only. Gets `connect_link_id`, `status`, `device_id` and `error_code`, nothing else."
+         },
+         "expires_in_minutes": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 10080,
+          "description": "1440 by default."
+         }
+        },
+        "required": [
+         "type"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Created",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "data": {
+           "$ref": "#/components/schemas/PendingSandboxConnectLinkCreated"
+          }
+         },
+         "required": [
+          "data"
+         ]
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "`numbers_not_included` or `number_limit_reached`",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PendingSandboxAccountsError"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "`operation_in_progress`",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PendingSandboxAccountsError"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "`validation_failed`, `qr_requires_coexistence`, `method_already_present` or `idempotency_key_mismatch`",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PendingSandboxAccountsError"
+        }
+       }
+      }
+     },
+     "429": {
+      "description": "`too_many_open_links`",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PendingSandboxAccountsError"
+        }
+       }
+      }
+     },
+     "503": {
+      "description": "`meta_connect_disabled`",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PendingSandboxAccountsError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/connect-links/{link}": {
+   "get": {
+    "operationId": "pendingSandboxConnectLinks.show",
+    "summary": "Show a sign-up link",
+    "description": "The link without its token: its `status`, the `device_id` it created and its `error_code`.\n\n**Pending of the spec**: from the contract of the sign-up by API (22-10, A1), while accounts writes it; its OpenAPI will be the final source.",
+    "tags": [
+     "ConnectLink"
+    ],
+    "x-fc-domain": "accounts",
+    "x-fc-permission": "accounts:read",
+    "x-fc-pending": "accounts-alta-de-numeros",
+    "parameters": [
+     {
+      "name": "link",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "data": {
+           "$ref": "#/components/schemas/PendingSandboxConnectLink"
+          }
+         },
+         "required": [
+          "data"
+         ]
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "`not_found`",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PendingSandboxAccountsError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "operationId": "pendingSandboxConnectLinks.destroy",
+    "summary": "Revoke a sign-up link",
+    "description": "Revokes a `pending` link. `409` if it is not pending any more.\n\n**Pending of the spec**: from the contract of the sign-up by API (22-10, A1), while accounts writes it; its OpenAPI will be the final source.",
+    "tags": [
+     "ConnectLink"
+    ],
+    "x-fc-domain": "accounts",
+    "x-fc-permission": "accounts:operate",
+    "x-fc-pending": "accounts-alta-de-numeros",
+    "parameters": [
+     {
+      "name": "link",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Revoked"
+     },
+     "404": {
+      "description": "`not_found`",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PendingSandboxAccountsError"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "`link_not_pending`",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PendingSandboxAccountsError"
+        }
+       }
+      }
+     }
+    }
+   }
   }
  },
  "webhooks": {
@@ -30071,18 +30620,43 @@
                "string",
                "null"
               ],
-              "description": "Solo dígitos, sin `+`."
+              "description": "Digits only, without `+`."
+             },
+             "connection": {
+              "type": "string",
+              "enum": [
+               "qr",
+               "coexistence",
+               "dedicated"
+              ]
+             },
+             "external_reference": {
+              "type": [
+               "string",
+               "null"
+              ]
              }
             },
             "required": [
              "id",
              "name",
-             "number"
-            ]
+             "number",
+             "connection",
+             "external_reference"
+            ],
+            "x-fc-pending": "accounts-alta-de-numeros"
            },
            "connected_at": {
             "type": "string",
             "format": "date-time"
+           },
+           "connect_link_id": {
+            "type": [
+             "string",
+             "null"
+            ],
+            "description": "The sign-up link it came from; `null` otherwise.",
+            "x-fc-pending": "accounts-alta-de-numeros"
            }
           },
           "required": [
@@ -30090,6 +30664,23 @@
            "connected_at"
           ]
          }
+        }
+       },
+       "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "device.connected",
+        "version": 1,
+        "occurred_at": "2026-10-22T03:00:00Z",
+        "data": {
+         "device": {
+          "id": 4521,
+          "name": "Ventas",
+          "number": "5491100000000",
+          "connection": "qr",
+          "external_reference": "cliente-8841"
+         },
+         "connected_at": "2026-10-22T03:00:00+00:00",
+         "connect_link_id": "9b2f6c1e-4a7d-4e8b-9c21-5d6f0a9b1c3e"
         }
        }
       }
@@ -30130,18 +30721,46 @@
                "string",
                "null"
               ],
-              "description": "Solo dígitos, sin `+`."
+              "description": "Digits only, without `+`."
+             },
+             "connection": {
+              "type": "string",
+              "enum": [
+               "qr",
+               "coexistence",
+               "dedicated"
+              ]
+             },
+             "external_reference": {
+              "type": [
+               "string",
+               "null"
+              ]
              }
             },
             "required": [
              "id",
              "name",
-             "number"
-            ]
+             "number",
+             "connection",
+             "external_reference"
+            ],
+            "x-fc-pending": "accounts-alta-de-numeros"
            },
            "disconnected_at": {
             "type": "string",
             "format": "date-time"
+           },
+           "reason": {
+            "type": "string",
+            "enum": [
+             "qr_logged_out",
+             "meta_account_not_registered",
+             "shadow_ban_protection",
+             "provider_error",
+             "unknown"
+            ],
+            "x-fc-pending": "accounts-alta-de-numeros"
            }
           },
           "required": [
@@ -30149,6 +30768,23 @@
            "disconnected_at"
           ]
          }
+        }
+       },
+       "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "device.disconnected",
+        "version": 1,
+        "occurred_at": "2026-10-22T03:00:00Z",
+        "data": {
+         "device": {
+          "id": 4521,
+          "name": "Ventas",
+          "number": "5491100000000",
+          "connection": "dedicated",
+          "external_reference": "cliente-8841"
+         },
+         "disconnected_at": "2026-10-22T03:00:00+00:00",
+         "reason": "meta_account_not_registered"
         }
        }
       }
@@ -30612,6 +31248,210 @@
          },
          "trigger": "participants_limit",
          "participants": 1024
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "device.deleted": {
+   "post": {
+    "summary": "device.deleted",
+    "description": "A number of the account was deleted: its place of the quota is free again. Emitted once per number, before the row goes.\n\n**Pending of the spec**: from the contract of the sign-up by API (22-10, A3), while accounts writes it; its OpenAPI will be the final source.",
+    "x-fc-status": "live",
+    "x-fc-domain": "accounts",
+    "x-fc-pending": "accounts-alta-de-numeros",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "device": {
+            "type": "object",
+            "properties": {
+             "id": {
+              "type": "integer"
+             },
+             "name": {
+              "type": [
+               "string",
+               "null"
+              ]
+             },
+             "number": {
+              "type": [
+               "string",
+               "null"
+              ],
+              "description": "Digits only, without `+`."
+             },
+             "connection": {
+              "type": "string",
+              "enum": [
+               "qr",
+               "coexistence",
+               "dedicated"
+              ]
+             },
+             "external_reference": {
+              "type": [
+               "string",
+               "null"
+              ]
+             }
+            },
+            "required": [
+             "id",
+             "name",
+             "number",
+             "connection",
+             "external_reference"
+            ]
+           },
+           "deleted_at": {
+            "type": "string",
+            "format": "date-time"
+           }
+          },
+          "required": [
+           "device",
+           "deleted_at"
+          ]
+         }
+        }
+       },
+       "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "device.deleted",
+        "version": 1,
+        "occurred_at": "2026-10-22T03:00:00Z",
+        "data": {
+         "device": {
+          "id": 4521,
+          "name": "Ventas",
+          "number": "5491100000000",
+          "connection": "qr",
+          "external_reference": "cliente-8841"
+         },
+         "deleted_at": "2026-10-22T03:00:00+00:00"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "device.health_changed": {
+   "post": {
+    "summary": "device.health_changed",
+    "description": "The aggregated health of an official number changed (not on every webhook of Meta).\n\n**Pending of the spec**: from the contract of the sign-up by API (22-10, A3), while accounts writes it; its OpenAPI will be the final source.",
+    "x-fc-status": "live",
+    "x-fc-domain": "accounts",
+    "x-fc-pending": "accounts-alta-de-numeros",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "device": {
+            "type": "object",
+            "properties": {
+             "id": {
+              "type": "integer"
+             },
+             "name": {
+              "type": [
+               "string",
+               "null"
+              ]
+             },
+             "number": {
+              "type": [
+               "string",
+               "null"
+              ],
+              "description": "Digits only, without `+`."
+             },
+             "connection": {
+              "type": "string",
+              "enum": [
+               "qr",
+               "coexistence",
+               "dedicated"
+              ]
+             },
+             "external_reference": {
+              "type": [
+               "string",
+               "null"
+              ]
+             }
+            },
+            "required": [
+             "id",
+             "name",
+             "number",
+             "connection",
+             "external_reference"
+            ]
+           },
+           "previous_state": {
+            "type": "string",
+            "enum": [
+             "available",
+             "limited",
+             "blocked",
+             "unknown"
+            ]
+           },
+           "state": {
+            "type": "string",
+            "enum": [
+             "available",
+             "limited",
+             "blocked",
+             "unknown"
+            ]
+           },
+           "changed_at": {
+            "type": "string",
+            "format": "date-time"
+           }
+          },
+          "required": [
+           "device",
+           "previous_state",
+           "state",
+           "changed_at"
+          ]
+         }
+        }
+       },
+       "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "device.health_changed",
+        "version": 1,
+        "occurred_at": "2026-10-22T03:00:00Z",
+        "data": {
+         "device": {
+          "id": 4521,
+          "name": "Ventas",
+          "number": "5491100000000",
+          "connection": "dedicated",
+          "external_reference": "cliente-8841"
+         },
+         "previous_state": "available",
+         "state": "limited",
+         "changed_at": "2026-10-22T03:00:00+00:00"
         }
        }
       }
@@ -39703,6 +40543,290 @@
     "required": [
      "message"
     ]
+   },
+   "PendingSandboxAccountsError": {
+    "type": "object",
+    "description": "An error of accounts: `error` (the code) and `message`; some codes add keys (`device_id`, `limit`).",
+    "properties": {
+     "error": {
+      "type": "string"
+     },
+     "message": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "error",
+     "message"
+    ]
+   },
+   "PendingSandboxModelNotFound": {
+    "type": "object",
+    "description": "The 404 of a model in accounts: only `message`, \"Object not found\".",
+    "properties": {
+     "message": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "message"
+    ]
+   },
+   "PendingSandboxDeviceQr": {
+    "type": "object",
+    "properties": {
+     "data": {
+      "type": "object",
+      "properties": {
+       "connected": {
+        "type": "boolean"
+       },
+       "qr_code": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "description": "A PNG image as a data URI; `null` when the number is already connected."
+       },
+       "expires_in": {
+        "type": "integer",
+        "description": "Seconds after which to ask for it again."
+       }
+      },
+      "required": [
+       "connected",
+       "qr_code",
+       "expires_in"
+      ]
+     }
+    },
+    "required": [
+     "data"
+    ]
+   },
+   "PendingSandboxConnectLink": {
+    "type": "object",
+    "description": "A sign-up link, without its token.",
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "type": {
+      "type": "string",
+      "enum": [
+       "meta",
+       "qr"
+      ]
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "pending",
+       "completed",
+       "failed",
+       "expired",
+       "revoked"
+      ]
+     },
+     "expires_at": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "allowed_connection_types": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": "string",
+       "enum": [
+        "coexistence",
+        "dedicated"
+       ]
+      }
+     },
+     "provision_us_number": {
+      "type": "boolean"
+     },
+     "device_id": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "description": "The number to reconnect, or the one the link created; `null` until it completes."
+     },
+     "external_reference": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "return_url": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "error_code": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "link_expired",
+       "already_used",
+       "revoked",
+       "quota_exceeded",
+       "trial_number_blocked",
+       "facebook_auth_failed",
+       "meta_error",
+       "number_not_owned",
+       "qr_timeout",
+       "provider_error",
+       null
+      ]
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "completed_at": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     }
+    },
+    "required": [
+     "id",
+     "type",
+     "status",
+     "expires_at",
+     "allowed_connection_types",
+     "provision_us_number",
+     "device_id",
+     "external_reference",
+     "return_url",
+     "error_code",
+     "created_at",
+     "completed_at"
+    ]
+   },
+   "PendingSandboxConnectLinkCreated": {
+    "type": "object",
+    "description": "The link as created: the only answer that carries `url`, with the raw token.",
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "type": {
+      "type": "string",
+      "enum": [
+       "meta",
+       "qr"
+      ]
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "pending",
+       "completed",
+       "failed",
+       "expired",
+       "revoked"
+      ]
+     },
+     "expires_at": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "allowed_connection_types": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": "string",
+       "enum": [
+        "coexistence",
+        "dedicated"
+       ]
+      }
+     },
+     "provision_us_number": {
+      "type": "boolean"
+     },
+     "device_id": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "description": "The number to reconnect, or the one the link created; `null` until it completes."
+     },
+     "external_reference": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "return_url": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "error_code": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "link_expired",
+       "already_used",
+       "revoked",
+       "quota_exceeded",
+       "trial_number_blocked",
+       "facebook_auth_failed",
+       "meta_error",
+       "number_not_owned",
+       "qr_timeout",
+       "provider_error",
+       null
+      ]
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "completed_at": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "url": {
+      "type": "string",
+      "format": "uri",
+      "description": "`https://<public host>/connect/<token>`. Shown once."
+     }
+    },
+    "required": [
+     "id",
+     "type",
+     "status",
+     "expires_at",
+     "allowed_connection_types",
+     "provision_us_number",
+     "device_id",
+     "external_reference",
+     "return_url",
+     "error_code",
+     "created_at",
+     "completed_at",
+     "url"
+    ]
    }
   },
   "responses": {
@@ -40122,7 +41246,7 @@
   "inputs": {
    "spec/funnelchat.json": "8bbbae569b4cab520884db98f28204156c1bd6c629578bee609343c193e0dadb",
    "spec/pending.json": "a14bc4dbc3025d3e958ffda8afd1fa9fdab34af264418060825f3300799aceb0",
-   "spec/pending-sandbox.json": "1f4dbb082f57a1093bd3e36260108ee7a15d64683a75ec1a366091a3127c498f"
+   "spec/pending-sandbox.json": "5ced095bd4a5bf14544cf85079faea872bc834cd8bcb61b90ed11dd4623683c4"
   },
   "snapshot_commit": "0ef4abb008870ed8c7cae49a08900a81e5e57ed8",
   "pending_commit": "88557ce7819c5a4061e84c58053a1b6c49f35ec2",
@@ -40181,15 +41305,27 @@
    "GET /api/v1/forms/families/{familyId}/responses [pending-sandbox.json]",
    "GET /api/v1/forms/families/{familyId}/responses/{runId} [pending-sandbox.json]",
    "POST /api/v1/contacts/{contact}/message/form [pending-sandbox.json]",
+   "POST /api/v1/devices [pending-sandbox.json]",
+   "GET /api/v1/devices/{device}/qr [pending-sandbox.json]",
+   "GET /api/v1/connect-links [pending-sandbox.json]",
+   "POST /api/v1/connect-links [pending-sandbox.json]",
+   "GET /api/v1/connect-links/{link} [pending-sandbox.json]",
+   "DELETE /api/v1/connect-links/{link} [pending-sandbox.json]",
    "POST /api/v1/contacts/{contact}/message (cuerpo: file_type, file_name) [pending-sandbox.json]",
    "POST /api/v1/message/send-message (cuerpo: file_type, file_name) [pending-sandbox.json]",
+   "PUT /api/v1/devices/{device} (cuerpo: external_reference) [pending-sandbox.json]",
+   "GET /api/v1/devices (parámetros: external_reference) [pending-sandbox.json]",
    "POST /api/v1/contacts/{contact}/message (respuestas: 200) [pending-sandbox.json]",
    "POST /api/v1/message/send-message (respuestas: 200) [pending-sandbox.json]",
    "POST /api/v1/devices/{device}/templates/{template}/send-template (respuestas: 200) [pending-sandbox.json]",
    "POST /api/v1/contacts/{contact}/message/contact-card (respuestas: 200) [pending-sandbox.json]",
    "POST /api/v1/contacts/{contact}/messages/{message}/forward (respuestas: 200) [pending-sandbox.json]",
+   "webhook device.deleted [pending-sandbox.json]",
+   "webhook device.health_changed [pending-sandbox.json]",
    "webhook message.received (data: device_id) [pending-sandbox.json]",
-   "webhook message.status_changed (data: error) [pending-sandbox.json]"
+   "webhook message.status_changed (data: error) [pending-sandbox.json]",
+   "webhook device.connected (data: device, connect_link_id) [pending-sandbox.json]",
+   "webhook device.disconnected (data: device, reason) [pending-sandbox.json]"
   ]
  }
 }

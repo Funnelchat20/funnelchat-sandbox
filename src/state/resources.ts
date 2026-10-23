@@ -2,7 +2,7 @@
  * The public shape of each object, as the domains' Laravel resources write them (keys, order, date formats).
  */
 import { iso8601, isoSeconds, laravelJson, sqlDateTime } from '../util.js';
-import type { Contact, CustomField, Delivery, Device, Message, Store, Subscription, Tag, Template } from './store.js';
+import type { ConnectLink, Connection, Contact, CustomField, Delivery, Device, Message, Store, Subscription, Tag, Template } from './store.js';
 
 /** The account the sandbox imitates. REST resources carry it in `user_id`; events never do. */
 export const ACCOUNT_USER_ID = 1;
@@ -200,7 +200,7 @@ export function deviceCapabilities(device: Device): Record<string, unknown> {
 function deviceHealth(device: Device): Record<string, unknown> | null {
   if (device.kind !== 'cloud') return null;
   return {
-    state: device.connected ? 'available' : 'unknown',
+    state: device.health ?? 'unknown',
     reason: null,
     reason_truncated: false,
     reason_key: null,
@@ -213,16 +213,26 @@ function deviceHealth(device: Device): Record<string, unknown> | null {
   };
 }
 
-/** accounts v1.4.24 `DeviceResource`, in its order. */
+/** Contract A3 `device.connection`: `qr`, `coexistence` or `dedicated`. */
+export function deviceConnection(device: Device): Connection {
+  if (device.kind === 'qr') return 'qr';
+  return device.coexistence ? 'coexistence' : 'dedicated';
+}
+
+/**
+ * accounts v1.4.24 `DeviceResource`, in its order, plus `external_reference` and `connection` (contract A1 of the
+ * sign-up by API, 22-10). A number created by QR has no phone until it is scanned: `number` is empty and
+ * `normalized_number` is `null`, as the resource documents.
+ */
 export function deviceResource(device: Device): Record<string, unknown> {
   return {
     id: device.id,
     alias: device.alias,
     image: '',
     color: device.kind === 'cloud' ? '#25D366' : '#128C7E',
-    number: device.number,
+    number: device.number ?? '',
     normalized_number: device.number,
-    first_conecction_at: laravelJson(device.createdAt),
+    first_conecction_at: device.firstConnectedAt ? laravelJson(device.firstConnectedAt) : null,
     user_id: ACCOUNT_USER_ID,
     provider: device.provider,
     waba_id: device.wabaId ?? '',
@@ -232,8 +242,8 @@ export function deviceResource(device: Device): Record<string, unknown> {
     active: 1,
     health: deviceHealth(device),
     number_key: device.number,
-    number_key_confirmed: true,
-    is_coexistence: false,
+    number_key_confirmed: device.number !== null,
+    is_coexistence: device.coexistence,
     slot_state: 'held',
     pool_suspended: false,
     pool_suspension_reason: null,
@@ -241,6 +251,37 @@ export function deviceResource(device: Device): Record<string, unknown> {
     qr_allowed: device.kind === 'qr',
     can_change_to_meta: false,
     capabilities: deviceCapabilities(device),
+    external_reference: device.externalReference,
+    connection: deviceConnection(device),
+  };
+}
+
+/** The `device` of every `device.*` event (contract A3): never the account. */
+export function eventDevice(device: Device): Record<string, unknown> {
+  return {
+    id: device.id,
+    name: device.alias,
+    number: device.number,
+    connection: deviceConnection(device),
+    external_reference: device.externalReference,
+  };
+}
+
+/** The sign-up link of contract A1, without the token (it is only in the `url` of the create answer). */
+export function connectLinkResource(link: ConnectLink): Record<string, unknown> {
+  return {
+    id: link.id,
+    type: link.type,
+    status: link.status,
+    expires_at: iso8601(link.expiresAt),
+    allowed_connection_types: link.allowedConnectionTypes,
+    provision_us_number: link.provisionUsNumber,
+    device_id: link.deviceId,
+    external_reference: link.externalReference,
+    return_url: link.returnUrl,
+    error_code: link.errorCode,
+    created_at: iso8601(link.createdAt),
+    completed_at: link.completedAt ? iso8601(link.completedAt) : null,
   };
 }
 

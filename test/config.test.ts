@@ -32,6 +32,19 @@ describe('configuration', () => {
     expect(() => mergeConfig(defaultConfig(), { nope: 1 } as never)).toThrow(/Unknown option/);
   });
 
+  it('numbers and publicUrl: the quota of the account and the base of the sign-up links, kept across a reset', async () => {
+    const config = mergeConfig(defaultConfig(), { ...parseArgs(['--public-url', 'https://sandbox.example.com/']).overrides, numbers: { limit: 1, trial: true } });
+    expect(config.publicUrl).toBe('https://sandbox.example.com');
+    expect(config.numbers).toEqual({ limit: 1, included: true, trial: true, metaConnect: true });
+    expect(() => mergeConfig(defaultConfig(), { numbers: { limit: -1 } })).toThrow(/numbers.limit/);
+    expect(() => mergeConfig(defaultConfig(), { publicUrl: 'sandbox.example.com' })).toThrow(/publicUrl/);
+
+    const api = await startSandbox({ numbers: { limit: 3 } });
+    await api.call('POST', '/_sandbox/numbers', { limit: 9 });
+    await api.call('POST', '/_sandbox/reset');
+    expect((await api.call('GET', '/_sandbox/numbers')).body).toMatchObject({ limit: 3, in_use: 2 });
+  });
+
   it('reads a configuration file, and the flags win over it', () => {
     const dir = mkdtempSync(join(tmpdir(), 'sandbox-config-'));
     const file = join(dir, 'funnelchat-sandbox.config.json');

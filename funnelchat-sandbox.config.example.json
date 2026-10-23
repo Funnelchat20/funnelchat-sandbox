@@ -4,6 +4,8 @@
   "webhooks": { "retryDelays": [5, 15, 30], "timeoutSeconds": 10 },
   "rules": { "window": true, "antiblock": true, "rateLimit": true },
   "templateApprovalSeconds": 5,
+  "numbers": { "limit": 5, "included": true, "trial": false, "metaConnect": true },
+  "publicUrl": null,
   "subscriptions": [
     {
       "url": "http://localhost:3000/hooks/funnelchat",

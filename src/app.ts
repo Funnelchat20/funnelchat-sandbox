@@ -51,6 +51,8 @@ export class SandboxApp {
   readonly webhooks: Webhooks;
   /** Grows on every reset, so work started before a reset does not touch the new state. */
   generation = 0;
+  /** The address the sandbox listens on, once it does: the host of the sign-up links when `publicUrl` is not set. */
+  listenUrl: string | null = null;
 
   constructor(
     readonly config: SandboxConfig,
@@ -61,8 +63,14 @@ export class SandboxApp {
     this.populate();
   }
 
+  /** `http://host:port` of the sign-up page: `publicUrl`, or where the sandbox listens. */
+  get publicUrl(): string {
+    return this.config.publicUrl ?? this.listenUrl ?? `http://localhost:${this.config.port}`;
+  }
+
   private populate(): void {
     seed(this.store);
+    this.store.numbers = { ...this.config.numbers };
     for (const preset of this.config.subscriptions) {
       const unknown = preset.events.filter((e) => !isSubscribable(e));
       if (unknown.length) this.logger.warn(`subscription from the configuration with types that are not in the catalog: ${unknown.join(', ')}`);

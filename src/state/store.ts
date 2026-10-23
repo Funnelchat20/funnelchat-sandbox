@@ -1,6 +1,7 @@
 /**
  * The in-memory state of the sandbox: one account, its two example numbers, and what a real integration touches
- * (contacts, conversations and messages, tags, custom fields, templates and webhook subscriptions). Everything is
+ * (numbers and sign-up links, contacts, conversations and messages, tags, custom fields, templates and webhook
+ * subscriptions). Everything is
  * lost when the process stops or on `POST /_sandbox/reset`.
  */
 import { randomBytes } from 'node:crypto';
@@ -15,18 +16,65 @@ export interface MessageError {
 
 export type DeviceKind = 'cloud' | 'qr';
 
+/** How a number is connected (contract A3 `device.connection`): QR, official in coexistence, or official dedicated. */
+export type Connection = 'qr' | 'coexistence' | 'dedicated';
+
+/** The aggregated health of an official number (accounts `MetaHealthStatusService`). */
+export type HealthState = 'available' | 'limited' | 'blocked' | 'unknown';
+
 export interface Device {
   id: number;
   alias: string;
-  /** Digits only, without `+`. */
-  number: string;
+  /** Digits only, without `+`. `null` while a number created by QR has not been scanned. */
+  number: string | null;
   /** WhatsAppProviderEnum of accounts: 1 Z-API (QR), 2 WhatsApp Cloud (official). */
   provider: 1 | 2;
   kind: DeviceKind;
   connected: boolean;
+  /** Official numbers only: it shares the number with the WhatsApp Business app. */
+  coexistence: boolean;
+  /** Official numbers only: it came from the pool of US numbers. */
+  fromPool: boolean;
+  /** Free text of the integrator, up to 255 characters, not unique. */
+  externalReference: string | null;
+  /** Official numbers only (`null` for QR). */
+  health: HealthState | null;
   wabaId: string | null;
   phoneNumberId: string | null;
+  firstConnectedAt: Date | null;
   createdAt: Date;
+}
+
+export type ConnectLinkStatus = 'pending' | 'completed' | 'failed' | 'expired' | 'revoked';
+
+/** A sign-up link (contract A1 `connect-links`): it creates (or reconnects) a number when the page completes. */
+export interface ConnectLink {
+  id: string;
+  type: 'meta' | 'qr';
+  status: ConnectLinkStatus;
+  /** sha256 of the token: the raw token is only in the `url` of the create answer. */
+  tokenHash: string;
+  allowedConnectionTypes: ('coexistence' | 'dedicated')[] | null;
+  provisionUsNumber: boolean;
+  /** Reconnects this number; otherwise `null` until the link completes, then the number it created. */
+  deviceId: number | null;
+  reconnect: boolean;
+  /** `qr` only: adds QR to this number in coexistence. Not part of the public resource. */
+  sameNumberAs: number | null;
+  externalReference: string | null;
+  returnUrl: string | null;
+  errorCode: string | null;
+  expiresAt: Date;
+  createdAt: Date;
+  completedAt: Date | null;
+}
+
+/** An answer kept under an `Idempotency-Key` for 24 hours. */
+export interface IdempotentAnswer {
+  fingerprint: string;
+  status: number;
+  body: unknown;
+  storedAt: Date;
 }
 
 export interface Contact {
@@ -245,6 +293,12 @@ export class Store {
   forms = new Map<number, FormVersion>();
   formFamilies = new Map<number, FormFamily>();
   formRuns = new Map<number, FormRun>();
+  connectLinks = new Map<string, ConnectLink>();
+  /** Answers by `Idempotency-Key` (one account: the key alone). */
+  idempotency = new Map<string, IdempotentAnswer>();
+
+  /** The number quota of the account and the switch of the Meta sign-up (`POST /_sandbox/numbers`). */
+  numbers = { limit: 5, included: true, trial: false, metaConnect: true };
 
   /** Last inbound message per `contactId:deviceId`: the 24-hour window. */
   lastInbound = new Map<string, Date>();
@@ -272,6 +326,7 @@ export class Store {
     formFamily: new Sequence(8001),
     formVersion: new Sequence(8101),
     formRun: new Sequence(1),
+    device: new Sequence(5),
   };
 
   constructor(readonly historyLimit = 200) {}
@@ -315,8 +370,13 @@ export function seed(store: Store, now = new Date()): void {
     provider: 2,
     kind: 'cloud',
     connected: true,
+    coexistence: false,
+    fromPool: false,
+    externalReference: null,
+    health: 'available',
     wabaId: '100000000000001',
     phoneNumberId: '100000000000003',
+    firstConnectedAt: now,
     createdAt: now,
   });
   store.devices.set(4, {
@@ -326,8 +386,13 @@ export function seed(store: Store, now = new Date()): void {
     provider: 1,
     kind: 'qr',
     connected: true,
+    coexistence: false,
+    fromPool: false,
+    externalReference: null,
+    health: null,
     wabaId: null,
     phoneNumberId: null,
+    firstConnectedAt: now,
     createdAt: now,
   });
 

@@ -40,6 +40,25 @@ export interface SandboxConfig {
   templateApprovalSeconds: number | null;
   /** Subscriptions to create at start and after every reset. */
   subscriptions: PresetSubscription[];
+  /**
+   * The number quota of the account and the Meta sign-up switch; `POST /_sandbox/numbers` changes them while it runs.
+   * QR and Meta of the same phone count once; the two example numbers already use two places.
+   */
+  numbers: {
+    /** Numbers the plan allows: `403 number_limit_reached` beyond it. */
+    limit: number;
+    /** `false`: the plan has no numbers, `403 numbers_not_included`. */
+    included: boolean;
+    /** A trial account: one number of the US pool instead of three. */
+    trial: boolean;
+    /** `false`: `POST /connect-links` with `type: meta` answers `503 meta_connect_disabled`, like production while Meta is off. */
+    metaConnect: boolean;
+  };
+  /**
+   * Where the sign-up page is reachable, for the `url` of a link (`<publicUrl>/connect/<token>`). Never taken from the
+   * request's `Host`. `null`: the address the sandbox listens on.
+   */
+  publicUrl: string | null;
   /** How many requests and deliveries the panel keeps. */
   historyLimit: number;
   /** One line per request and per delivery on the console. */
@@ -58,6 +77,8 @@ export function defaultConfig(): SandboxConfig {
     rules: { window: true, antiblock: true, rateLimit: true },
     templateApprovalSeconds: 5,
     subscriptions: [],
+    numbers: { limit: 5, included: true, trial: false, metaConnect: true },
+    publicUrl: null,
     historyLimit: 200,
     log: true,
   };
@@ -141,6 +162,23 @@ export function mergeConfig(base: SandboxConfig, input: ConfigInput): SandboxCon
       }
       return structuredClone(s) as unknown as PresetSubscription;
     });
+  }
+  if (input.numbers !== undefined) {
+    const n = input.numbers;
+    if (!isRecord(n)) throw new ConfigError('numbers must be an object {limit, included, trial, metaConnect}.');
+    if (n.limit !== undefined) {
+      if (!Number.isInteger(n.limit) || (n.limit as number) < 0) throw new ConfigError('numbers.limit must be an integer, 0 or more.');
+      out.numbers.limit = n.limit as number;
+    }
+    for (const key of ['included', 'trial', 'metaConnect'] as const) {
+      if (n[key] !== undefined) out.numbers[key] = Boolean(n[key]);
+    }
+  }
+  if (input.publicUrl !== undefined) {
+    if (input.publicUrl !== null && (typeof input.publicUrl !== 'string' || !/^https?:\/\/[^/]+/.test(input.publicUrl))) {
+      throw new ConfigError('publicUrl must be an http(s) URL, like https://sandbox.example.com, or null.');
+    }
+    out.publicUrl = input.publicUrl === null ? null : (input.publicUrl as string).replace(/\/+$/, '');
   }
   if (input.historyLimit !== undefined) {
     if (!Number.isInteger(input.historyLimit) || (input.historyLimit as number) < 1) {
@@ -226,6 +264,9 @@ export function parseArgs(argv: string[]): CliArgs {
       }
       case '--host':
         o.host = value();
+        break;
+      case '--public-url':
+        o.publicUrl = value();
         break;
       case '--status-delays': {
         const [sent, delivered, read] = parseSecondsList(value(), '--status-delays', true);

@@ -1,6 +1,7 @@
 /**
- * The HTTP server: the public API under `/api/v1/...` (validated against the spec, with an API key) and the
- * sandbox's own routes under `/_sandbox/...` (no key).
+ * The HTTP server: the public API under `/api/v1/...` (validated against the spec, with an API key), the hosted
+ * sign-up page of the links under `/connect/...` (never with a key) and the sandbox's own routes under `/_sandbox/...`
+ * (no key).
  *
  * For an API request: route of the spec (or `404 route_not_found`) → API key (`401 unauthenticated`) → validation of
  * path, query and body (`404` / `422 validation_failed`) → the stateful handler, or the example of the response
@@ -11,7 +12,9 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from 'node:net';
 import { SandboxApp, type Logger } from './app.js';
 import { defaultConfig, mergeConfig, type ConfigInput, type SandboxConfig } from './config.js';
+import { connectLinkHandlers } from './handlers/connect-links.js';
 import { contactHandlers } from './handlers/contacts.js';
+import { deviceHandlers } from './handlers/devices.js';
 import { formHandlers } from './handlers/forms.js';
 import { GATE_CLOSED, gateHandlers } from './handlers/gate.js';
 import { messageHandlers } from './handlers/messages.js';
@@ -20,6 +23,7 @@ import type { HandlerResult, HandlerTable } from './http/context.js';
 import { takeEdgeFailure } from './http/edge.js';
 import { ApiError, edgeError, methodNotAllowed, notFound, routeNotAvailable, routeNotFound, unauthenticated, validationFailed } from './http/errors.js';
 import { parseQuery } from './http/query.js';
+import { handleConnectPage, isConnectPath } from './numbers/page.js';
 import { exampleFor } from './openapi/example.js';
 import { matchRoute, requestBodySchema, spec, successResponse } from './openapi/spec.js';
 import { validateRequest } from './openapi/validate.js';
@@ -32,7 +36,15 @@ const MAX_BODY_BYTES = 1024 * 1024;
 /** `Authorization: Bearer <id>|fc_live_...`: any well-formed key is accepted. */
 const API_KEY = /^Bearer\s+(\d+)\|fc_live_[A-Za-z0-9]+$/;
 
-const handlers: HandlerTable = { ...contactHandlers, ...messageHandlers, ...formHandlers, ...gateHandlers, ...webhookHandlers };
+const handlers: HandlerTable = {
+  ...contactHandlers,
+  ...messageHandlers,
+  ...deviceHandlers,
+  ...connectLinkHandlers,
+  ...formHandlers,
+  ...gateHandlers,
+  ...webhookHandlers,
+};
 
 class BodyError extends ApiError {}
 
@@ -209,6 +221,22 @@ export function createSandbox(options: CreateSandboxOptions = {}): Sandbox {
       return;
     }
 
+    if (isConnectPath(url.pathname)) {
+      try {
+        const body = method === 'POST' ? parseBody(await readBody(req), headers['content-type']) : undefined;
+        const answer = handleConnectPage(app, method, url.pathname, headers, url.searchParams, body);
+        const pageHeaders: Record<string, string> = { 'X-Funnelchat-Sandbox': VERSION, ...answer.headers, [REQUEST_ID_HEADER]: requestId };
+        if (answer.html !== undefined) pageHeaders['Content-Type'] = 'text/html; charset=utf-8';
+        res.writeHead(answer.status, pageHeaders);
+        res.end(answer.html);
+      } catch (error) {
+        send(res, requestId, errorResult(error));
+      }
+      // The token never reaches the request log: only `/connect/***`.
+      app.logger.info(`${method} /connect/*** → ${res.statusCode} (${Date.now() - started} ms)`);
+      return;
+    }
+
     if (url.pathname === '/' && method === 'GET') {
       send(res, requestId, {
         status: 200,
@@ -251,7 +279,8 @@ export function createSandbox(options: CreateSandboxOptions = {}): Sandbox {
           server.off('error', reject);
           const { port } = server.address() as AddressInfo;
           const host = config.host === '0.0.0.0' || config.host === '::' ? 'localhost' : config.host;
-          resolve({ url: `http://${host}:${port}`, port });
+          app.listenUrl = `http://${host}:${port}`;
+          resolve({ url: app.listenUrl, port });
         });
       }),
     close: () =>

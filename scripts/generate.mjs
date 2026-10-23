@@ -15,7 +15,7 @@
  *   2. Merge, in this order, over a copy of the snapshot:
  *        - spec/pending.json          the "pending of the spec" layer of the Node SDK, unchanged;
  *        - spec/pending-sandbox.json  what the sandbox imitates on top of it (send response with the queued
- *                                     message, message lookup, extra event fields).
+ *                                     message, message lookup, extra event fields, the sign-up of numbers).
  *      Every pending entry is applied only while the snapshot lacks it; the report lists the entries a new
  *      snapshot made obsolete so they can be deleted.
  *   3. Write generated/openapi.json: the merged spec the server validates and answers with. It is
@@ -168,9 +168,10 @@ function requestSchema(merged, op) {
 
 /**
  * Step 2: merge one pending layer into `merged` (mutated). Same rules as funnelchat-node's generator for
- * `paths`, `operationPatches` and `webhooks`, plus two kinds the sandbox needs:
+ * `paths`, `operationPatches` and `webhooks`, plus three kinds the sandbox needs:
  *
  *   - `responsePatches`: replace responses of an operation of the snapshot while it meets `while`;
+ *   - `parameterPatches`: add parameters to an operation of the snapshot, only those it lacks (by name and place);
  *   - `webhookPatches`: set properties of an event's `data` (schema and example), while the event meets
  *     `while` or while its `data` lacks `whileMissing`.
  */
@@ -219,6 +220,23 @@ function mergeLayer(merged, layer, layerName, report) {
       schema.properties[prop] ??= propSchema;
     }
     op['x-fc-pending'] = patch['x-fc-pending'];
+    report.applied.push(label);
+  }
+
+  for (const patch of layer.parameterPatches ?? []) {
+    const label = tag(`${patch.method.toUpperCase()} ${patch.path} (parámetros: ${(patch.parameters ?? []).map((p) => p.name).join(', ')})`);
+    const op = merged.paths[patch.path]?.[patch.method];
+    if (!op) {
+      report.missing.push(label);
+      continue;
+    }
+    op.parameters ??= [];
+    const missing = (patch.parameters ?? []).filter((p) => !op.parameters.some((q) => q.name === p.name && q.in === p.in));
+    if (missing.length === 0) {
+      report.superseded.push(label);
+      continue;
+    }
+    op.parameters.push(...missing.map((p) => ({ ...p, 'x-fc-pending': patch['x-fc-pending'] })));
     report.applied.push(label);
   }
 

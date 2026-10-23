@@ -176,7 +176,9 @@ describe('numbers and groups', () => {
     const res = await api.call('GET', '/api/v1/devices');
     expect(Object.keys(res.body)).toEqual(['data', 'links', 'meta']);
     const [cloud, qr] = res.body.data;
-    expect(Object.keys(cloud).slice(-11)).toEqual(['health', 'number_key', 'number_key_confirmed', 'is_coexistence', 'slot_state', 'pool_suspended', 'pool_suspension_reason', 'pool_keep', 'qr_allowed', 'can_change_to_meta', 'capabilities']);
+    // accounts v1.4.24 in its order, plus the two keys of the sign-up by API (contract A1, 22-10).
+    expect(Object.keys(cloud).slice(-13)).toEqual(['health', 'number_key', 'number_key_confirmed', 'is_coexistence', 'slot_state', 'pool_suspended', 'pool_suspension_reason', 'pool_keep', 'qr_allowed', 'can_change_to_meta', 'capabilities', 'external_reference', 'connection']);
+    expect([cloud.connection, qr.connection]).toEqual(['dedicated', 'qr']);
     expect(cloud.capabilities.messages).toMatchObject({ templates: true, polls: false, reactions: false });
     expect(cloud.capabilities.groups.create).toBe(false);
     expect(cloud.health).toMatchObject({ state: 'available' });

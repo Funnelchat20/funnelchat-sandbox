@@ -1,5 +1,5 @@
 /**
- * Sending, the history and the message lookup (conversations domain), and the templates.
+ * Sending, the history and the message lookup (conversations domain), and the templates. The numbers are in devices.ts.
  *
  * As conversations v1.18.10 answers them in production: with an API key, every send that registers messages answers
  * `200` right away with the queued message (`{message: {...}}`, `{messages: [...]}` for cards, `message` in each
@@ -22,7 +22,7 @@ import {
   type SendCheck,
   type SendProfile,
 } from '../messaging/rules.js';
-import { deviceResource, historyMessage, publicMessage, templateResource } from '../state/resources.js';
+import { historyMessage, publicMessage, templateResource } from '../state/resources.js';
 import type { Contact, Device, Message, Template } from '../state/store.js';
 import { getContact } from './contacts.js';
 
@@ -393,18 +393,6 @@ export const messageHandlers: HandlerTable = {
     if (template.deviceId !== Number(ctx.path.device)) throw notFound('La plantilla no es de este número.');
     ctx.app.store.templates.delete(template.id);
     return noContent();
-  },
-
-  // --- numbers (accounts) -----------------------------------------------------------------------------------
-
-  // With an API key the list always paginates (accounts `PublicApiListings`: `perPage`, 25 by default, up to 100, by id).
-  'GET /api/v1/devices': (ctx) => ok(paginate([...ctx.app.store.devices.values()].sort((a, b) => a.id - b.id), listContext(ctx), deviceResource)),
-
-  'GET /api/v1/devices/{device}': (ctx) => {
-    const device = ctx.app.store.devices.get(Number(ctx.path.device));
-    // accounts `bootstrap/app.php`: the 404 of a model, in English and without `error`.
-    if (!device) throw new RawApiError(404, { message: 'Object not found' });
-    return ok(deviceResource(device));
   },
 };
 

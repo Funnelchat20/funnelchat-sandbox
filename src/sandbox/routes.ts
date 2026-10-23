@@ -9,10 +9,11 @@ import { createContact, eventContact } from '../handlers/contacts.js';
 import { completeForm } from '../handlers/forms.js';
 import { setTemplateStatus } from '../handlers/messages.js';
 import { createMessage, transition } from '../messaging/lifecycle.js';
+import { connectDevice, disconnectDevice, DISCONNECT_REASONS, HEALTH_STATES, placesInUse, poolLimit, refreshLink, setHealth, type DisconnectReason } from '../numbers/numbers.js';
 import { FAILURE_REASONS, REJECTIONS, failureFor, parseForced } from '../messaging/rules.js';
-import { contactResource, deliveryResource, deviceResource, publicMessage } from '../state/resources.js';
-import type { ArmedFailure, Contact, TemplateStatus } from '../state/store.js';
-import { digits, isRecord, iso8601, isoSeconds, toE164 } from '../util.js';
+import { connectLinkResource, contactResource, deliveryResource, deviceResource, publicMessage } from '../state/resources.js';
+import type { ArmedFailure, Contact, HealthState, TemplateStatus } from '../state/store.js';
+import { digits, isRecord, iso8601, toE164 } from '../util.js';
 import { catalog, catalogEntry, emittedData } from '../webhooks/catalog.js';
 import { panelHtml } from './panel.js';
 
@@ -52,14 +53,29 @@ function deviceOf(app: SandboxApp, id: unknown) {
   return device;
 }
 
-function emitted(result: { envelope: { id: string; type: string }; subscriptions: number }) {
-  return { id: result.envelope.id, type: result.envelope.type, subscriptions: result.subscriptions };
+function emitted(result: { envelope: { id: string; type: string }; subscriptions: number } | null) {
+  return result ? { id: result.envelope.id, type: result.envelope.type, subscriptions: result.subscriptions } : null;
+}
+
+function numbersState(app: SandboxApp): Record<string, unknown> {
+  const { numbers } = app.store;
+  return {
+    limit: numbers.limit,
+    in_use: placesInUse(app),
+    included: numbers.included,
+    trial: numbers.trial,
+    pool_limit: poolLimit(app),
+    meta_connect: numbers.metaConnect,
+  };
 }
 
 function state(app: SandboxApp): Record<string, unknown> {
   const { store, config } = app;
   return {
     devices: [...store.devices.values()].map(deviceResource),
+    numbers: numbersState(app),
+    // Never the tokens: they are only in the `url` of the create answer.
+    connect_links: [...store.connectLinks.values()].map((link) => connectLinkResource(refreshLink(link))),
     counts: {
       contacts: store.contacts.size,
       messages: store.messages.size,
@@ -347,19 +363,51 @@ const ROUTES: Route[] = [
     },
   },
   {
+    // `connect` is the scan of the QR (or the end of the Meta sign-up): it takes `number`, a fake one otherwise.
+    // `disconnect` takes `reason` (qr_logged_out for QR and unknown for official numbers by default).
     method: 'POST',
     pattern: /^\/_sandbox\/devices\/(\d+)\/(connect|disconnect)$/,
-    handle: (app, _req, [id, action]) => {
+    handle: (app, req, [id, action]) => {
       const device = deviceOf(app, id);
-      const connected = action === 'connect';
-      if (device.connected === connected) return { status: 200, body: { device: deviceResource(device), event: null } };
-      device.connected = connected;
-      const at = new Date();
-      const data = connected
-        ? { device: { id: device.id, name: device.alias, number: device.number }, connected_at: isoSeconds(at) }
-        : { device: { id: device.id, name: device.alias, number: device.number }, disconnected_at: isoSeconds(at) };
-      const event = app.webhooks.emit(connected ? 'device.connected' : 'device.disconnected', data, { occurredAt: at });
-      return { status: 200, body: { device: deviceResource(device), event: emitted(event) } };
+      const b = obj(req.body);
+      if (action === 'connect') {
+        const number = b.number === undefined || b.number === null ? null : digits(b.number);
+        if (number !== null && number.length < 8) throw fieldError('number', 'number must be a phone, digits only.');
+        return { status: 200, body: { device: deviceResource(device), event: emitted(connectDevice(app, device, { number })) } };
+      }
+      const reason = (b.reason ?? (device.kind === 'qr' ? 'qr_logged_out' : 'unknown')) as DisconnectReason;
+      if (!DISCONNECT_REASONS.includes(reason)) throw fieldError('reason', `reason must be one of: ${DISCONNECT_REASONS.join(', ')}.`);
+      return { status: 200, body: { device: deviceResource(device), event: emitted(disconnectDevice(app, device, reason)) } };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/_sandbox\/devices\/(\d+)\/health$/,
+    handle: (app, req, [id]) => {
+      const device = deviceOf(app, id);
+      if (device.kind !== 'cloud') throw fieldError('device_id', 'Only official numbers have a health state.');
+      const state = obj(req.body).state as HealthState;
+      if (!HEALTH_STATES.includes(state)) throw fieldError('state', `state must be one of: ${HEALTH_STATES.join(', ')}.`);
+      return { status: 200, body: { device: deviceResource(device), event: emitted(setHealth(app, device, state)) } };
+    },
+  },
+  { method: 'GET', pattern: /^\/_sandbox\/numbers$/, handle: (app) => ({ status: 200, body: numbersState(app) }) },
+  {
+    method: 'POST',
+    pattern: /^\/_sandbox\/numbers$/,
+    handle: (app, req) => {
+      const b = obj(req.body);
+      const { numbers } = app.store;
+      if (b.limit !== undefined) {
+        if (!Number.isInteger(b.limit) || (b.limit as number) < 0) throw fieldError('limit', 'limit must be an integer, 0 or more.');
+        numbers.limit = b.limit as number;
+      }
+      for (const [field, key] of [['included', 'included'], ['trial', 'trial'], ['meta_connect', 'metaConnect']] as const) {
+        if (b[field] === undefined) continue;
+        if (typeof b[field] !== 'boolean') throw fieldError(field, `${field} must be true or false.`);
+        numbers[key] = b[field];
+      }
+      return { status: 200, body: numbersState(app) };
     },
   },
   {

@@ -14,6 +14,7 @@ Usage: npx funnelchat-sandbox [options]
 Options:
   -p, --port <n>                 Port (default ${DEFAULT_PORT}; 0 takes a free one).
       --host <host>              Where to listen (default 127.0.0.1; in Docker, 0.0.0.0).
+      --public-url <url>         Base URL of the sign-up links (default: where it listens; in Docker, the published one).
   -c, --config <file>            JSON configuration (default ./${DEFAULT_CONFIG_FILE}, if it exists).
       --status-delays <s,d,r>    Seconds until sent, delivered and read (default 1,2,3; "-" stops there).
       --retry-delays <a,b,c>     Seconds between retries of a webhook (default 60,300,1800).
