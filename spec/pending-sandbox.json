@@ -15,7 +15,7 @@
       "conversations-received-device": "conversations v1.18.10 (en producción): `device_id` en `data` de message.received (`MessageReceivedPayload`).",
       "conversations-file-by-url": "conversations v1.18.10 (en producción): `SendFileType` — `file` por URL (firmada o sin extensión) con `file_type` y `file_name` opcionales, en POST contacts/{contact}/message y POST message/send-message.",
       "conversations-forms": "conversations v1.18.10 (en producción): `routes/api/whatsapp-forms.php`, `WhatsappFormController`, `WhatsappFormSendController`, `SendWhatsappFormRequest`. Las rutas de formularios abiertas a claves (`config/platform-gate.php`) y el envío de un formulario a un contacto. El portal no las documenta todavía: su `config/borde.json` no tiene el prefijo `forms`.",
-      "accounts-alta-de-numeros": "Contrato «alta y conexión de números por API» v0 (funnelchat-dev-platform `docs/initiatives/api-abierta/contratos/1022-alta-de-numeros.md`, 22-10-2026), secciones A1 y A3, y sus decisiones Q1–Q26. accounts lo programa en `feat/alta-de-numeros-api`: hasta que su OpenAPI llegue a la instantánea, esto sale del contrato. Enmienda v0.1 del contrato (23-10, commit `8c68067` de funnelchat-dev-platform), leída de accounts `feat/alta-de-numeros-api` `52d49b319`: errores, id entero del link, `invalid_request`, `pending_number_exists`, `connection_type_mismatch`, `invalid_idempotency_key`, `Idempotent-Replayed` y, de la parte 2 en curso, `connect_link_id` en los cuatro avisos y el motivo `disconnected_by_user`."
+      "accounts-alta-de-numeros": "Contrato «alta y conexión de números por API» v0 (funnelchat-dev-platform `docs/initiatives/api-abierta/contratos/1022-alta-de-numeros.md`, 22-10-2026), secciones A1 y A3, y sus decisiones Q1–Q26. accounts lo programa en `feat/alta-de-numeros-api`: hasta que su OpenAPI llegue a la instantánea, esto sale del contrato. Enmienda v0.1 del contrato (23-10, commit `8c68067` de funnelchat-dev-platform), leída de accounts `feat/alta-de-numeros-api` `52d49b319`: errores, id entero del link, `invalid_request`, `pending_number_exists`, `connection_type_mismatch`, `invalid_idempotency_key`, `Idempotent-Replayed` y, de la parte 2 en curso, `connect_link_id` en los cuatro avisos y el motivo `disconnected_by_user`. Enmienda v0.2 (23-10, commit `720ee83`), leída de accounts `8852b3fad` (parte 2 terminada): `provision_us_number` exige `dedicated` y no va con `device_id`; el link Meta tolera cinco intentos fallidos de Facebook o Meta; en `device.connected`, `connect_link_id` es el link de esa conexión."
     }
   },
   "components": {
@@ -1777,7 +1777,7 @@
       "post": {
         "operationId": "pendingSandboxConnectLinks.store",
         "summary": "Create a sign-up link",
-        "description": "A link of the account that creates the number when your customer completes the page (`url`), or reconnects the number of `device_id` without taking a new place. The quota is checked now (except for a reconnection) and again at the end. Up to 20 open links per account. With `type: meta` while the Meta sign-up is off, `503 meta_connect_disabled`.\n\n**Pending of the spec**: from the contract of the sign-up by API (22-10, A1), while accounts writes it; its OpenAPI will be the final source.\n\nAmendment v0.1 (23-10): as accounts did it in `feat/alta-de-numeros-api` `52d49b319`. Body rules: `allowed_connection_types` required with `meta` and prohibited with `qr` (one or two distinct values); `provision_us_number` prohibited with `qr`; `same_number_as` prohibited with `meta` and excluding `device_id`; `return_url` `https`, up to 2048. Up to 10 creations per minute: one more answers Laravel's `429 {\"message\": \"Too Many Attempts.\"}`. The answer carries `Cache-Control: no-store`.",
+        "description": "A link of the account that creates the number when your customer completes the page (`url`), or reconnects the number of `device_id` without taking a new place. The quota is checked now (except for a reconnection) and again at the end. Up to 20 open links per account. With `type: meta` while the Meta sign-up is off, `503 meta_connect_disabled`.\n\n**Pending of the spec**: from the contract of the sign-up by API (22-10, A1), while accounts writes it; its OpenAPI will be the final source.\n\nAmendment v0.1 (23-10): as accounts did it in `feat/alta-de-numeros-api` `52d49b319`. Body rules: `allowed_connection_types` required with `meta` and prohibited with `qr` (one or two distinct values); `provision_us_number` prohibited with `qr`; `same_number_as` prohibited with `meta` and excluding `device_id`; `return_url` `https`, up to 2048. Up to 10 creations per minute: one more answers Laravel's `429 {\"message\": \"Too Many Attempts.\"}`. The answer carries `Cache-Control: no-store`.\n\nAmendment v0.2 (23-10, accounts `8852b3fad`): `provision_us_number: true` needs `dedicated` among `allowed_connection_types` and does not go with `device_id` (a pool number is always dedicated and new); otherwise `422 invalid_request`. A Meta link survives failures of Facebook or Meta: it stays `pending` so your customer retries, and ends `failed` (`facebook_auth_failed` or `meta_error`) at the fifth; `quota_exceeded`, `trial_number_blocked` and `number_not_owned` end it at the first.",
         "tags": [
           "ConnectLink"
         ],
@@ -1829,7 +1829,7 @@
                   },
                   "provision_us_number": {
                     "type": "boolean",
-                    "description": "`meta` only (prohibited with `qr`): offer a US number of the pool (3 per account, 1 on trial accounts)."
+                    "description": "`meta` only (prohibited with `qr`): offer a US number of the pool (3 per account, 1 on trial accounts). Needs `dedicated` among `allowed_connection_types` and does not go with `device_id`."
                   },
                   "device_id": {
                     "type": [
@@ -2332,7 +2332,7 @@
             "integer",
             "null"
           ],
-          "description": "[part 2] The sign-up link that connected this number last, or `null`. Optional until accounts deploys it."
+          "description": "The sign-up link of this connection, or `null`. Optional until accounts deploys it."
         }
       },
       "example": {
@@ -2417,7 +2417,7 @@
             "integer",
             "null"
           ],
-          "description": "[part 2] The sign-up link that connected this number last, or `null`. Optional until accounts deploys it."
+          "description": "The sign-up link that connected this number last, or `null`. Optional until accounts deploys it."
         }
       },
       "example": {
@@ -2606,7 +2606,7 @@
                           "integer",
                           "null"
                         ],
-                        "description": "[part 2] The sign-up link that connected this number last, or `null`. Optional until accounts deploys it."
+                        "description": "The sign-up link that connected this number last, or `null`. Optional until accounts deploys it."
                       }
                     },
                     "required": [
@@ -2723,7 +2723,7 @@
                           "integer",
                           "null"
                         ],
-                        "description": "[part 2] The sign-up link that connected this number last, or `null`. Optional until accounts deploys it."
+                        "description": "The sign-up link that connected this number last, or `null`. Optional until accounts deploys it."
                       }
                     },
                     "required": [

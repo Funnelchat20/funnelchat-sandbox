@@ -39,7 +39,9 @@ const present = (value: unknown): boolean => value !== undefined && value !== nu
 /**
  * The rules between fields that the schema does not express, by `type` (amendment v0.1):
  * `allowed_connection_types` required with `meta` and prohibited with `qr`; `provision_us_number` prohibited with
- * `qr`; `same_number_as` prohibited with `meta` and excluding `device_id`; `return_url` only `https`.
+ * `qr`; `same_number_as` prohibited with `meta` and excluding `device_id`; `return_url` only `https`. And, from the
+ * amendment v0.2, `provision_us_number: true` needs `dedicated` among `allowed_connection_types` and no `device_id`: a
+ * number of the pool is always dedicated, and new.
  */
 function checkLinkBody(b: Record<string, unknown>): void {
   const errors: Record<string, string[]> = {};
@@ -51,6 +53,13 @@ function checkLinkBody(b: Record<string, unknown>): void {
     errors.allowed_connection_types = ['El campo allowed_connection_types está prohibido cuando type es qr.'];
   }
   if (!meta && present(b.provision_us_number)) errors.provision_us_number = ['El campo provision_us_number está prohibido cuando type es qr.'];
+  else if (meta && b.provision_us_number === true) {
+    const allowed = Array.isArray(b.allowed_connection_types) ? b.allowed_connection_types : [];
+    if (present(b.device_id)) errors.provision_us_number = ['El campo provision_us_number no se acepta junto con device_id.'];
+    else if (present(b.allowed_connection_types) && !allowed.includes('dedicated')) {
+      errors.provision_us_number = ['El campo provision_us_number exige dedicated en allowed_connection_types.'];
+    }
+  }
   if (meta && present(b.same_number_as)) errors.same_number_as = ['El campo same_number_as está prohibido cuando type es meta.'];
   else if (present(b.same_number_as) && present(b.device_id)) errors.same_number_as = ['El campo same_number_as prohíbe que device_id esté presente.'];
   if (present(b.return_url)) {
@@ -127,6 +136,7 @@ export const connectLinkHandlers: HandlerTable = {
         externalReference: present(b.external_reference) ? String(b.external_reference) : null,
         returnUrl: present(b.return_url) ? String(b.return_url) : null,
         errorCode: null,
+        failedAttempts: 0,
         expiresAt: new Date(now.getTime() + minutes * 60_000),
         createdAt: now,
         completedAt: null,

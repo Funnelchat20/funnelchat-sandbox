@@ -15,15 +15,18 @@
  *   connection=coexistence|dedicated   Meta, when the link allows both; the first allowed by default
  *   number=<digits>                    the phone that connects; a fake one by default
  *
- * Then it redirects (`303`) to `return_url` with the result, or answers a page that says it. Any request with
- * `Authorization` or `X-Api-Key` gets `403 credentials_not_allowed`.
+ * Then it redirects (`303`) to `return_url` with the result, or answers a page that says it. Two answers do not end
+ * the link (amendment v0.2): a `connection` the link does not allow is `422 connection_type_not_allowed`, and a failure
+ * of Facebook or Meta before the fifth is `state: "retry"` (JSON when the request is JSON; the page again otherwise).
+ * Any request with `Authorization` or `X-Api-Key` gets `403 credentials_not_allowed`. `POST /connect/{token}/offer`
+ * (the US number of the pool, asked by the page's script) is not imitated: the pool number is given at the end.
  */
 import { randomBytes } from 'node:crypto';
 import type { SandboxApp } from '../app.js';
 import { parseQuery } from '../http/query.js';
 import type { ConnectLink } from '../state/store.js';
 import { digits, isRecord } from '../util.js';
-import { completeLink, findLinkByToken, LINK_ERROR_CODES, returnUrlFor, type LinkOutcome } from './numbers.js';
+import { completeLink, connectionAllowed, findLinkByToken, LINK_ERROR_CODES, META_ATTEMPTS, returnUrlFor, type LinkOutcome } from './numbers.js';
 
 export interface PageAnswer {
   status: number;
@@ -90,7 +93,7 @@ function json(status: number, body: unknown): PageAnswer {
 }
 
 /** The page of a pending link: a button that claims it, and the token out of the address bar. */
-function linkPage(token: string, link: ConnectLink): PageAnswer {
+function linkPage(token: string, link: ConnectLink, again?: { title: string; text: string }): PageAnswer {
   const choice =
     link.type === 'meta' && (link.allowedConnectionTypes?.length ?? 0) > 1
       ? (link.allowedConnectionTypes ?? [])
@@ -102,8 +105,8 @@ function linkPage(token: string, link: ConnectLink): PageAnswer {
       : '';
   const answer = page(
     200,
-    link.type === 'qr' ? 'Connect your WhatsApp by QR' : 'Connect your WhatsApp Business number',
-    'In the sandbox the button connects at once: there is no QR to scan and no Meta sign-up.',
+    again?.title ?? (link.type === 'qr' ? 'Connect your WhatsApp by QR' : 'Connect your WhatsApp Business number'),
+    again?.text ?? 'In the sandbox the button connects at once: there is no QR to scan and no Meta sign-up.',
     `<form method="post" action="/connect/${token}/start">\n${choice}\n<button type="submit">Connect</button>\n</form>\n`,
   );
   const nonce = /'nonce-([^']+)'/.exec(answer.headers['Content-Security-Policy'] as string)?.[1] ?? '';
@@ -150,7 +153,19 @@ export function handleConnectPage(app: SandboxApp, method: string, pathname: str
   if (!action) return linkPage(token, link);
 
   const input = { ...parseQuery(search), ...(isRecord(body) ? body : {}) };
-  completeLink(app, link, outcomeOf(input));
+  const outcome = outcomeOf(input);
+  if (!connectionAllowed(link, outcome.connection)) {
+    return json(422, { error: 'connection_type_not_allowed', message: 'Este link no permite ese tipo de conexión.', allowed_connection_types: link.allowedConnectionTypes });
+  }
+  if (completeLink(app, link, outcome) === 'retry') {
+    const left = META_ATTEMPTS - link.failedAttempts;
+    const code = outcome.errorCode ?? 'meta_error';
+    app.logger.info(`sign-up link ${link.id}: ${code}, still pending (${left} attempts left)`);
+    if ((headers['content-type'] ?? '').includes('json') || (headers.accept ?? '').includes('application/json')) {
+      return json(200, { state: 'retry', error_code: code, attempts_left: left });
+    }
+    return linkPage(token, link, { title: 'That did not work', text: `Facebook or Meta answered ${code}. Try again: ${left} attempts left.` });
+  }
   app.logger.info(`sign-up link ${link.id}: ${link.status}${link.errorCode ? ` (${link.errorCode})` : ''}${link.deviceId ? ` → number ${link.deviceId}` : ''}`);
 
   const back = returnUrlFor(link);

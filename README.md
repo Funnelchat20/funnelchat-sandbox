@@ -326,10 +326,9 @@ It emits `whatsapp_form.completed` once per send, with `form` (`id` is the `fami
 ## Connecting numbers
 
 Create and connect WhatsApp numbers through the API: a number by QR, or a sign-up link your customer opens. This is
-**not in production yet**: the sandbox follows the contract of 22-10 and its amendment v0.1 of 23-10, read from what
-accounts built (`feat/alta-de-numeros-api` `52d49b319`), including what accounts is still adding (`connect_link_id`
-in the four events, `disconnected_by_user`, `POST /connect/{token}/complete`). accounts' OpenAPI will be the final
-word (see [Pending of the spec](#pending-of-the-spec)).
+**not in production yet**: the sandbox follows the contract of 22-10 and its amendments v0.1 and v0.2 of 23-10, read
+from what accounts built (`feat/alta-de-numeros-api`, up to `8852b3fad`). accounts' OpenAPI will be the final word
+(see [Pending of the spec](#pending-of-the-spec)).
 
 | Route | What it does |
 |---|---|
@@ -346,7 +345,7 @@ word (see [Pending of the spec](#pending-of-the-spec)).
 | Field | `type: qr` | `type: meta` |
 |---|---|---|
 | `allowed_connection_types` | prohibited | required: `coexistence`, `dedicated` or both, without repeating |
-| `provision_us_number` | prohibited (even `false`) | optional: a US number of the pool (3 per account, 1 on trial accounts) |
+| `provision_us_number` | prohibited (even `false`) | optional: a US number of the pool (3 per account, 1 on trial accounts). With `true`, `allowed_connection_types` must include `dedicated` and `device_id` is not allowed: a pool number is always dedicated, and new |
 | `same_number_as` | optional, not with `device_id`: QR on a number in coexistence | prohibited |
 | `device_id` | optional: reconnects that number (`422 connection_type_mismatch` if it is not QR) | the same, for an official number |
 | `external_reference` | optional, up to 255 | optional, up to 255 |
@@ -358,8 +357,8 @@ word (see [Pending of the spec](#pending-of-the-spec)).
 `device_id` or `same_number_as` that is not a number of the account answers `422 invalid_reference_device`.
 
 **Each number has** `external_reference` (your text, not unique) and `connection` (`qr`, `coexistence` or
-`dedicated`). The four `device.*` events carry both inside `device`, and `connect_link_id` (the link that connected
-the number last, or `null`). `device.disconnected` brings `reason`: `qr_logged_out`, `meta_account_not_registered`,
+`dedicated`). The four `device.*` events carry both inside `device`, and `connect_link_id`: in `device.connected`, the
+link of that connection; in the other three, the link that connected the number last; `null` without one. `device.disconnected` brings `reason`: `qr_logged_out`, `meta_account_not_registered`,
 `shadow_ban_protection`, `provider_error`, `unknown` or `disconnected_by_user`. Type the new keys as optional:
 production does not send them until accounts deploys.
 
@@ -408,7 +407,13 @@ connection) and takes the token out of the address bar (`/connect/reopen`). The 
 connects at once: it creates the number (or reconnects it), marks the link `completed`, emits `device.connected` and
 redirects to `return_url` with `connect_link_id`, `status`, `device_id` (if it completed) and `error_code` (if it
 failed), or says it on the page. `POST /connect/{token}/complete` does the same. A link works once; then the page
-answers `410`. In the body (form or JSON) or the query you choose what happens: `outcome=failed` with `error_code`
+answers `410`.
+
+Two answers of the page do not end the link. A `connection` the link does not allow answers
+`422 connection_type_not_allowed`. A failure of Facebook or Meta on a `meta` link (`error_code=facebook_auth_failed`
+or `meta_error`) leaves it `pending` so your customer retries: `{"state": "retry", "error_code": "…", "attempts_left": 3}`
+when you send JSON, the page with the button again otherwise; the fifth failure ends it `failed`. `quota_exceeded`,
+`trial_number_blocked`, `number_not_owned` and the QR's `qr_timeout` end it at the first. In the body (form or JSON) or the query you choose what happens: `outcome=failed` with `error_code`
 (`qr_timeout` or `meta_error` by default), `connection` when the link allows both, and `number`. With `Authorization`
 or `X-Api-Key` it answers `403 credentials_not_allowed`. Its headers are production's: `Cache-Control: no-store, private`,
 `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, `X-Robots-Tag: noindex`, HSTS, COOP and a CSP with a nonce.
@@ -573,7 +578,7 @@ And at `http://localhost:4010/_sandbox` you see each request and each delivery w
 - **There are no groups or campaigns with state:** their events are fired from `/_sandbox`, and their routes answer examples.
 - **Forms do not talk to Meta:** `sync` and `publish` succeed unless the linter finds an error, and the linter is a short version of the real one (screens without a title, without an ending, without questions, with a connection to the server). There are no metrics (`…/metrics`) and no dynamic forms.
 - **Files are not downloaded:** the type comes from the extension or from `file_type`. The «known» extensions (the ones that give `415` instead of `422 errors.file_type`) are the common ones; the API uses symfony/mime's full list.
-- **Connecting numbers** follows a contract, not production: no real QR, no Meta Embedded Signup and no 15-minute hold of a pool number. The page has no `POST /connect/{token}/qr` (the button connects at once). A QR link that fails does not create (and delete) a number, links do not die when a key is revoked, the per-minute limit counts only the calls that pass the schema, and `409 operation_in_progress` only appears if two calls with the same `Idempotency-Key` overlap. The errors that depend on the plan, the payment or the provider (`connect_not_allowed`, `number_suspended_by_plan`, `payment_required`, `device_inactive`, `provider_error`…) are documented but never answered.
+- **Connecting numbers** follows a contract, not production: no real QR, no Meta Embedded Signup and no 15-minute hold of a pool number. The page has no `POST /connect/{token}/qr` (the button connects at once) and no `POST /connect/{token}/offer` (the pool number is given when the link completes). A QR link that fails does not create (and delete) a number, links do not die when a key is revoked, the per-minute limit counts only the calls that pass the schema, and `409 operation_in_progress` only appears if two calls with the same `Idempotency-Key` overlap. The errors that depend on the plan, the payment or the provider (`connect_not_allowed`, `number_suspended_by_plan`, `payment_required`, `device_inactive`, `provider_error`…) are documented but never answered.
 - **The pace and the brakes** use the numbers of conversations in production (`config/send_guards.php`, `config/antiblock.php`); the official number paired with a QR one in coexistence (15 per second, shared) is not there.
 
 ## Pending of the spec
@@ -593,7 +598,7 @@ Besides, `spec/catalog.json` is the event catalog of accounts v1.4.24, with its 
 | The file by URL: `file_type`, `file_name`, their `422`s and the `415` | conversations v1.18.10 (`SendFileType`) | In production. |
 | Forms: `/api/v1/forms…`, `POST /api/v1/contacts/{contact}/message/form` and `whatsapp_form.completed` | conversations v1.18.10 | In production. The portal does not document them yet. |
 | `capabilities` and the new keys of the numbers | accounts v1.4.24 (`DeviceResource`, `DeviceCapabilities`) | In production. |
-| Connecting numbers: `POST /api/v1/devices`, `GET …/{device}/qr`, `external_reference`, `/api/v1/connect-links…`, `/connect/{token}`, `Idempotency-Key`, `device.deleted`, `device.health_changed` and the new keys of `device.connected` and `device.disconnected` | The contract of the sign-up by API of 22-10 (A1, A3) and its amendment v0.1 of 23-10 (accounts `feat/alta-de-numeros-api` `52d49b319`) | Not in production. `connect_link_id` in the four events, `disconnected_by_user` and `/complete` are accounts' part 2, in progress. |
+| Connecting numbers: `POST /api/v1/devices`, `GET …/{device}/qr`, `external_reference`, `/api/v1/connect-links…`, `/connect/{token}`, `Idempotency-Key`, `device.deleted`, `device.health_changed` and the new keys of `device.connected` and `device.disconnected` | The contract of the sign-up by API of 22-10 (A1, A3) and its amendments v0.1 and v0.2 of 23-10 (accounts `feat/alta-de-numeros-api` up to `8852b3fad`) | Not in production: accounts has it on a branch. |
 | `X-Request-Id` and the edge's errors (`route_not_found`, `origin_unreachable`, `edge_misconfigured`) | api-edge v0.3.0, platform-gate v0.8.0 | In production. |
 
 ## Regenerating

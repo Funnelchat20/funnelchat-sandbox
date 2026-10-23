@@ -234,7 +234,9 @@ export function createSandbox(options: CreateSandboxOptions = {}): Sandbox {
           res.end(answer.html);
         }
       } catch (error) {
-        send(res, requestId, errorResult(error));
+        // Every answer of /connect/* carries it, errors included.
+        const result = errorResult(error);
+        send(res, requestId, { ...result, headers: { ...result.headers, 'Referrer-Policy': 'no-referrer' } });
       }
       // The token never reaches the request log: only `/connect/***`.
       app.logger.info(`${method} /connect/*** → ${res.statusCode} (${Date.now() - started} ms)`);

@@ -1,6 +1,6 @@
 /**
- * The sign-up of numbers by API (contract of 22-10, A1 and A3, and its amendment v0.1 of 23-10): a number by QR and
- * its code, the quota, `same_number_as`, `Idempotency-Key`, the sign-up links with their hosted page, and the four
+ * The sign-up of numbers by API (contract of 22-10, A1 and A3, and its amendments v0.1 and v0.2 of 23-10): a number by
+ * QR and its code, the quota, `same_number_as`, `Idempotency-Key`, the sign-up links with their hosted page, and the four
  * signed `device.*` events with `connect_link_id`.
  */
 import { describe, expect, it } from 'vitest';
@@ -256,6 +256,57 @@ describe('sign-up links', () => {
     expect((await post({ type: 'qr' })).status).toBe(201);
   });
 
+  it('provision_us_number needs dedicated and no device_id (amendment v0.2)', async () => {
+    const api = await startSandbox();
+    const post = (body: Record<string, unknown>) => api.call('POST', '/api/v1/connect-links', { type: 'meta', provision_us_number: true, ...body });
+    const coexistence = await post({ allowed_connection_types: ['coexistence'] });
+    expect(coexistence).toMatchObject({ status: 422, body: { error: 'invalid_request', errors: { provision_us_number: expect.any(Array) } } });
+    expect(Object.keys(coexistence.body.errors)).toEqual(['provision_us_number']);
+    expect((await post({ allowed_connection_types: ['dedicated'], device_id: 3 })).body.errors).toHaveProperty('provision_us_number');
+    expect((await post({ allowed_connection_types: ['coexistence', 'dedicated'] })).status).toBe(201);
+    expect((await post({ allowed_connection_types: ['coexistence'], provision_us_number: false })).status).toBe(201);
+  });
+
+  it('a Meta link survives four failures of Facebook or Meta and ends failed at the fifth (amendment v0.2)', async () => {
+    const api = await startSandbox();
+    const link = await createLink(api, { type: 'meta', allowed_connection_types: ['dedicated'], return_url: 'https://integrador.example/vuelta' });
+    const json = (body: Record<string, unknown>) =>
+      visit(`${link.url}/complete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ outcome: 'failed', ...body }) });
+    for (let left = 4; left >= 1; left--) {
+      const retry = await json({ error_code: left % 2 ? 'meta_error' : 'facebook_auth_failed' });
+      expect(retry.status).toBe(200);
+      expect(retry.headers.get('referrer-policy')).toBe('no-referrer');
+      expect(JSON.parse(retry.text)).toMatchObject({ state: 'retry', attempts_left: left });
+      expect((await api.call('GET', `/api/v1/connect-links/${link.id}`)).body.data).toMatchObject({ status: 'pending', error_code: null });
+    }
+    const fifth = await json({ error_code: 'facebook_auth_failed' });
+    expect(fifth.status).toBe(303);
+    expect(new URL(fifth.location!).searchParams.get('error_code')).toBe('facebook_auth_failed');
+    expect((await api.call('GET', `/api/v1/connect-links/${link.id}`)).body.data).toMatchObject({ status: 'failed', error_code: 'facebook_auth_failed' });
+
+    // From the button (a form), the page again with the button.
+    const other = await createLink(api, { type: 'meta', allowed_connection_types: ['dedicated'] });
+    const page = await start(other.url, { outcome: 'failed' });
+    expect(page.status).toBe(200);
+    expect(page.text).toContain('4 attempts left');
+    expect(page.text).toContain('/start');
+    // A failure that is not of Facebook or Meta ends it at once; then it completes no more.
+    expect((await start(other.url, { outcome: 'failed', error_code: 'number_not_owned' })).text).toContain('number_not_owned');
+    expect((await api.call('GET', `/api/v1/connect-links/${other.id}`)).body.data).toMatchObject({ status: 'failed', error_code: 'number_not_owned' });
+  });
+
+  it('a connection the link does not allow answers 422 connection_type_not_allowed and does not use the link', async () => {
+    const api = await startSandbox();
+    const link = await createLink(api, { type: 'meta', allowed_connection_types: ['dedicated'] });
+    const refused = await start(link.url, { connection: 'coexistence' });
+    expect(refused.status).toBe(422);
+    expect(refused.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(JSON.parse(refused.text)).toMatchObject({ error: 'connection_type_not_allowed', allowed_connection_types: ['dedicated'] });
+    expect((await api.call('GET', `/api/v1/connect-links/${link.id}`)).body.data.status).toBe('pending');
+    expect((await start(link.url, { connection: 'dedicated' })).status).toBe(200);
+    expect((await api.call('GET', `/api/v1/connect-links/${link.id}`)).body.data.status).toBe('completed');
+  });
+
   it('limits the creations per minute with the 429 of Laravel', async () => {
     const api = await startSandbox({ numbers: { linksPerMinute: 2 } });
     await createLink(api, { type: 'qr' });
@@ -313,7 +364,7 @@ describe('sign-up links', () => {
 });
 
 describe('device events', () => {
-  it('the four carry connect_link_id: the link that connected the number last', async () => {
+  it('connect_link_id: the link of that connection in device.connected, the last one in the other three', async () => {
     const api = await startSandbox();
     const receiver = await startReceiver();
     await subscribe(api, receiver.url, DEVICE_EVENTS);
@@ -322,7 +373,7 @@ describe('device events', () => {
     const id = (await api.call('GET', `/api/v1/connect-links/${link.id}`)).body.data.device_id;
     await api.call('POST', `/_sandbox/devices/${id}/health`, { state: 'limited' });
     await api.call('POST', `/_sandbox/devices/${id}/disconnect`, { reason: 'disconnected_by_user' });
-    // Connected again without a link: it keeps the last one.
+    // Connected again without a link: that connection has none, but the number still remembers the last link.
     await api.call('POST', `/_sandbox/devices/${id}/connect`);
     await api.call('DELETE', `/api/v1/devices/${id}`);
     const deliveries = await receiver.waitFor(5);
@@ -330,7 +381,7 @@ describe('device events', () => {
       ['device.connected', link.id, 'r-9'],
       ['device.health_changed', link.id, 'r-9'],
       ['device.disconnected', link.id, 'r-9'],
-      ['device.connected', link.id, 'r-9'],
+      ['device.connected', null, 'r-9'],
       ['device.deleted', link.id, 'r-9'],
     ]);
     expect(deliveries[2]!.json.data.reason).toBe('disconnected_by_user');

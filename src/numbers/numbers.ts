@@ -9,8 +9,9 @@
  *   `connect_link_id`: the link that connected the number last, or `null`.
  *
  * Amended by v0.1 of the contract (23-10, read from accounts `feat/alta-de-numeros-api` `52d49b319`): the errors,
- * the integer id of a link, `pending_number_exists`, and [part 2, in progress] `connect_link_id` in the four events
- * and the reason `disconnected_by_user`.
+ * the integer id of a link, `pending_number_exists`, `connect_link_id` in the four events and the reason
+ * `disconnected_by_user`; and by v0.2 (accounts `8852b3fad`, part 2 done): a Meta link survives up to five failed
+ * attempts of Facebook or Meta, and the customer cannot choose a connection the link does not allow.
  */
 import { createHash, randomBytes } from 'node:crypto';
 import type { SandboxApp } from '../app.js';
@@ -148,23 +149,32 @@ export function fakeNumber(device: Device): string {
   return device.fromPool ? `1555010${tail}` : `54911555${tail}`;
 }
 
-/** `data` of every `device.*` event: the number and the link that connected it last. */
-const eventData = (device: Device, rest: Record<string, unknown>) => ({ device: eventDevice(device), ...rest, connect_link_id: device.lastConnectLinkId });
+/**
+ * `data` of every `device.*` event: the number, and `connect_link_id`, by default the link that connected it last
+ * (`device.connected` passes the link of that connection instead).
+ */
+const eventData = (device: Device, rest: Record<string, unknown>, connectLinkId = device.lastConnectLinkId) => ({
+  device: eventDevice(device),
+  ...rest,
+  connect_link_id: connectLinkId,
+});
 
 /**
- * Connects a number and emits `device.connected`. A link that connects it becomes its `connect_link_id`; a connection
- * without a link keeps the last one. Nothing happens if it was already connected.
+ * Connects a number and emits `device.connected`, whose `connect_link_id` is the link of this connection (`null`
+ * without one). A link that connects it is remembered for the other three events; a connection without a link does
+ * not forget it. Nothing happens if it was already connected.
  */
 export function connectDevice(app: SandboxApp, device: Device, options: { number?: string | null; connectLinkId?: number | null } = {}) {
   if (device.connected) return null;
   const at = new Date();
-  if (options.connectLinkId) device.lastConnectLinkId = options.connectLinkId;
+  const connectLinkId = options.connectLinkId ?? null;
+  if (connectLinkId !== null) device.lastConnectLinkId = connectLinkId;
   if (options.number) device.number = options.number;
   device.number ??= fakeNumber(device);
   device.connected = true;
   device.firstConnectedAt ??= at;
   if (device.kind === 'cloud' && (device.health === null || device.health === 'unknown')) device.health = 'available';
-  return app.webhooks.emit('device.connected', eventData(device, { connected_at: isoSeconds(at) }), { occurredAt: at });
+  return app.webhooks.emit('device.connected', eventData(device, { connected_at: isoSeconds(at) }, connectLinkId), { occurredAt: at });
 }
 
 export function disconnectDevice(app: SandboxApp, device: Device, reason: DisconnectReason) {
@@ -238,30 +248,56 @@ export interface LinkOutcome {
   number?: string | null;
 }
 
-function fail(link: ConnectLink, code: string): void {
+/** Failed attempts of a Meta link before it ends `failed` (amendment v0.2). */
+export const META_ATTEMPTS = 5;
+
+/** Failures of Facebook or Meta: the link stays `pending` so the customer retries from the page. */
+const RETRYABLE = ['facebook_auth_failed', 'meta_error'];
+
+/** What the page says after an attempt: `retry` is not an `error_code` of the link, which stays `pending`. */
+export type AttemptResult = 'completed' | 'failed' | 'retry';
+
+function fail(link: ConnectLink, code: string): AttemptResult {
   link.status = 'failed';
   link.errorCode = code;
   link.completedAt = new Date();
+  return 'failed';
+}
+
+/** A Meta link that allows a single connection cannot be completed with the other one: `422 connection_type_not_allowed`. */
+export function connectionAllowed(link: ConnectLink, connection: LinkOutcome['connection']): boolean {
+  return link.type !== 'meta' || !connection || (link.allowedConnectionTypes ?? []).includes(connection);
 }
 
 /**
  * What the hosted page does at the end, in one step: the sandbox "connects" at once. Creates the number (checking the
  * quota again), or reconnects the one of the link, or adds QR to a number in coexistence; marks the link and emits
- * `device.connected` with `connect_link_id`. The link must be `pending`; the use is claimed before anything else.
+ * `device.connected` with `connect_link_id`. The link must be `pending`.
+ *
+ * A failure of Facebook or Meta on a Meta link (`facebook_auth_failed`, `meta_error`) leaves it `pending` until the
+ * fifth one; any other failure (`quota_exceeded`, `trial_number_blocked`, `number_not_owned`, a QR's `qr_timeout`…)
+ * closes it at once.
  */
-export function completeLink(app: SandboxApp, link: ConnectLink, input: LinkOutcome): void {
-  link.status = 'completed';
+export function completeLink(app: SandboxApp, link: ConnectLink, input: LinkOutcome): AttemptResult {
   if (input.outcome === 'failed') {
-    fail(link, input.errorCode ?? (link.type === 'qr' ? 'qr_timeout' : 'meta_error'));
-    return;
+    const code = input.errorCode ?? (link.type === 'qr' ? 'qr_timeout' : 'meta_error');
+    if (link.type === 'meta' && RETRYABLE.includes(code)) {
+      link.failedAttempts++;
+      if (link.failedAttempts < META_ATTEMPTS) {
+        link.errorCode = null;
+        return 'retry';
+      }
+    }
+    return fail(link, code);
   }
+  link.status = 'completed';
 
   if (link.reconnect) {
     const device = link.deviceId === null ? undefined : app.store.devices.get(link.deviceId);
     if (!device) return fail(link, 'provider_error');
     link.completedAt = new Date();
     connectDevice(app, device, { number: input.number, connectLinkId: link.id });
-    return;
+    return 'completed';
   }
 
   let connection: Connection = 'qr';
@@ -281,6 +317,7 @@ export function completeLink(app: SandboxApp, link: ConnectLink, input: LinkOutc
   if (link.type === 'meta') {
     const allowed = link.allowedConnectionTypes ?? ['dedicated'];
     connection = input.connection && allowed.includes(input.connection) ? input.connection : (allowed[0] as Connection);
+    // A number of the pool is always dedicated.
     if (connection === 'dedicated' && link.provisionUsNumber && !number) {
       const inPool = [...app.store.devices.values()].filter((d) => d.fromPool).length;
       if (inPool >= poolLimit(app)) return fail(link, app.store.numbers.trial ? 'trial_number_blocked' : 'quota_exceeded');
@@ -292,6 +329,7 @@ export function completeLink(app: SandboxApp, link: ConnectLink, input: LinkOutc
   link.deviceId = device.id;
   link.completedAt = new Date();
   connectDevice(app, device, { connectLinkId: link.id });
+  return 'completed';
 }
 
 /** `return_url?connect_link_id=…&status=…&device_id=…&error_code=…`, without other data. */

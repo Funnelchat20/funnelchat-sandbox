@@ -66,6 +66,8 @@ export interface ConnectLink {
   externalReference: string | null;
   returnUrl: string | null;
   errorCode: string | null;
+  /** Failed attempts of Facebook or Meta: at the fifth the link ends `failed`. */
+  failedAttempts: number;
   expiresAt: Date;
   createdAt: Date;
   completedAt: Date | null;
