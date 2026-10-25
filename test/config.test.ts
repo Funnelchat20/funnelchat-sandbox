@@ -35,14 +35,17 @@ describe('configuration', () => {
   it('numbers and publicUrl: the quota of the account and the base of the sign-up links, kept across a reset', async () => {
     const config = mergeConfig(defaultConfig(), { ...parseArgs(['--public-url', 'https://sandbox.example.com/']).overrides, numbers: { limit: 1, trial: true } });
     expect(config.publicUrl).toBe('https://sandbox.example.com');
-    expect(config.numbers).toEqual({ limit: 1, included: true, trial: true, metaConnect: true, linksPerMinute: 10 });
+    expect(config.numbers).toEqual({ limit: 1, included: true, trial: true, metaConnect: false, linksPerMinute: 10 });
+    // The Meta sign-up starts off, like production; the flag or the file turn it on.
+    expect(mergeConfig(defaultConfig(), parseArgs(['--meta-connect']).overrides).numbers.metaConnect).toBe(true);
+    expect(mergeConfig(defaultConfig(), { numbers: { metaConnect: true } }).numbers).toMatchObject({ metaConnect: true, limit: 5 });
     expect(() => mergeConfig(defaultConfig(), { numbers: { limit: -1 } })).toThrow(/numbers.limit/);
     expect(() => mergeConfig(defaultConfig(), { publicUrl: 'sandbox.example.com' })).toThrow(/publicUrl/);
 
-    const api = await startSandbox({ numbers: { limit: 3 } });
-    await api.call('POST', '/_sandbox/numbers', { limit: 9 });
+    const api = await startSandbox({ numbers: { limit: 3, metaConnect: true } });
+    await api.call('POST', '/_sandbox/numbers', { limit: 9, meta_connect: false });
     await api.call('POST', '/_sandbox/reset');
-    expect((await api.call('GET', '/_sandbox/numbers')).body).toMatchObject({ limit: 3, in_use: 2 });
+    expect((await api.call('GET', '/_sandbox/numbers')).body).toMatchObject({ limit: 3, in_use: 2, meta_connect: true });
   });
 
   it('reads a configuration file, and the flags win over it', () => {

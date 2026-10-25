@@ -29,7 +29,7 @@ npx funnelchat-sandbox
 ```
 
 ```
-funnelchat-sandbox 0.1.1 at http://127.0.0.1:4010
+funnelchat-sandbox 0.2.0 at http://127.0.0.1:4010
   API:    http://127.0.0.1:4010/api/v1/...   (Authorization: Bearer 1|fc_live_sandbox, or any well-formed key)
   panel:  http://127.0.0.1:4010/_sandbox
   example numbers: 3 (official, with the 24-hour window) and 4 (QR, no window); contact 2001; template 45
@@ -83,6 +83,7 @@ await sandbox.close();
 | `--no-antiblock` | Do not apply the spam brakes. | — |
 | `--no-rate-limit` | Do not apply the per-number pace. | — |
 | `--template-approval <s>` | Seconds until a template created through the API is approved. A `-` leaves it pending. | `5` |
+| `--meta-connect` | Turns on the [Meta sign-up by link](#connecting-numbers), off like in production. | off |
 | `-q`, `--quiet` | No line per request and per delivery on the console. | — |
 
 Options win over the file. The file has the same options and, besides, subscriptions created at start (and after every reset) with a fixed secret, so your receiver keeps working when you restart the sandbox:
@@ -102,7 +103,8 @@ Options win over the file. The file has the same options and, besides, subscript
 }
 ```
 
-The file also takes `numbers`, the quota of the account for [connecting numbers](#connecting-numbers): `{"limit": 5, "included": true, "trial": false, "metaConnect": true, "linksPerMinute": 10}`, and `publicUrl`.
+The file also takes `numbers`, the quota of the account for [connecting numbers](#connecting-numbers): `{"limit": 5, "included": true, "trial": false, "metaConnect": false, "linksPerMinute": 10}`, and `publicUrl`. `metaConnect`
+is the Meta sign-up by link: off by default, like production; `true` (or `--meta-connect`) turns it on to test it.
 
 There is a complete one in [funnelchat-sandbox.config.example.json](funnelchat-sandbox.config.example.json). The file `funnelchat-sandbox.config.json` is in `.gitignore`: do not commit a secret, even a test one.
 
@@ -325,15 +327,20 @@ It emits `whatsapp_form.completed` once per send, with `form` (`id` is the `fami
 
 ## Connecting numbers
 
-Create and connect WhatsApp numbers through the API: a number by QR, or a sign-up link your customer opens. This is
-**not in production yet**: the sandbox follows the contract of 22-10 and its amendments v0.1 and v0.2 of 23-10, read
-from what accounts built (`feat/alta-de-numeros-api`, up to `8852b3fad`). accounts' OpenAPI will be the final word
-(see [Pending of the spec](#pending-of-the-spec)).
+Create and connect WhatsApp numbers through the API: a number by QR, or a sign-up link your customer opens. It is in
+production in accounts since 25-10; the sandbox follows the contract of 22-10, its amendments v0.1 and v0.2 of 23-10
+and the changes of 25-10 (the QR every 5 seconds, `country`). accounts' OpenAPI will be the final word (see
+[Pending of the spec](#pending-of-the-spec)).
+
+**The official sign-up (`type: meta`) is not available in production yet:** it stays off until the domain is
+registered with Meta, and `POST /api/v1/connect-links` with `type: meta` answers `503 meta_connect_disabled`. The sandbox
+starts the same way. To test it, turn it on with `--meta-connect`, `"numbers": {"metaConnect": true}` in the file, or
+`POST /_sandbox/numbers {"meta_connect": true}` while it runs.
 
 | Route | What it does |
 |---|---|
-| `POST /api/v1/devices` | A number by QR: `{"connection": "qr"}`, optional `alias`, `external_reference` and `same_number_as`. `201 {"data": <number>}` with `connected: 0` and no phone yet. |
-| `GET /api/v1/devices/{device}/qr` | `{"data": {"connected", "qr_code", "expires_in"}}`: a PNG as a data URI, `null` and `expires_in: 0` once connected. It is fake: nothing scans it. An official number answers `422 provider_unsupported`. |
+| `POST /api/v1/devices` | A number by QR: `{"connection": "qr"}`, optional `alias`, `external_reference`, `same_number_as` and `country` (two letters, any case: the country of the phone, where the WhatsApp session is opened from). `201 {"data": <number>}` with `connected: 0` and no phone yet. |
+| `GET /api/v1/devices/{device}/qr` | `{"data": {"connected", "qr_code", "expires_in"}}`: a PNG as a data URI, `null` and `expires_in: 0` once connected, with `Cache-Control: no-store`. `expires_in` is `5`: ask for the QR every 5 seconds and show the new one at once, since WhatsApp changes the code and an old one does not link. It is fake: nothing scans it. An official number answers `422 provider_unsupported`. |
 | `GET /api/v1/devices?external_reference=…` | Only the numbers with exactly that reference. `PUT /api/v1/devices/{device}` changes it (`null` clears it). |
 | `DELETE /api/v1/devices/{device}` | `200` with an empty body: deletes it, frees its place and emits `device.deleted`. |
 | `POST /api/v1/connect-links` | A sign-up link, `201 {"data": <link>}` with `Cache-Control: no-store`. The `url` with the token is only in this answer. |
@@ -347,6 +354,7 @@ from what accounts built (`feat/alta-de-numeros-api`, up to `8852b3fad`). accoun
 | `allowed_connection_types` | prohibited | required: `coexistence`, `dedicated` or both, without repeating |
 | `provision_us_number` | prohibited (even `false`) | optional: a US number of the pool (3 per account, 1 on trial accounts). With `true`, `allowed_connection_types` must include `dedicated` and `device_id` is not allowed: a pool number is always dedicated, and new |
 | `same_number_as` | optional, not with `device_id`: QR on a number in coexistence | prohibited |
+| `country` | optional, not with `device_id`: two letters, the country of the phone; the link returns it in lower case | prohibited |
 | `device_id` | optional: reconnects that number (`422 connection_type_mismatch` if it is not QR) | the same, for an official number |
 | `external_reference` | optional, up to 255 | optional, up to 255 |
 | `return_url` | optional, `https`, up to 2048 | the same |
@@ -372,9 +380,9 @@ example numbers use two; change it with `POST /_sandbox/numbers`. The rejections
   `422 method_already_present` (with `device_id`).
 
 A reconnection, and QR on a number in coexistence, take no place. Up to 20 open links (`429 too_many_open_links`)
-and 10 creations per minute (Laravel's `429 {"message": "Too Many Attempts."}`, with `Retry-After`). With
-`"meta_connect": false`, a `meta` link answers `503 meta_connect_disabled`, as production does while the Meta sign-up
-is off.
+and 10 creations per minute (Laravel's `429 {"message": "Too Many Attempts."}`, with `Retry-After`). While the Meta
+sign-up is off (the default), a `meta` link answers `503 meta_connect_disabled`, and so does the page of a `meta` link
+made while it was on.
 
 **`Idempotency-Key`** works on both `POST`, per resource: the same key with the same body gives back the same `2xx`
 with `Idempotent-Replayed: true`, without creating anything; with another body, `422 idempotency_key_mismatch`; a
@@ -387,11 +395,11 @@ A number by QR, its code and the scan (the scan is a sandbox route):
 KEY='Authorization: Bearer 1|fc_live_sandbox'
 curl -s -X POST localhost:4010/api/v1/devices -H "$KEY" -H 'Content-Type: application/json' \
   -H 'Idempotency-Key: alta-cliente-8841' -d '{"connection": "qr", "external_reference": "cliente-8841"}'
-curl -s localhost:4010/api/v1/devices/5/qr -H "$KEY"          # {"data": {"connected": false, "qr_code": "data:image/png;base64,…", "expires_in": 20}}
+curl -s localhost:4010/api/v1/devices/5/qr -H "$KEY"          # {"data": {"connected": false, "qr_code": "data:image/png;base64,…", "expires_in": 5}}
 curl -s -X POST localhost:4010/_sandbox/devices/5/connect      # device.connected
 ```
 
-A sign-up link and its page:
+A sign-up link and its page (`meta` links need the Meta sign-up on: `npx funnelchat-sandbox --meta-connect`):
 
 ```bash
 curl -s -X POST localhost:4010/api/v1/connect-links -H "$KEY" -H 'Content-Type: application/json' \
@@ -485,7 +493,7 @@ These routes take no key: they belong to the sandbox, not to the API.
 | `POST /_sandbox/contacts/{id}/tags` with `{"tag_id": 4001}`, `DELETE /_sandbox/contacts/{id}/tags/{tag}` | Someone tags the contact in the panel: `contact.tag_added` and `contact.tag_removed`. |
 | `POST /_sandbox/devices/{id}/disconnect`, `…/connect` | The number disconnects (`{"reason": "disconnected_by_user"}`, any of the list; `qr_logged_out` for QR and `unknown` for official ones by default) or connects, which is the scan of a QR (`{"number": "5491155550101"}`, a fake one otherwise): `device.disconnected` and `device.connected`. Disconnected, sends answer `422 device_unavailable`. |
 | `POST /_sandbox/devices/{id}/health` | The health of an official number changes: `{"state": "limited"}` (`available`, `limited`, `blocked`, `unknown`) emits `device.health_changed`, only if it changed. |
-| `POST /_sandbox/numbers`, `GET /_sandbox/numbers` | The quota of the account: `{"limit": 3, "included": true, "trial": false, "meta_connect": true, "links_per_minute": 10}`. `GET` also says how many places are in use and which QR numbers are pending. |
+| `POST /_sandbox/numbers`, `GET /_sandbox/numbers` | The quota of the account: `{"limit": 3, "included": true, "trial": false, "meta_connect": true, "links_per_minute": 10}` (`meta_connect` turns the Meta sign-up on or off). `GET` also says how many places are in use and which QR numbers are pending. |
 | `POST /_sandbox/templates/{id}/status` | Meta approves or rejects a template: `{"status": "REJECTED", "reason": "…"}` emits `template.status_changed`. |
 | `POST /_sandbox/events/{type}` | Any event of the catalog, with its example; what you send in `{"data": {…}}` overrides it. `GET /_sandbox/events` lists them. `group.message_received` and `group.reaction_added` go out with the shape communities emits (`message.uid` and every key of the message), not with the example of the accounts catalog, which uses `message.id`. |
 | `POST /_sandbox/window` | Opens or closes the window by hand: `{"contact_id": 2001, "device_id": 3, "open": false}`. |
@@ -598,7 +606,7 @@ Besides, `spec/catalog.json` is the event catalog of accounts v1.4.24, with its 
 | The file by URL: `file_type`, `file_name`, their `422`s and the `415` | conversations v1.18.10 (`SendFileType`) | In production. |
 | Forms: `/api/v1/forms…`, `POST /api/v1/contacts/{contact}/message/form` and `whatsapp_form.completed` | conversations v1.18.10 | In production. The portal does not document them yet. |
 | `capabilities` and the new keys of the numbers | accounts v1.4.24 (`DeviceResource`, `DeviceCapabilities`) | In production. |
-| Connecting numbers: `POST /api/v1/devices`, `GET …/{device}/qr`, `external_reference`, `/api/v1/connect-links…`, `/connect/{token}`, `Idempotency-Key`, `device.deleted`, `device.health_changed` and the new keys of `device.connected` and `device.disconnected` | The contract of the sign-up by API of 22-10 (A1, A3) and its amendments v0.1 and v0.2 of 23-10 (accounts `feat/alta-de-numeros-api` up to `8852b3fad`) | Not in production: accounts has it on a branch. |
+| Connecting numbers: `POST /api/v1/devices`, `GET …/{device}/qr`, `external_reference`, `/api/v1/connect-links…`, `/connect/{token}`, `Idempotency-Key`, `device.deleted`, `device.health_changed` and the new keys of `device.connected` and `device.disconnected` | The contract of the sign-up by API of 22-10 (A1, A3) and its amendments v0.1 and v0.2 of 23-10; the QR every 5 seconds (accounts #1335) and `country`, read from accounts `main` `e61bb7633` | In production since 25-10, with the Meta sign-up off until the domain is registered with Meta. Missing from the portal's snapshot. |
 | `X-Request-Id` and the edge's errors (`route_not_found`, `origin_unreachable`, `edge_misconfigured`) | api-edge v0.3.0, platform-gate v0.8.0 | In production. |
 
 ## Regenerating

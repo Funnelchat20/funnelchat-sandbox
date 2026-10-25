@@ -58,6 +58,8 @@ export interface ConnectLink {
   tokenHash: string;
   allowedConnectionTypes: ('coexistence' | 'dedicated')[] | null;
   provisionUsNumber: boolean;
+  /** `qr` only, without `device_id`: the country of the phone (two letters, lower case), where the session opens. */
+  country: string | null;
   /** Reconnects this number; otherwise `null` until the link completes, then the number it created. */
   deviceId: number | null;
   reconnect: boolean;
@@ -305,7 +307,7 @@ export class Store {
   idempotency = new Map<string, IdempotentAnswer>();
 
   /** The number quota of the account and the switch of the Meta sign-up (`POST /_sandbox/numbers`). */
-  numbers = { limit: 5, included: true, trial: false, metaConnect: true, linksPerMinute: 10 };
+  numbers = { limit: 5, included: true, trial: false, metaConnect: false, linksPerMinute: 10 };
 
   /** Last inbound message per `contactId:deviceId`: the 24-hour window. */
   lastInbound = new Map<string, Date>();

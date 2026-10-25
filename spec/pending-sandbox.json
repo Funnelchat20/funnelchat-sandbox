@@ -274,7 +274,7 @@
               },
               "expires_in": {
                 "type": "integer",
-                "description": "Seconds after which to ask for it again: 20 with a QR, 3 while the session starts, 0 once connected. Never `null`."
+                "description": "Seconds after which to ask for it again: 5 with a QR (ask for it again and show the new one at once: an old code does not link), 3 while the session starts, 0 once connected. Never `null`."
               }
             },
             "required": [
@@ -331,6 +331,13 @@
           },
           "provision_us_number": {
             "type": "boolean"
+          },
+          "country": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`qr` links that create a number only: the country of the phone, two letters in lower case. `null` otherwise."
           },
           "device_id": {
             "type": [
@@ -389,6 +396,7 @@
           "expires_at",
           "allowed_connection_types",
           "provision_us_number",
+          "country",
           "device_id",
           "external_reference",
           "return_url",
@@ -440,6 +448,13 @@
           },
           "provision_us_number": {
             "type": "boolean"
+          },
+          "country": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`qr` links that create a number only: the country of the phone, two letters in lower case. `null` otherwise."
           },
           "device_id": {
             "type": [
@@ -503,6 +518,7 @@
           "expires_at",
           "allowed_connection_types",
           "provision_us_number",
+          "country",
           "device_id",
           "external_reference",
           "return_url",
@@ -1471,7 +1487,7 @@
       "post": {
         "operationId": "pendingSandboxDevices.store",
         "summary": "Create a number by QR",
-        "description": "Creates a number of the account to connect by QR, with `connected: false`; ask for its code with `GET /devices/{device}/qr`. Same path and same rejections as the panel: the quota counts phones (QR and Meta of the same phone count once). `same_number_as` adds QR to an official number in coexistence without taking a place. An official number is created only with a sign-up link.\n\n**Pending of the spec**: from the contract of the sign-up by API (22-10, A1), while accounts writes it; its OpenAPI will be the final source.\n\nAmendment v0.1 (23-10): as accounts did it in `feat/alta-de-numeros-api` `52d49b319`. The pool keeps at most one unconnected QR number per account: another one answers `409 pending_number_exists` with its `device_id`. Without an active plan, `403` without `error`.",
+        "description": "Creates a number of the account to connect by QR, with `connected: false`; ask for its code with `GET /devices/{device}/qr`. Same path and same rejections as the panel: the quota counts phones (QR and Meta of the same phone count once). `same_number_as` adds QR to an official number in coexistence without taking a place. An official number is created only with a sign-up link.\n\n**Pending of the spec**: from the contract of the sign-up by API (22-10, A1), while accounts writes it; its OpenAPI will be the final source.\n\nAmendment v0.1 (23-10): as accounts did it in `feat/alta-de-numeros-api` `52d49b319`. The pool keeps at most one unconnected QR number per account: another one answers `409 pending_number_exists` with its `device_id`. Without an active plan, `403` without `error`.\n\nOptional `country` (two letters, any case): the country of the phone that will scan the QR, where the WhatsApp session is opened from.",
         "tags": [
           "Device"
         ],
@@ -1525,6 +1541,14 @@
                       "null"
                     ],
                     "description": "An official number in coexistence that gets QR too."
+                  },
+                  "country": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^[A-Za-z]{2}$",
+                    "description": "The country of the phone that will scan the QR (ISO 3166-1 alpha-2, two letters, any case): the WhatsApp session is opened from there. Without it, the default."
                   }
                 },
                 "required": [
@@ -1609,7 +1633,7 @@
       "get": {
         "operationId": "pendingSandboxDevices.qr",
         "summary": "The QR code of a number",
-        "description": "Creates the instance if needed and gives its QR code. Only for QR numbers: an official one answers `422 provider_unsupported`. Scanning it gives control of a WhatsApp, so it asks for `accounts:operate`.\n\n**Pending of the spec**: from the contract of the sign-up by API (22-10, A1), while accounts writes it; its OpenAPI will be the final source.\n\nAmendment v0.1 (23-10): as accounts did it in `feat/alta-de-numeros-api` `52d49b319`. `connected` is a boolean here (`0`/`1` in the number).",
+        "description": "Creates the instance if needed and gives its QR code. Only for QR numbers: an official one answers `422 provider_unsupported`. Scanning it gives control of a WhatsApp, so it asks for `accounts:operate`.\n\n**Pending of the spec**: from the contract of the sign-up by API (22-10, A1), while accounts writes it; its OpenAPI will be the final source.\n\nAmendment v0.1 (23-10): as accounts did it in `feat/alta-de-numeros-api` `52d49b319`. `connected` is a boolean here (`0`/`1` in the number).\n\naccounts #1335 (25-10, in production): `expires_in` is 5 with a code, the cadence of the panel. Ask for it again every 5 seconds and show the new one at once: WhatsApp changes the code every few seconds and an old one does not link. The answer carries `Cache-Control: no-store`.",
         "tags": [
           "Device"
         ],
@@ -1777,7 +1801,7 @@
       "post": {
         "operationId": "pendingSandboxConnectLinks.store",
         "summary": "Create a sign-up link",
-        "description": "A link of the account that creates the number when your customer completes the page (`url`), or reconnects the number of `device_id` without taking a new place. The quota is checked now (except for a reconnection) and again at the end. Up to 20 open links per account. With `type: meta` while the Meta sign-up is off, `503 meta_connect_disabled`.\n\n**Pending of the spec**: from the contract of the sign-up by API (22-10, A1), while accounts writes it; its OpenAPI will be the final source.\n\nAmendment v0.1 (23-10): as accounts did it in `feat/alta-de-numeros-api` `52d49b319`. Body rules: `allowed_connection_types` required with `meta` and prohibited with `qr` (one or two distinct values); `provision_us_number` prohibited with `qr`; `same_number_as` prohibited with `meta` and excluding `device_id`; `return_url` `https`, up to 2048. Up to 10 creations per minute: one more answers Laravel's `429 {\"message\": \"Too Many Attempts.\"}`. The answer carries `Cache-Control: no-store`.\n\nAmendment v0.2 (23-10, accounts `8852b3fad`): `provision_us_number: true` needs `dedicated` among `allowed_connection_types` and does not go with `device_id` (a pool number is always dedicated and new); otherwise `422 invalid_request`. A Meta link survives failures of Facebook or Meta: it stays `pending` so your customer retries, and ends `failed` (`facebook_auth_failed` or `meta_error`) at the fifth; `quota_exceeded`, `trial_number_blocked` and `number_not_owned` end it at the first.",
+        "description": "A link of the account that creates the number when your customer completes the page (`url`), or reconnects the number of `device_id` without taking a new place. The quota is checked now (except for a reconnection) and again at the end. Up to 20 open links per account. With `type: meta` while the Meta sign-up is off, `503 meta_connect_disabled`.\n\n**Pending of the spec**: from the contract of the sign-up by API (22-10, A1), while accounts writes it; its OpenAPI will be the final source.\n\nAmendment v0.1 (23-10): as accounts did it in `feat/alta-de-numeros-api` `52d49b319`. Body rules: `allowed_connection_types` required with `meta` and prohibited with `qr` (one or two distinct values); `provision_us_number` prohibited with `qr`; `same_number_as` prohibited with `meta` and excluding `device_id`; `return_url` `https`, up to 2048. Up to 10 creations per minute: one more answers Laravel's `429 {\"message\": \"Too Many Attempts.\"}`. The answer carries `Cache-Control: no-store`.\n\nAmendment v0.2 (23-10, accounts `8852b3fad`): `provision_us_number: true` needs `dedicated` among `allowed_connection_types` and does not go with `device_id` (a pool number is always dedicated and new); otherwise `422 invalid_request`. A Meta link survives failures of Facebook or Meta: it stays `pending` so your customer retries, and ends `failed` (`facebook_auth_failed` or `meta_error`) at the fifth; `quota_exceeded`, `trial_number_blocked` and `number_not_owned` end it at the first.\n\nIn production (25-10): the Meta sign-up stays off until the domain is registered with Meta, so `type: meta` answers `503 meta_connect_disabled`; the sandbox starts with it off too. Optional `country` (two letters, `qr` only and not with `device_id`): the country of the phone, which the link returns in lower case.",
         "tags": [
           "ConnectLink"
         ],
@@ -1844,6 +1868,14 @@
                       "null"
                     ],
                     "description": "`qr` only (prohibited with `meta`), and not with `device_id`: add QR to a number in coexistence."
+                  },
+                  "country": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^[A-Za-z]{2}$",
+                    "description": "`qr` only (prohibited with `meta`), and not with `device_id`: the country of the phone (ISO 3166-1 alpha-2, two letters, any case), where the WhatsApp session is opened from. The link returns it in lower case."
                   },
                   "external_reference": {
                     "type": [

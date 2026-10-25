@@ -41,7 +41,8 @@ const present = (value: unknown): boolean => value !== undefined && value !== nu
  * `allowed_connection_types` required with `meta` and prohibited with `qr`; `provision_us_number` prohibited with
  * `qr`; `same_number_as` prohibited with `meta` and excluding `device_id`; `return_url` only `https`. And, from the
  * amendment v0.2, `provision_us_number: true` needs `dedicated` among `allowed_connection_types` and no `device_id`: a
- * number of the pool is always dedicated, and new.
+ * number of the pool is always dedicated, and new. `country` (two letters, the country of the phone) goes only with
+ * `qr` and not with `device_id`: a reconnection creates nothing.
  */
 function checkLinkBody(b: Record<string, unknown>): void {
   const errors: Record<string, string[]> = {};
@@ -60,6 +61,8 @@ function checkLinkBody(b: Record<string, unknown>): void {
       errors.provision_us_number = ['El campo provision_us_number exige dedicated en allowed_connection_types.'];
     }
   }
+  if (meta && present(b.country)) errors.country = ['El campo country está prohibido cuando type es meta.'];
+  else if (present(b.country) && present(b.device_id)) errors.country = ['El campo country prohíbe que device_id esté presente.'];
   if (meta && present(b.same_number_as)) errors.same_number_as = ['El campo same_number_as está prohibido cuando type es meta.'];
   else if (present(b.same_number_as) && present(b.device_id)) errors.same_number_as = ['El campo same_number_as prohíbe que device_id esté presente.'];
   if (present(b.return_url)) {
@@ -130,6 +133,8 @@ export const connectLinkHandlers: HandlerTable = {
         tokenHash: sha256(token),
         allowedConnectionTypes: b.type === 'meta' ? [...new Set(b.allowed_connection_types as ('coexistence' | 'dedicated')[])] : null,
         provisionUsNumber: b.type === 'meta' && b.provision_us_number === true,
+        // accounts keeps it in lower case, and only on a QR link that creates a number.
+        country: b.type === 'qr' && !reconnect && present(b.country) ? String(b.country).toLowerCase() : null,
         deviceId,
         reconnect,
         sameNumberAs,

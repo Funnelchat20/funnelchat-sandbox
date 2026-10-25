@@ -276,6 +276,7 @@ export function connectLinkResource(link: ConnectLink): Record<string, unknown> 
     expires_at: iso8601(link.expiresAt),
     allowed_connection_types: link.allowedConnectionTypes,
     provision_us_number: link.provisionUsNumber,
+    country: link.country,
     device_id: link.deviceId,
     external_reference: link.externalReference,
     return_url: link.returnUrl,

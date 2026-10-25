@@ -51,7 +51,10 @@ export interface SandboxConfig {
     included: boolean;
     /** A trial account: one number of the US pool instead of three. */
     trial: boolean;
-    /** `false`: `POST /connect-links` with `type: meta` answers `503 meta_connect_disabled`, like production while Meta is off. */
+    /**
+     * The Meta sign-up by link. `false` (the default, like production until the domain is registered with Meta):
+     * `POST /connect-links` with `type: meta` and its page answer `503 meta_connect_disabled`. Turn it on to test it.
+     */
     metaConnect: boolean;
     /** `POST /connect-links` per minute (accounts: 10); one more answers Laravel's `429 Too Many Attempts.`. */
     linksPerMinute: number;
@@ -79,7 +82,7 @@ export function defaultConfig(): SandboxConfig {
     rules: { window: true, antiblock: true, rateLimit: true },
     templateApprovalSeconds: 5,
     subscriptions: [],
-    numbers: { limit: 5, included: true, trial: false, metaConnect: true, linksPerMinute: 10 },
+    numbers: { limit: 5, included: true, trial: false, metaConnect: false, linksPerMinute: 10 },
     publicUrl: null,
     historyLimit: 200,
     log: true,
@@ -302,6 +305,9 @@ export function parseArgs(argv: string[]): CliArgs {
         o.templateApprovalSeconds = n ?? null;
         break;
       }
+      case '--meta-connect':
+        o.numbers = { ...o.numbers, metaConnect: true };
+        break;
       case '-q':
       case '--quiet':
         o.log = false;

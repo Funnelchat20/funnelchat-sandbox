@@ -9,6 +9,9 @@ import { API_KEY, startReceiver, startSandbox, subscribe, type Api } from './hel
 
 const DEVICE_EVENTS = ['device.connected', 'device.disconnected', 'device.deleted', 'device.health_changed'];
 
+/** The Meta sign-up starts off, like production until the domain is registered with Meta: the tests of Meta turn it on. */
+const META_ON = { numbers: { metaConnect: true } };
+
 interface PageResult {
   status: number;
   location: string | null;
@@ -44,7 +47,9 @@ describe('a number by QR', () => {
     expect(device).toMatchObject({ id: 5, alias: 'Tienda Ana', connected: 0, provider: 1, number: '', normalized_number: null, connection: 'qr', external_reference: 'cliente-8841' });
 
     const qr = await api.call('GET', `/api/v1/devices/${device.id}/qr`);
-    expect(qr.body.data).toMatchObject({ connected: false, expires_in: 20 });
+    // Every 5 seconds, as accounts since #1335, and never cached.
+    expect(qr.body.data).toMatchObject({ connected: false, expires_in: 5 });
+    expect(qr.headers.get('cache-control')).toBe('no-store');
     const png = Buffer.from(qr.body.data.qr_code.replace(/^data:image\/png;base64,/, ''), 'base64');
     expect(png.subarray(1, 4).toString('ascii')).toBe('PNG');
     expect((await api.call('GET', '/api/v1/devices/3/qr')).body).toMatchObject({ error: 'provider_unsupported' });
@@ -94,7 +99,7 @@ describe('a number by QR', () => {
   });
 
   it('same_number_as: only on a number in coexistence without QR, and it takes no place', async () => {
-    const api = await startSandbox({ numbers: { limit: 3 } });
+    const api = await startSandbox({ numbers: { limit: 3, metaConnect: true } });
     expect((await api.call('POST', '/api/v1/devices', { connection: 'qr', same_number_as: 3 })).body.error).toBe('qr_requires_coexistence');
     expect((await api.call('POST', '/api/v1/devices', { connection: 'qr', same_number_as: 4 })).body).toMatchObject({ error: 'method_already_present', device_id: 4 });
 
@@ -152,7 +157,7 @@ describe('sign-up links', () => {
     const created = await api.call('POST', '/api/v1/connect-links', { type: 'qr', external_reference: 'cliente-77', return_url: 'https://integrador.example/vuelta?x=1', expires_in_minutes: 60 });
     expect(created.headers.get('cache-control')).toBe('no-store');
     const link = created.body.data;
-    expect(link).toMatchObject({ id: 1, type: 'qr', status: 'pending', device_id: null, allowed_connection_types: null, provision_us_number: false, error_code: null, completed_at: null });
+    expect(link).toMatchObject({ id: 1, type: 'qr', status: 'pending', device_id: null, allowed_connection_types: null, provision_us_number: false, country: null, error_code: null, completed_at: null });
     expect(link.url).toMatch(new RegExp(`^${api.url}/connect/[A-Za-z0-9_-]{43}$`));
     expect(Date.parse(link.expires_at) - Date.parse(link.created_at)).toBe(60 * 60 * 1000);
 
@@ -201,7 +206,7 @@ describe('sign-up links', () => {
   });
 
   it('Meta: the customer chooses the connection; the US pool has its limit; POST /complete works too', async () => {
-    const api = await startSandbox({ numbers: { trial: true } });
+    const api = await startSandbox({ numbers: { trial: true, metaConnect: true } });
     const both = await createLink(api, { type: 'meta', allowed_connection_types: ['coexistence', 'dedicated'] });
     expect((await visit(both.url)).text).toContain('name="connection"');
     const page = await start(both.url, { connection: 'dedicated' });
@@ -222,7 +227,7 @@ describe('sign-up links', () => {
   });
 
   it('validates the body by type like accounts, and answers 503 while Meta is off', async () => {
-    const api = await startSandbox({ numbers: { linksPerMinute: 100 } });
+    const api = await startSandbox({ numbers: { linksPerMinute: 100, metaConnect: true } });
     const post = (body: Record<string, unknown>) => api.call('POST', '/api/v1/connect-links', body);
     const fields = async (body: Record<string, unknown>) => {
       const res = await post(body);
@@ -256,8 +261,46 @@ describe('sign-up links', () => {
     expect((await post({ type: 'qr' })).status).toBe(201);
   });
 
-  it('provision_us_number needs dedicated and no device_id (amendment v0.2)', async () => {
+  it('the Meta sign-up starts off, like production: 503 meta_connect_disabled, also on the page of a link made while on', async () => {
     const api = await startSandbox();
+    expect((await api.call('GET', '/_sandbox/numbers')).body.meta_connect).toBe(false);
+    const meta = { type: 'meta', allowed_connection_types: ['dedicated'] };
+    expect(await api.call('POST', '/api/v1/connect-links', meta)).toMatchObject({ status: 503, body: { error: 'meta_connect_disabled' } });
+    expect((await api.call('POST', '/api/v1/connect-links', { type: 'qr' })).status).toBe(201);
+
+    await api.call('POST', '/_sandbox/numbers', { meta_connect: true });
+    const link = await createLink(api, meta);
+    await api.call('POST', '/_sandbox/numbers', { meta_connect: false });
+    expect((await visit(link.url)).status).toBe(503);
+    expect((await start(link.url)).status).toBe(503);
+    expect((await api.call('GET', `/api/v1/connect-links/${link.id}`)).body.data.status).toBe('pending');
+  });
+
+  it('country: two letters, on POST /devices and on a QR link that creates a number, which returns it in lower case', async () => {
+    const api = await startSandbox({ numbers: { linksPerMinute: 100, metaConnect: true } });
+    const device = await api.call('POST', '/api/v1/devices', { connection: 'qr', country: 'ar' });
+    expect(device.status).toBe(201);
+    for (const country of ['ARG', 'a', '12', 7]) {
+      expect((await api.call('POST', '/api/v1/devices', { connection: 'qr', country })).body, String(country)).toMatchObject({ error: 'invalid_request', errors: { country: expect.any(Array) } });
+    }
+
+    const link = await createLink(api, { type: 'qr', country: 'BR' });
+    expect(link.country).toBe('br');
+    expect((await api.call('GET', `/api/v1/connect-links/${link.id}`)).body.data).toMatchObject({ country: 'br' });
+    expect((await createLink(api, { type: 'qr', country: null })).country).toBeNull();
+
+    const fields = async (body: Record<string, unknown>) => {
+      const res = await api.call('POST', '/api/v1/connect-links', body);
+      expect(res.body.error, JSON.stringify(body)).toBe('invalid_request');
+      return Object.keys(res.body.errors);
+    };
+    expect(await fields({ type: 'qr', country: 'BRA' })).toEqual(['country']);
+    expect(await fields({ type: 'meta', allowed_connection_types: ['dedicated'], country: 'us' })).toEqual(['country']);
+    expect(await fields({ type: 'qr', device_id: 4, country: 'ar' })).toEqual(['country']);
+  });
+
+  it('provision_us_number needs dedicated and no device_id (amendment v0.2)', async () => {
+    const api = await startSandbox(META_ON);
     const post = (body: Record<string, unknown>) => api.call('POST', '/api/v1/connect-links', { type: 'meta', provision_us_number: true, ...body });
     const coexistence = await post({ allowed_connection_types: ['coexistence'] });
     expect(coexistence).toMatchObject({ status: 422, body: { error: 'invalid_request', errors: { provision_us_number: expect.any(Array) } } });
@@ -268,7 +311,7 @@ describe('sign-up links', () => {
   });
 
   it('a Meta link survives four failures of Facebook or Meta and ends failed at the fifth (amendment v0.2)', async () => {
-    const api = await startSandbox();
+    const api = await startSandbox(META_ON);
     const link = await createLink(api, { type: 'meta', allowed_connection_types: ['dedicated'], return_url: 'https://integrador.example/vuelta' });
     const json = (body: Record<string, unknown>) =>
       visit(`${link.url}/complete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ outcome: 'failed', ...body }) });
@@ -296,7 +339,7 @@ describe('sign-up links', () => {
   });
 
   it('a connection the link does not allow answers 422 connection_type_not_allowed and does not use the link', async () => {
-    const api = await startSandbox();
+    const api = await startSandbox(META_ON);
     const link = await createLink(api, { type: 'meta', allowed_connection_types: ['dedicated'] });
     const refused = await start(link.url, { connection: 'coexistence' });
     expect(refused.status).toBe(422);
@@ -365,7 +408,7 @@ describe('sign-up links', () => {
 
 describe('device events', () => {
   it('connect_link_id: the link of that connection in device.connected, the last one in the other three', async () => {
-    const api = await startSandbox();
+    const api = await startSandbox(META_ON);
     const receiver = await startReceiver();
     await subscribe(api, receiver.url, DEVICE_EVENTS);
     const link = await createLink(api, { type: 'meta', allowed_connection_types: ['dedicated'], external_reference: 'r-9' });

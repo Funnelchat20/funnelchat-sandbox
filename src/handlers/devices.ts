@@ -4,7 +4,8 @@
  * (`GET /devices/{device}/qr`), with the shapes and errors of the contract's amendment v0.1 (23-10).
  *
  * The phone of a number created by QR arrives when it is scanned; in the sandbox, with
- * `POST /_sandbox/devices/{id}/connect`.
+ * `POST /_sandbox/devices/{id}/connect`. The optional `country` (two letters, the country of the phone, where the
+ * WhatsApp session is opened from) is checked and has no other effect in the sandbox.
  */
 import type { SandboxApp } from '../app.js';
 import { body, listContext, ok, type HandlerTable } from '../http/context.js';
@@ -16,8 +17,11 @@ import { fakeQrDataUri } from '../numbers/qr.js';
 import { deviceResource } from '../state/resources.js';
 import type { Device } from '../state/store.js';
 
-/** Seconds the QR is good for: ask for it again after them (0 once connected). */
-export const QR_EXPIRES_IN = 20;
+/**
+ * Seconds the QR is good for: ask for it again after them (0 once connected). accounts serves 5, the cadence of the
+ * panel (#1335): WhatsApp changes the code every few seconds and an old one does not link.
+ */
+export const QR_EXPIRES_IN = 5;
 
 function deviceOf(app: SandboxApp, id: unknown): Device {
   const device = app.store.devices.get(Number(id));
@@ -75,15 +79,20 @@ export const deviceHandlers: HandlerTable = {
       return ok({ data: deviceResource(device) }, 201);
     }),
 
+  // `Cache-Control: no-store`, as accounts: a QR read a few seconds ago may no longer link, so nothing may keep it.
   'GET /api/v1/devices/{device}/qr': (ctx) => {
     const device = deviceOf(ctx.app, ctx.path.device);
     if (device.kind !== 'qr') throw new ApiError(422, 'provider_unsupported', 'El código QR solo existe para números por QR.');
-    return ok({
-      data: {
-        connected: device.connected,
-        qr_code: device.connected ? null : fakeQrDataUri(`${device.id}:${Math.floor(Date.now() / (QR_EXPIRES_IN * 1000))}`),
-        expires_in: device.connected ? 0 : QR_EXPIRES_IN,
+    return {
+      status: 200,
+      body: {
+        data: {
+          connected: device.connected,
+          qr_code: device.connected ? null : fakeQrDataUri(`${device.id}:${Math.floor(Date.now() / (QR_EXPIRES_IN * 1000))}`),
+          expires_in: device.connected ? 0 : QR_EXPIRES_IN,
+        },
       },
-    });
+      headers: { 'Cache-Control': 'no-store' },
+    };
   },
 };
