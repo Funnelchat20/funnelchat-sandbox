@@ -176,9 +176,23 @@ function importPending(source) {
   console.log(`pending: copied from ${src.path ?? sourcePath} (${src.branch ?? '?'} @ ${src.commit?.slice(0, 7) ?? '?'})`);
 }
 
+/**
+ * Whether `target` matches every entry of `condition`, as funnelchat-node's generator reads it: a key is a property
+ * of `target`, or, when it starts with `/`, a JSON Pointer into it (RFC 6901), so an entry can wait for one exact
+ * place of the snapshot to change.
+ */
 function matches(target, condition) {
   if (!condition) return true;
-  return Object.entries(condition).every(([key, value]) => JSON.stringify(target?.[key]) === JSON.stringify(value));
+  return Object.entries(condition).every(([key, value]) => JSON.stringify(pointer(target, key)) === JSON.stringify(value));
+}
+
+function pointer(target, key) {
+  if (!key.startsWith('/')) return target?.[key];
+  return key
+    .slice(1)
+    .split('/')
+    .map((part) => part.replace(/~1/g, '/').replace(/~0/g, '~'))
+    .reduce((node, part) => node?.[part], target);
 }
 
 /** The event type a `webhooks` key stands for: "webhook.test (conversations)" -> "webhook.test". */
@@ -191,10 +205,11 @@ function requestSchema(merged, op) {
 }
 
 /**
- * Step 2: merge one pending layer into `merged` (mutated). Same rules as funnelchat-node's generator for
- * `paths`, `operationPatches` and `webhooks`, plus three kinds the sandbox needs:
+ * Step 2: merge one pending layer into `merged` (mutated). Same rules as funnelchat-node's generator for `paths`,
+ * `operationPatches` (body properties and `parameters`), `schemaPatches`, `responsePatches` and `webhooks`, plus the
+ * kinds the sandbox needs:
  *
- *   - `responsePatches`: replace responses of an operation of the snapshot while it meets `while`;
+ *   - `responsePatches` with `removeResponses`: remove those codes instead of every 2xx;
  *   - `parameterPatches`: add parameters to an operation of the snapshot, only those it lacks (by name and place);
  *   - `operationPatches` with `replace: true`: replace properties of a body the snapshot does have, a correction of
  *     the snapshot (for example, Laravel's conditional `prohibited` letting `null` through), applied every time;
@@ -226,7 +241,8 @@ function mergeLayer(merged, layer, layerName, report) {
   }
 
   for (const patch of layer.operationPatches ?? []) {
-    const label = tag(`${patch.method.toUpperCase()} ${patch.path} (cuerpo: ${Object.keys(patch.requestBodyProperties ?? {}).join(', ')})`);
+    const names = [...Object.keys(patch.requestBodyProperties ?? {}), ...(patch.parameters ?? []).map((p) => p.name)];
+    const label = tag(`${patch.method.toUpperCase()} ${patch.path} (cuerpo: ${names.join(', ')})`);
     const op = merged.paths[patch.path]?.[patch.method];
     if (!op) {
       report.missing.push(label);
@@ -237,22 +253,48 @@ function mergeLayer(merged, layer, layerName, report) {
       continue;
     }
     const schema = requestSchema(merged, op);
+    if (patch.requestBodyProperties && !schema) {
+      report.missing.push(label);
+      continue;
+    }
+    const props = Object.entries(patch.requestBodyProperties ?? {});
+    const missingProps = props.filter(([prop]) => !(prop in (schema?.properties ?? {})));
+    const hasParameter = (p) => (op.parameters ?? []).some((q) => q.name === p.name && q.in === p.in);
+    const missingParams = (patch.parameters ?? []).filter((p) => !hasParameter(p));
+    // Without `while` or `replace`, a patch only adds what the snapshot lacks: once it has all of it, it can go.
+    if (!patch.while && !patch.replace && missingProps.length === 0 && missingParams.length === 0) {
+      report.superseded.push(label);
+      continue;
+    }
+    if (schema) {
+      schema.properties ??= {};
+      for (const [prop, propSchema] of props) {
+        if (patch.replace) schema.properties[prop] = propSchema;
+        else schema.properties[prop] ??= propSchema;
+      }
+    }
+    if (missingParams.length) op.parameters = [...(op.parameters ?? []), ...missingParams];
+    op['x-fc-pending'] = patch['x-fc-pending'];
+    report.applied.push(label);
+  }
+
+  for (const patch of layer.schemaPatches ?? []) {
+    const label = tag(`schema ${patch.schema} (propiedades: ${Object.keys(patch.properties ?? {}).join(', ')})`);
+    const schema = merged.components.schemas[patch.schema];
     if (!schema) {
       report.missing.push(label);
       continue;
     }
     schema.properties ??= {};
-    const props = Object.entries(patch.requestBodyProperties ?? {});
-    // Without `replace`, a patch only adds what the snapshot lacks: once it has every property, it can go.
-    if (!patch.replace && props.every(([prop]) => prop in schema.properties)) {
+    const missing = Object.keys(patch.properties ?? {}).filter((prop) => !(prop in schema.properties));
+    if (missing.length === 0) {
       report.superseded.push(label);
       continue;
     }
-    for (const [prop, propSchema] of props) {
-      if (patch.replace) schema.properties[prop] = propSchema;
-      else schema.properties[prop] ??= propSchema;
-    }
-    op['x-fc-pending'] = patch['x-fc-pending'];
+    for (const prop of missing) schema.properties[prop] = patch.properties[prop];
+    const required = (patch.required ?? []).filter((prop) => missing.includes(prop));
+    if (required.length) schema.required = [...new Set([...(schema.required ?? []), ...required])];
+    schema['x-fc-pending'] ??= patch['x-fc-pending'];
     report.applied.push(label);
   }
 
@@ -285,8 +327,11 @@ function mergeLayer(merged, layer, layerName, report) {
       continue;
     }
     op.responses ??= {};
-    for (const status of patch.removeResponses ?? []) delete op.responses[status];
+    // funnelchat-node's rule: every 2xx is replaced. `removeResponses` names the codes to remove instead.
+    const remove = patch.removeResponses ?? Object.keys(op.responses).filter((code) => /^2/.test(code));
+    for (const status of remove) delete op.responses[status];
     for (const [status, response] of Object.entries(patch.responses ?? {})) op.responses[status] = response;
+    op['x-fc-pending'] ??= patch['x-fc-pending'];
     op['x-fc-pending-response'] = patch['x-fc-pending'];
     report.applied.push(label);
   }
