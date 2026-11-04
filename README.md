@@ -257,7 +257,7 @@ Every session starts with this:
 
 `POST /_sandbox/reset` goes back to this and cancels everything that was scheduled.
 
-**With state** (what you create, change or delete stays): contacts (`/api/v1/contacts…`, with their tags, fields and the `meta-window`), conversations (`/api/v1/conversations…`), messages (send, history, reactions, forward, cards and the lookup by id), tags, custom fields, templates, [WhatsApp forms](#whatsapp-forms), numbers and sign-up links ([connecting numbers](#connecting-numbers)), [groups](#groups) (the list, one group and the send) and webhook subscriptions with their history, in one or more [workspaces](#workspaces).
+**With state** (what you create, change or delete stays): contacts (`/api/v1/contacts…`, with their tags, fields and the `meta-window`), conversations (`/api/v1/conversations…`), messages (send, history, reactions, forward, cards, the lookup by id, mark as read and «typing…»), tags, custom fields, templates, [WhatsApp forms](#whatsapp-forms), numbers and sign-up links ([connecting numbers](#connecting-numbers)), [groups](#groups) (the list, one group and the send) and webhook subscriptions with their history, in one or more [workspaces](#workspaces).
 
 **The numbers** are those of accounts: `GET /api/v1/devices` always paginates (`{data, links, meta}`, `perPage` from 1 to 100), and each number carries `capabilities`, with what the API can do through it:
 
@@ -696,40 +696,39 @@ And at `http://localhost:4010/_sandbox` you see each request and each delivery w
 - **Forms do not talk to Meta:** `sync` and `publish` succeed unless the linter finds an error, and the linter is a short version of the real one (screens without a title, without an ending, without questions, with a connection to the server). There are no metrics (`…/metrics`) and no dynamic forms.
 - **Files are not downloaded:** the type comes from the extension or from `file_type`. The «known» extensions (the ones that give `415` instead of `422 errors.file_type`) are the common ones; the API uses symfony/mime's full list.
 - **Connecting numbers** follows a contract, not production: no real QR, no Meta Embedded Signup and no 15-minute hold of a pool number. The page has no `POST /connect/{token}/qr` (the button connects at once) and no `POST /connect/{token}/offer` (the pool number is given when the link completes). A QR link that fails does not create (and delete) a number, links do not die when a key is revoked, the per-minute limit counts only the calls that pass the schema, and `409 operation_in_progress` only appears if two calls with the same `Idempotency-Key` overlap. The errors that depend on the plan, the payment or the provider (`connect_not_allowed`, `number_suspended_by_plan`, `payment_required`, `device_inactive`, `provider_error`…) are documented but never answered.
-- **Routes production has that the spec of the sandbox lacks** answer `404 route_not_found`: `POST /api/v1/contacts/{contact}/messages/{message}/read`, `POST /api/v1/contacts/{contact}/typing`, `GET /api/v1/templates/{template}/metrics` and `GET /api/v1/me/whatsapp-business-accounts…`. They come with the portal's next spec.
+- **Template metrics and the WhatsApp Business accounts** (`GET /api/v1/templates/{template}/metrics`, `GET /api/v1/me/whatsapp-business-accounts…`) answer the example of their schema, not data of the sandbox. **Mark as read and «typing…»** have no per-second ceilings (`429 rate_limited`) and never fail at WhatsApp (`502 provider_error`).
+- **`POST /api/v1/webhooks/{id}/rotate-secret` works with a key here**, as it always did in the sandbox; production keeps it out of the keys' routes (the secret is rotated from the panel), so a key gets `403 route_not_available` there.
+- **Forms** are served here, but the API edge does not route `forms` yet: through the public URL they answer `404 route_not_found`.
 - **The pace and the brakes** use the numbers of conversations in production (`config/send_guards.php`, `config/antiblock.php`); the official number paired with a QR one in coexistence (15 per second, shared) is not there.
 
 ## Pending of the spec
 
-The spec's snapshot (`spec/funnelchat.json`) is the portal's of 15-10. What went to production afterwards, or what the portal does not document yet, is in two separate layers that the next regeneration replaces on its own once the snapshot carries it:
+The spec (`spec/funnelchat.json`) is the portal's full unified spec of 04-11 (developers-portal `c90565e4`, v0.6.0), made from accounts v1.5.97, conversations v1.19.7 and communities v2.35.5: every route an API key reaches, not only the ones the portal shows. What production has and that spec lacks is in two separate layers, which the next regeneration drops on its own once the spec carries it:
 
-- `spec/pending.json`: the pending layer of the Node SDK, copied unchanged (`funnelchat-node` `feat/inicial` @ `88557ce`).
+- `spec/pending.json`: the pending layer of the Node SDK, copied unchanged (`funnelchat-node` `feat/inicial` @ `88557ce`). The spec already carries most of it (the generator lists what); the rest is the accounts events, whose `data` the spec does not describe.
 - `spec/pending-sandbox.json`: what the sandbox adds, with its sources inside.
 
 Besides, `spec/catalog.json` is the event catalog of accounts v1.5.97, with its provenance.
 
-Everything below is in production on 04-11 (accounts v1.5.97, conversations v1.19.7, communities v2.35.5, platform-gate v0.9.1, api-edge v0.3.0) and missing from the portal's snapshot of 15-10:
+What `spec/pending-sandbox.json` still adds:
 
-| What | Where it comes from |
+| What | Why it is not in the spec |
 |---|---|
-| Webhook subscriptions: `/api/v1/webhooks`, `/{id}`, `rotate-secret`, `test`, `deliveries` | accounts (since v1.4.24) |
-| The send with a key: `200` with the queued message, `GET /api/v1/contacts/{contact}/messages/{message}`, `client_reference`, `error.reason` and the errors of the rules | conversations (since v1.18.10) |
-| `message.status_changed` and `device_id` in `message.received` | conversations (since v1.18.10) |
-| The file by URL: `file_type`, `file_name`, their `422`s and the `415` | conversations (since v1.18.10, `SendFileType`) |
-| Forms: `/api/v1/forms…`, `POST /api/v1/contacts/{contact}/message/form` and `whatsapp_form.completed` | conversations (since v1.18.10); the portal does not document them yet |
-| `capabilities` and the new keys of the numbers | accounts v1.5.97 (`DeviceResource`, `DeviceCapabilities`) |
-| Connecting numbers: `POST /api/v1/devices`, `GET …/{device}/qr`, `external_reference`, `/api/v1/connect-links…`, `/connect/{token}`, `Idempotency-Key`, `device.deleted`, `device.health_changed` and the new keys of `device.connected` and `device.disconnected` | The contract of the sign-up by API of 22-10 and its amendments, checked against accounts v1.5.97; the Meta sign-up is off until the domain is registered with Meta |
-| Workspaces: each key confined to its workspace, and `data.workspace_id` in every event | accounts v1.5.97 (`workspaces-api-keys`, Q35), conversations v1.19.7, communities v2.35.5, platform-gate v0.9.1 |
-| Sending a message to a group: `POST /api/v1/groups/{group}/messages`, `GET /api/v1/groups/actions/{action}` | communities v2.35.5, behind its switch `API_GROUP_ACTIONS_ENABLED`, on in production |
-| `X-Request-Id` and the edge's errors (`route_not_found`, `origin_unreachable`, `edge_misconfigured`) | api-edge v0.3.0, platform-gate (since v0.8.0) |
+| Sending a message to a group: `POST /api/v1/groups/{group}/messages`, `GET /api/v1/groups/actions/{action}` (communities v2.35.5, switch `API_GROUP_ACTIONS_ENABLED` on in production) | communities' snapshot was taken with the group actions off |
+| Forms: `/api/v1/forms…` (conversations) | The API edge does not route `forms` yet, so the portal leaves them out |
+| Polls and events, `POST /api/v1/contacts/{contact}/message/poll` and `…/event` | Closed to every key by the gate: they are kept to answer its `403 route_not_available` |
+| `data.workspace_id` in every event (accounts v1.5.97, Q35) and the new keys of `device.connected` and `device.disconnected` | The spec's events do not carry them yet |
+| `null` in `allowed_connection_types` and `provision_us_number` of `POST /api/v1/connect-links` | A correction: accounts' rules depend on `type`, and Laravel's `prohibited` lets `null` through |
 
 ## Regenerating
 
 Everything generated comes from a single script:
 
 ```bash
-# With a new snapshot of the portal (`npm run datos` generates it in developers-portal):
-npm run generate -- --spec ../developers-portal/public/specs/funnelchat.json
+# With a new full spec of the portal (`npm run build` in developers-portal writes generated/specs/funnelchat-completa.json;
+# never the published public/specs/funnelchat.json, which carries only the visible operations). It is a build
+# artifact, so --origin says where it comes from (repository, branch, commit, path and the tag of each domain):
+npm run generate -- --spec ../developers-portal/generated/specs/funnelchat-completa.json --origin origin.json
 
 # With a new pending layer of the Node SDK:
 npm run generate -- --pending ../funnelchat-node/spec/pending.json
@@ -745,11 +744,11 @@ The event catalog (`spec/catalog.json`) is rendered from accounts' code with `sc
 
 What it does:
 
-1. With `--spec` or `--pending`, it copies the file to `spec/` and writes in `spec/procedencia.json` the repository, the branch, the commit, the date and the `sha256`.
+1. With `--spec` or `--pending`, it copies the file to `spec/` and writes in `spec/procedencia.json` the repository, the branch, the commit, the date and the `sha256` (from git, or from `--origin` for what git cannot say).
 2. It applies over the snapshot `spec/pending.json` and then `spec/pending-sandbox.json`, but **only what the snapshot lacks**. At the end it lists what the snapshot already carries, so you can delete it.
 3. It writes `generated/openapi.json`, the spec the sandbox validates and answers with.
 
-**The current snapshot** is the portal's of 15-10 (branch `feat/openapi-unificada` @ `0ef4abb`, merged since): 191 paths and 230 operations of conversations `9d723d52c`, communities `fab0bb10` and accounts `c234b6f8`. The detail is in `spec/procedencia.json`.
+**The current spec** is the portal's full unified spec of 04-11 (`main` @ `c90565e4`, `generated/specs/funnelchat-completa.json`): 203 paths, 248 operations and 29 events of accounts v1.5.97 (`558332bcf`), conversations v1.19.7 (`4e35ddb83`) and communities v2.35.5 (`2be913d4`). The detail is in `spec/procedencia.json`.
 
 ## Development
 

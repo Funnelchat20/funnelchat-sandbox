@@ -37,7 +37,9 @@ export function createMessage(app: SandboxApp, input: NewMessage): Message {
     status: input.status,
     error: null,
     clientReference: input.clientReference ?? null,
-    uid: input.own ? `wamid.SANDBOX${randomAlnum(24)}` : `false_${randomAlnum(20)}`,
+    // What WhatsApp gives: a `wamid.` for what is sent and for what an official number receives, the id of Z-API for
+    // what a QR number receives.
+    uid: input.own || app.store.devices.get(input.deviceId ?? -1)?.kind === 'cloud' ? `wamid.SANDBOX${randomAlnum(24)}` : `false_${randomAlnum(20)}`,
     viaApi: input.viaApi,
     templateId: input.templateId ?? null,
     reactions: [],

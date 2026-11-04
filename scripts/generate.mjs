@@ -38,12 +38,14 @@ const OUT_FILE = resolve(ROOT, 'generated/openapi.json');
 const HTTP_METHODS = ['get', 'put', 'post', 'delete', 'patch'];
 
 function parseArgs(argv) {
-  const args = { spec: null, pending: null, check: false };
+  const args = { spec: null, pending: null, origin: null, check: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--check') args.check = true;
     else if (arg === '--spec') args.spec = argv[++i];
     else if (arg.startsWith('--spec=')) args.spec = arg.slice('--spec='.length);
+    else if (arg === '--origin') args.origin = argv[++i];
+    else if (arg.startsWith('--origin=')) args.origin = arg.slice('--origin='.length);
     else if (arg === '--pending') args.pending = argv[++i];
     else if (arg.startsWith('--pending=')) args.pending = arg.slice('--pending='.length);
     else throw new Error(`Unknown argument: ${arg}`);
@@ -51,6 +53,7 @@ function parseArgs(argv) {
   if (args.spec === undefined) throw new Error('--spec needs the path of the file');
   if (args.pending === undefined) throw new Error('--pending needs the path of the file');
   if (args.check && (args.spec || args.pending)) throw new Error('--check does not combine with --spec or --pending');
+  if (args.origin && !args.spec) throw new Error('--origin goes with --spec');
   return args;
 }
 
@@ -103,17 +106,35 @@ function gitSource(sourcePath) {
   };
 }
 
+/**
+ * `--origin <file>`: where a spec comes from when it is a build artifact outside a git checkout (for example the
+ * portal's `generated/specs/funnelchat-completa.json`): `{repository, branch, commit, commit_date, path,
+ * file_tracked_in_git, domains: [{domain, tag, sha}]}`. It fills what git cannot say; git wins where it can.
+ */
+function readOrigin(originPath) {
+  if (!originPath) return { source: {}, domains: [] };
+  const origin = JSON.parse(readFileSync(resolve(originPath), 'utf8'));
+  const { domains = [], ...source } = origin;
+  return { source, domains };
+}
+
 /** Step 1a: copy a new snapshot of the portal and record its provenance. */
-function importSpec(source) {
+function importSpec(source, originPath) {
   const sourcePath = resolve(source);
   const bytes = readFileSync(sourcePath);
   const spec = JSON.parse(bytes.toString('utf8'));
+  const origin = readOrigin(originPath);
+  const fromGit = gitSource(sourcePath);
+  const merged = {
+    ...Object.fromEntries(Object.entries(fromGit).map(([key, value]) => [key, value ?? origin.source[key] ?? null])),
+    ...Object.fromEntries(Object.entries(origin.source).filter(([key]) => !(key in fromGit))),
+  };
   const provenance = readProvenance();
   provenance.snapshot = {
     file: 'spec/funnelchat.json',
     sha256: sha256(bytes),
     bytes: bytes.length,
-    source: gitSource(sourcePath),
+    source: merged,
     imported_at: new Date().toISOString(),
     spec: {
       openapi: spec.openapi ?? null,
@@ -122,7 +143,10 @@ function importSpec(source) {
       paths: Object.keys(spec.paths ?? {}).length,
       operations: countOperations(spec),
       webhooks: Object.keys(spec.webhooks ?? {}).length,
-      domains: (spec['x-fc-sources'] ?? []).map((s) => ({ domain: s.domain, sha: s.sha, branch: s.branch, snapshot_at: s.snapshot_at })),
+      domains: (spec['x-fc-sources'] ?? []).map((s) => {
+        const known = origin.domains.find((d) => d.domain === s.domain) ?? {};
+        return { domain: s.domain, tag: s.tag ?? known.tag ?? null, sha: s.sha ?? known.sha ?? null, branch: s.branch ?? known.branch ?? null, snapshot_at: s.snapshot_at ?? known.snapshot_at ?? null };
+      }),
     },
   };
   mkdirSync(dirname(SPEC_FILE), { recursive: true });
@@ -172,6 +196,8 @@ function requestSchema(merged, op) {
  *
  *   - `responsePatches`: replace responses of an operation of the snapshot while it meets `while`;
  *   - `parameterPatches`: add parameters to an operation of the snapshot, only those it lacks (by name and place);
+ *   - `operationPatches` with `replace: true`: replace properties of a body the snapshot does have, a correction of
+ *     the snapshot (for example, Laravel's conditional `prohibited` letting `null` through), applied every time;
  *   - `webhookPatches`: set properties of an event's `data` (schema and example), while the event meets
  *     `while` or while its `data` lacks `whileMissing`. `type: "*"` patches every event.
  */
@@ -216,8 +242,15 @@ function mergeLayer(merged, layer, layerName, report) {
       continue;
     }
     schema.properties ??= {};
-    for (const [prop, propSchema] of Object.entries(patch.requestBodyProperties ?? {})) {
-      schema.properties[prop] ??= propSchema;
+    const props = Object.entries(patch.requestBodyProperties ?? {});
+    // Without `replace`, a patch only adds what the snapshot lacks: once it has every property, it can go.
+    if (!patch.replace && props.every(([prop]) => prop in schema.properties)) {
+      report.superseded.push(label);
+      continue;
+    }
+    for (const [prop, propSchema] of props) {
+      if (patch.replace) schema.properties[prop] = propSchema;
+      else schema.properties[prop] ??= propSchema;
     }
     op['x-fc-pending'] = patch['x-fc-pending'];
     report.applied.push(label);
@@ -326,7 +359,7 @@ function merge(spec, layers) {
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
-  if (args.spec) importSpec(args.spec);
+  if (args.spec) importSpec(args.spec, args.origin);
   if (args.pending) importPending(args.pending);
   if (!existsSync(SPEC_FILE)) throw new Error('spec/funnelchat.json is missing: run `npm run generate -- --spec <file>`.');
 

@@ -41,8 +41,12 @@ function untestableReason(subscription: Subscription): string | null {
 
 const ofWorkspace = (ctx: HandlerContext): Subscription[] => [...ctx.app.store.subscriptions.values()].filter((s) => sees(ctx.workspace, s.workspaceId));
 
-/** The rules of `StoreWebhookSubscriptionRequest` that the schema does not express, and the destination check. */
-function checkSubscriptionBody(app: SandboxApp, b: Record<string, unknown>): void {
+/**
+ * The rules of `StoreWebhookSubscriptionRequest` that the schema does not express, and the destination check, with
+ * accounts' messages. Laravel checks every rule at once, so the server adds these to the schema's errors too.
+ */
+export function subscriptionBodyErrors(app: SandboxApp, value: unknown): Record<string, string[]> {
+  const b = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
   const errors: Record<string, string[]> = {};
   const url = String(b.url ?? '');
   let parsed: URL | null = null;
@@ -64,6 +68,11 @@ function checkSubscriptionBody(app: SandboxApp, b: Record<string, unknown>): voi
       errors[`events.${i}`] = ['Los tipos de evento no pueden repetirse.'];
     }
   });
+  return errors;
+}
+
+function checkSubscriptionBody(app: SandboxApp, b: Record<string, unknown>): void {
+  const errors = subscriptionBodyErrors(app, b);
   if (Object.keys(errors).length) throw validationFailed(errors);
 }
 
@@ -71,6 +80,9 @@ function filtersOf(value: unknown): Subscription['filters'] {
   const ids = (value as { campaign_ids?: unknown } | null | undefined)?.campaign_ids;
   return Array.isArray(ids) && ids.length ? { campaign_ids: ids.map(String) } : {};
 }
+
+/** The routes whose body `subscriptionBodyErrors` completes. */
+export const SUBSCRIPTION_BODY_ROUTES = new Set(['POST /api/v1/webhooks', 'PUT /api/v1/webhooks/{id}']);
 
 export const webhookHandlers: HandlerTable = {
   'GET /api/v1/webhooks/events': () => ok(catalogResponse()),

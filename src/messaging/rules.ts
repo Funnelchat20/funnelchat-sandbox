@@ -171,6 +171,11 @@ function recipientIdentity(contact: Contact): string | null {
   return contact.whatsappId?.trim() || contact.phone?.trim() || null;
 }
 
+/** `ApiRecipientBinding::isIndividual(recipientIdentity($contact))`: a person, not a group, a list or a channel. */
+export function contactIsIndividual(contact: Contact): boolean {
+  return isIndividual(recipientIdentity(contact));
+}
+
 function isIndividual(identity: string | null): boolean {
   if (identity === null || !identity.includes('@')) return true;
   return INDIVIDUAL_DOMAINS.includes(identity.slice(identity.lastIndexOf('@') + 1).toLowerCase());
