@@ -1,9 +1,14 @@
 /**
  * Contacts, their tags and custom fields, conversations, tags and custom fields (conversations domain).
+ *
+ * Workspaces (conversations v1.19.7, `ConfineApiKeyToWorkspace`): a key lists only the contacts and conversations of
+ * its workspace (and, from the default one, those without a workspace); a contact of another workspace answers
+ * conversations' bare `abort(404)`, `{"message": ""}`, and a contact a key creates lands in its workspace. Tags and
+ * custom fields are not confined in the sandbox.
  */
 import type { SandboxApp } from '../app.js';
 import { body, listContext, ok, type HandlerContext, type HandlerTable } from '../http/context.js';
-import { fieldError, objectNotFound } from '../http/errors.js';
+import { fieldError, objectNotFound, RawApiError } from '../http/errors.js';
 import { cursorPaginate, paginate } from '../http/paginate.js';
 import {
   contactCustomFieldResource,
@@ -13,14 +18,26 @@ import {
   tagResource,
 } from '../state/resources.js';
 import type { Contact } from '../state/store.js';
-import { digits, toE164 } from '../util.js';
+import { sees, type WorkspaceScope } from '../state/workspaces.js';
+import { digits, iso8601, toE164 } from '../util.js';
 
-export function getContact(app: SandboxApp, id: unknown): Contact {
+/**
+ * conversations' `abort(404)` for a record or a number outside the key's workspace (`EnsureRecordInWorkspace`,
+ * `ApiKeyWorkspace::abortUnlessDeviceAllowed`): Laravel's body for an exception without a message.
+ */
+export const outsideWorkspace = () => new RawApiError(404, { message: '' });
+
+/** A contact by id; with `scope`, one of another workspace answers `outsideWorkspace()`. */
+export function getContact(app: SandboxApp, id: unknown, scope?: WorkspaceScope): Contact {
   const contact = app.store.contacts.get(Number(id));
   // The model binding of conversations (`bootstrap/app.php`): `{message: "Objeto no encontrado."}`.
   if (!contact) throw objectNotFound();
+  if (scope && !sees(scope, contact.workspaceId)) throw outsideWorkspace();
   return contact;
 }
+
+/** The workspace of a contact's events (conversations `EventWorkspace`): the contact's. */
+export const contactWorkspace = (contact: Contact): number | null => contact.workspaceId;
 
 /** `{id, name, phone}` of a contact in an event: the phone with `+`. */
 export function eventContact(contact: Contact): Record<string, unknown> {
@@ -28,6 +45,8 @@ export function eventContact(contact: Contact): Record<string, unknown> {
 }
 
 export interface NewContact {
+  /** The workspace it lands in: the key's, or the number's for an incoming message. */
+  workspaceId: number | null;
   name?: unknown;
   email?: unknown;
   phone?: unknown;
@@ -45,6 +64,7 @@ export function createContact(app: SandboxApp, input: NewContact): Contact {
   const phone = digits(input.phone) || null;
   const contact: Contact = {
     id,
+    workspaceId: input.workspaceId,
     name: text(input.name),
     email: text(input.email),
     phone,
@@ -65,7 +85,7 @@ export function createContact(app: SandboxApp, input: NewContact): Contact {
     updatedAt: now,
   };
   app.store.contacts.set(id, contact);
-  app.webhooks.emit('contact.created', { contact: { ...eventContact(contact), email: contact.email } });
+  app.webhooks.emit('contact.created', { contact: { ...eventContact(contact), email: contact.email } }, { workspaceId: contact.workspaceId });
   return contact;
 }
 
@@ -153,13 +173,17 @@ function applyConversationUpdate(app: SandboxApp, contact: Contact, b: Record<st
   if (typeof b.active_conversation === 'boolean') {
     const wasActive = contact.activeConversation;
     contact.activeConversation = b.active_conversation;
-    if (wasActive && !b.active_conversation) app.webhooks.emit('conversation.closed', { contact: eventContact(contact) });
+    if (wasActive && !b.active_conversation) app.webhooks.emit('conversation.closed', { contact: eventContact(contact) }, { workspaceId: contact.workspaceId });
   }
   if ('adviser_id' in b) {
     const previous = contact.adviserId;
     contact.adviserId = b.adviser_id === null || b.adviser_id === undefined ? null : Number(b.adviser_id);
     if (contact.adviserId !== null && contact.adviserId !== previous) {
-      app.webhooks.emit('conversation.assigned', { contact: eventContact(contact), assignee: { type: 'human', name: `Agente ${contact.adviserId}` } });
+      app.webhooks.emit(
+        'conversation.assigned',
+        { contact: eventContact(contact), assignee: { type: 'human', name: `Agente ${contact.adviserId}` } },
+        { workspaceId: contact.workspaceId },
+      );
     }
   }
 }
@@ -188,21 +212,34 @@ function conversationFilter(app: SandboxApp, q: Record<string, unknown>): (c: Co
     (q.perName === undefined || (c.name ?? '').toLowerCase().includes(String(q.perName).toLowerCase()));
 }
 
-const count = (app: SandboxApp, predicate: (c: Contact) => boolean) => ({ count: [...app.store.contacts.values()].filter(predicate).length });
+/** The contacts a key reaches: those of its workspace. */
+const visibleContacts = (ctx: HandlerContext): Contact[] => [...ctx.app.store.contacts.values()].filter((c) => sees(ctx.workspace, c.workspaceId));
+
+const count = (ctx: HandlerContext, predicate: (c: Contact) => boolean) => ({ count: visibleContacts(ctx).filter(predicate).length });
 
 export const contactHandlers: HandlerTable = {
   'GET /api/v1/contacts': (ctx) => {
-    const list = sortContacts([...ctx.app.store.contacts.values()].filter(contactFilter(ctx.query)), ctx.query.orderBy, ctx.query.orderByMethod);
+    const list = sortContacts(visibleContacts(ctx).filter(contactFilter(ctx.query)), ctx.query.orderBy, ctx.query.orderByMethod);
     return ok(paginate(list, listContext(ctx), (c) => contactResource(ctx.app.store, c)));
   },
 
+  // `ContactService::firstOrCreate`: `201` with the new contact, or `200` with the one the account already has with that
+  // phone (or `whatsapp_id`), even if it is in another workspace (conversations v1.19.7 does not check it there).
   'POST /api/v1/contacts': (ctx) => {
     const b = body(ctx);
     if (!b.phone && !b.whatsapp_id) throw fieldError('phone', 'El campo phone es obligatorio cuando whatsapp_id no está presente.');
+    if (b.deviceId !== undefined && b.deviceId !== null) {
+      const device = ctx.app.store.devices.get(Number(b.deviceId));
+      if (!device) throw fieldError('deviceId', 'El valor seleccionado en deviceId no es válido.');
+      if (!sees(ctx.workspace, device.workspaceId)) throw outsideWorkspace();
+    }
     const phone = digits(b.phone);
-    if (phone && ctx.app.store.findContactByPhone(phone)) throw fieldError('phone', 'El valor del campo phone ya está en uso.');
-    const contact = createContact(ctx.app, { name: b.name, email: b.email, phone: b.phone, whatsappId: b.whatsapp_id, image: b.image, deviceId: b.deviceId });
-    return ok(contactResource(ctx.app.store, contact));
+    const existing = phone
+      ? ctx.app.store.findContactByPhone(phone)
+      : [...ctx.app.store.contacts.values()].find((c) => c.whatsappId !== null && c.whatsappId === String(b.whatsapp_id));
+    if (existing) return ok(contactResource(ctx.app.store, existing));
+    const contact = createContact(ctx.app, { workspaceId: ctx.workspace.id, name: b.name, email: b.email, phone: b.phone, whatsappId: b.whatsapp_id, image: b.image, deviceId: b.deviceId });
+    return ok(contactResource(ctx.app.store, contact), 201);
   },
 
   'POST /api/v1/contacts/update-or-create': (ctx) => {
@@ -210,19 +247,22 @@ export const contactHandlers: HandlerTable = {
     const phone = digits(b.phone);
     if (!phone) throw fieldError('phone', 'El campo phone es obligatorio.');
     const existing = ctx.app.store.findContactByPhone(phone);
+    // One the key does not reach answers 404 (`abortUnlessRecordInScope`).
+    if (existing && !sees(ctx.workspace, existing.workspaceId)) throw outsideWorkspace();
     if (existing) {
       if ('name' in b && b.name !== null) existing.name = text(b.name);
       if ('email' in b && b.email !== null) existing.email = text(b.email);
       existing.updatedAt = new Date();
       return ok(contactResource(ctx.app.store, existing));
     }
-    return ok(contactResource(ctx.app.store, createContact(ctx.app, { name: b.name, email: b.email, phone })));
+    return ok(contactResource(ctx.app.store, createContact(ctx.app, { workspaceId: ctx.workspace.id, name: b.name, email: b.email, phone })));
   },
 
-  'GET /api/v1/contacts/{contact}': (ctx) => ok(contactResource(ctx.app.store, getContact(ctx.app, ctx.path.contact))),
+  // The detail adds `ai_assistant_email`, `account_main_email` and `follow_up_date` (conversations v1.19.7).
+  'GET /api/v1/contacts/{contact}': (ctx) => ok(contactResource(ctx.app.store, getContact(ctx.app, ctx.path.contact, ctx.workspace), 'show')),
 
   'PUT /api/v1/contacts/{contact}': (ctx) => {
-    const contact = getContact(ctx.app, ctx.path.contact);
+    const contact = getContact(ctx.app, ctx.path.contact, ctx.workspace);
     const b = body(ctx);
     if ('phone' in b && digits(b.phone)) {
       const other = ctx.app.store.findContactByPhone(digits(b.phone));
@@ -234,7 +274,7 @@ export const contactHandlers: HandlerTable = {
   },
 
   'PUT /api/v1/contacts/{contact}/update': (ctx) => {
-    const contact = getContact(ctx.app, ctx.path.contact);
+    const contact = getContact(ctx.app, ctx.path.contact, ctx.workspace);
     const b = body(ctx);
     applyContactUpdate(contact, pick(b, ['favorite', 'unread_messages', 'device_id', 'notes', 'manually_unread']));
     applyConversationUpdate(ctx.app, contact, b);
@@ -252,7 +292,7 @@ export const contactHandlers: HandlerTable = {
   },
 
   'GET /api/v1/contacts/{contact}/tags': (ctx) => {
-    const contact = getContact(ctx.app, ctx.path.contact);
+    const contact = getContact(ctx.app, ctx.path.contact, ctx.workspace);
     const items = [...contact.tags.entries()].flatMap(([id, at]) => {
       const tag = ctx.app.store.tags.get(id);
       return tag ? [{ tag, at }] : [];
@@ -261,7 +301,7 @@ export const contactHandlers: HandlerTable = {
   },
 
   'GET /api/v1/contacts/{contact}/custom-fields': (ctx) => {
-    const contact = getContact(ctx.app, ctx.path.contact);
+    const contact = getContact(ctx.app, ctx.path.contact, ctx.workspace);
     const items = [...contact.customFields.entries()].flatMap(([id, value]) => {
       const field = ctx.app.store.customFields.get(id);
       if (!field) return [];
@@ -302,30 +342,39 @@ export const contactHandlers: HandlerTable = {
   },
 
   'GET /api/v1/contacts/{contact}/meta-window': (ctx) => {
-    const contact = getContact(ctx.app, ctx.path.contact);
+    const contact = getContact(ctx.app, ctx.path.contact, ctx.workspace);
     const device = ctx.app.store.devices.get(Number(ctx.query.device_id));
-    // A number outside the account answers "closed" without saying whether it exists, like the API.
-    if (!device) return ok({ is_open: false, meta_device_id: null });
+    // A number outside the account answers "closed" without saying whether it exists, like the API; one of another
+    // workspace, 404.
+    if (!device) return ok({ is_open: false, meta_device_id: null, expires_at: null });
+    if (!sees(ctx.workspace, device.workspaceId)) throw outsideWorkspace();
+    // A QR number has no 24-hour window: always open.
+    if (device.kind !== 'cloud') return ok({ is_open: true, meta_device_id: null, expires_at: null });
     const open = ctx.app.store.windowOpen(contact.id, device.id);
-    return ok({ is_open: open, meta_device_id: open && device.kind === 'cloud' ? device.phoneNumberId : null });
+    const last = ctx.app.store.lastInbound.get(`${contact.id}:${device.id}`);
+    return ok({
+      is_open: open,
+      meta_device_id: open ? device.phoneNumberId : null,
+      expires_at: open && last ? iso8601(new Date(last.getTime() + 24 * 60 * 60 * 1000)) : null,
+    });
   },
 
   // --- conversations ------------------------------------------------------------------------------------------
 
   'GET /api/v1/conversations': (ctx) => {
     const direction = ctx.query.orderBy === 'asc' ? 1 : -1;
-    const list = [...ctx.app.store.contacts.values()]
+    const list = visibleContacts(ctx)
       .filter(conversationFilter(ctx.app, ctx.query))
       .sort((a, b) => direction * (lastMessageAt(ctx.app, a) - lastMessageAt(ctx.app, b)) || b.id - a.id);
     return ok(cursorPaginate(list, listContext(ctx), (c) => contactResource(ctx.app.store, c)));
   },
-  'GET /api/v1/conversations/count/unread': (ctx) => ok(count(ctx.app, (c) => c.unreadMessages > 0 || c.manuallyUnread)),
-  'GET /api/v1/conversations/count/open': (ctx) => ok(count(ctx.app, (c) => c.activeConversation)),
-  'GET /api/v1/conversations/count/closed': (ctx) => ok(count(ctx.app, (c) => !c.activeConversation && hasMessages(ctx.app, c))),
-  'GET /api/v1/conversations/count/all': (ctx) => ok(count(ctx.app, (c) => hasMessages(ctx.app, c))),
+  'GET /api/v1/conversations/count/unread': (ctx) => ok(count(ctx, (c) => c.unreadMessages > 0 || c.manuallyUnread)),
+  'GET /api/v1/conversations/count/open': (ctx) => ok(count(ctx, (c) => c.activeConversation)),
+  'GET /api/v1/conversations/count/closed': (ctx) => ok(count(ctx, (c) => !c.activeConversation && hasMessages(ctx.app, c))),
+  'GET /api/v1/conversations/count/all': (ctx) => ok(count(ctx, (c) => hasMessages(ctx.app, c))),
   'POST /api/v1/conversations/mark-all-read': (ctx) => {
     let updated = 0;
-    for (const c of ctx.app.store.contacts.values()) {
+    for (const c of visibleContacts(ctx)) {
       if (c.unreadMessages > 0 || c.manuallyUnread) {
         c.unreadMessages = 0;
         c.manuallyUnread = false;
@@ -336,7 +385,7 @@ export const contactHandlers: HandlerTable = {
   },
   'POST /api/v1/conversations/mark-all-unread': (ctx) => {
     const ids: Record<string, number> = {};
-    for (const c of ctx.app.store.contacts.values()) {
+    for (const c of visibleContacts(ctx)) {
       if (hasMessages(ctx.app, c) && !(c.unreadMessages > 0 || c.manuallyUnread)) {
         c.manuallyUnread = true;
         ids[String(Object.keys(ids).length)] = c.id;

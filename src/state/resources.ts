@@ -43,7 +43,12 @@ function statusInt(message: Message, device: Device | undefined): number | null 
   }
 }
 
-export function contactResource(store: Store, contact: Contact): Record<string, unknown> {
+/**
+ * conversations `ContactResource`. The detail (`show`) also carries `ai_assistant_email`, `account_main_email` and
+ * `follow_up_date` (conversations v1.19.7), `null` for a contact without an AI assistant nor a follow-up date.
+ */
+export function contactResource(store: Store, contact: Contact, mode: 'list' | 'show' = 'list'): Record<string, unknown> {
+  const show = mode === 'show';
   const messages = store.contactMessages(contact.id).sort((a, b) => b.id - a.id);
   const last = messages[0];
   return {
@@ -83,8 +88,10 @@ export function contactResource(store: Store, contact: Contact): Record<string, 
     paused_at: contact.pausedAt ? laravelJson(contact.pausedAt) : null,
     mac_date: null,
     ai_assistant_name: null,
+    ...(show ? { ai_assistant_email: null, account_main_email: null } : {}),
     stage_since: null,
     is_stagnant: false,
+    ...(show ? { follow_up_date: null } : {}),
     lead_score: {
       score: 0,
       signals_count: 0,
@@ -174,9 +181,15 @@ export function templateResource(template: Template, currentDeviceId?: number): 
     user_id: ACCOUNT_USER_ID,
     device_id: template.deviceId,
     created_at: laravelJson(template.createdAt),
+    recategorized_at: null,
     quick_reply_buttons: (template.buttons ?? []).filter((b) => b.type === 'QUICK_REPLY').map((b) => b.text ?? ''),
     waba_id: '100000000000001',
     belongs_to_current_device: currentDeviceId === undefined ? true : template.deviceId === currentDeviceId,
+    // conversations v1.19.7: the quality of Meta, which the sandbox's templates do not have.
+    quality_score: null,
+    quality_updated_at: null,
+    quality: template.status === 'APPROVED' || template.status === 'PAUSED' ? 'UNKNOWN' : 'NOT_APPLICABLE',
+    available: template.status !== 'PAUSED' && template.status !== 'DISABLED',
   };
 }
 
@@ -220,9 +233,10 @@ export function deviceConnection(device: Device): Connection {
 }
 
 /**
- * accounts v1.4.24 `DeviceResource`, in its order, plus `external_reference` and `connection` (contract A1 of the
- * sign-up by API, 22-10). A number created by QR has no phone until it is scanned: `number` is empty and
- * `normalized_number` is `null`, as the resource documents.
+ * accounts v1.5.97 `DeviceResource`, in its order. A number created by QR has no phone until it is scanned: `number` is
+ * empty and `normalized_number` is `null`, as the resource documents. With a key the caller is the owner, so every
+ * one of `abilities` is `true`; nobody of a team connected the sandbox's numbers (`connected_by_*` is `null`), and none
+ * is overloaded.
  */
 export function deviceResource(device: Device): Record<string, unknown> {
   return {
@@ -250,9 +264,22 @@ export function deviceResource(device: Device): Record<string, unknown> {
     pool_keep: false,
     qr_allowed: device.kind === 'qr',
     can_change_to_meta: false,
+    connected_by_user_id: null,
+    connected_by_name: null,
+    abilities: { connect: true, disconnect: true, delete: true, update: true },
     capabilities: deviceCapabilities(device),
-    external_reference: device.externalReference,
     connection: deviceConnection(device),
+    external_reference: device.externalReference,
+    overloaded: false,
+    overloaded_computed_at: null,
+    overloaded_groups_count: null,
+    overloaded_one_to_one_count: null,
+    overloaded_has_pending_broadcast: false,
+    overloaded_has_active_flow: false,
+    overloaded_has_active_ai_agent: false,
+    overloaded_alert_level: 'none',
+    overloaded_dismissed_at: null,
+    sync_all_groups: false,
   };
 }
 
@@ -332,6 +359,8 @@ export function historyMessage(store: Store, message: Message): Record<string, u
     user_id: ACCOUNT_USER_ID,
     deleted_at: null,
     deleted_scope: null,
+    deleted_by: null,
+    edited_at: null,
     reactions: message.reactions.map((r) => ({ emoji: r.emoji, own: r.own })),
     file_original_name: null,
     client_reference: message.clientReference,
@@ -362,7 +391,7 @@ export function subscriptionWithSecret(subscription: Subscription): Record<strin
   return {
     ...subscriptionResource(subscription),
     secret: subscription.secret,
-    secret_notice: 'Guardá este secreto ahora: es la única vez que se muestra. Con él validás la firma del header de cada entrega.',
+    secret_notice: 'Guarda este secreto ahora: es la única vez que se muestra. Con él validas la firma del header de cada entrega.',
   };
 }
 

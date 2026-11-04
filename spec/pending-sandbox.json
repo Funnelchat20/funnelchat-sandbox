@@ -15,7 +15,9 @@
       "conversations-received-device": "conversations v1.18.10 (en producción): `device_id` en `data` de message.received (`MessageReceivedPayload`).",
       "conversations-file-by-url": "conversations v1.18.10 (en producción): `SendFileType` — `file` por URL (firmada o sin extensión) con `file_type` y `file_name` opcionales, en POST contacts/{contact}/message y POST message/send-message.",
       "conversations-forms": "conversations v1.18.10 (en producción): `routes/api/whatsapp-forms.php`, `WhatsappFormController`, `WhatsappFormSendController`, `SendWhatsappFormRequest`. Las rutas de formularios abiertas a claves (`config/platform-gate.php`) y el envío de un formulario a un contacto. El portal no las documenta todavía: su `config/borde.json` no tiene el prefijo `forms`.",
-      "accounts-alta-de-numeros": "Contrato «alta y conexión de números por API» v0 (funnelchat-dev-platform `docs/initiatives/api-abierta/contratos/1022-alta-de-numeros.md`, 22-10-2026), secciones A1 y A3, y sus decisiones Q1–Q26. accounts lo programa en `feat/alta-de-numeros-api`: hasta que su OpenAPI llegue a la instantánea, esto sale del contrato. Enmienda v0.1 del contrato (23-10, commit `8c68067` de funnelchat-dev-platform), leída de accounts `feat/alta-de-numeros-api` `52d49b319`: errores, id entero del link, `invalid_request`, `pending_number_exists`, `connection_type_mismatch`, `invalid_idempotency_key`, `Idempotent-Replayed` y, de la parte 2 en curso, `connect_link_id` en los cuatro avisos y el motivo `disconnected_by_user`. Enmienda v0.2 (23-10, commit `720ee83`), leída de accounts `8852b3fad` (parte 2 terminada): `provision_us_number` exige `dedicated` y no va con `device_id`; el link Meta tolera cinco intentos fallidos de Facebook o Meta; en `device.connected`, `connect_link_id` es el link de esa conexión."
+      "accounts-alta-de-numeros": "Contrato «alta y conexión de números por API» v0 (funnelchat-dev-platform `docs/initiatives/api-abierta/contratos/1022-alta-de-numeros.md`, 22-10-2026), secciones A1 y A3, y sus decisiones Q1–Q26. accounts lo programa en `feat/alta-de-numeros-api`: hasta que su OpenAPI llegue a la instantánea, esto sale del contrato. Enmienda v0.1 del contrato (23-10, commit `8c68067` de funnelchat-dev-platform), leída de accounts `feat/alta-de-numeros-api` `52d49b319`: errores, id entero del link, `invalid_request`, `pending_number_exists`, `connection_type_mismatch`, `invalid_idempotency_key`, `Idempotent-Replayed` y, de la parte 2 en curso, `connect_link_id` en los cuatro avisos y el motivo `disconnected_by_user`. Enmienda v0.2 (23-10, commit `720ee83`), leída de accounts `8852b3fad` (parte 2 terminada): `provision_us_number` exige `dedicated` y no va con `device_id`; el link Meta tolera cinco intentos fallidos de Facebook o Meta; en `device.connected`, `connect_link_id` es el link de esa conexión.",
+      "accounts-workspaces": "accounts v1.5.97 (`558332bcf`, en producción desde el 04-11, workspaces-api-keys; platform-gate v0.9.1): cada API key es de un workspace y solo ve y crea ahí; un evento llega solo a las suscripciones de su workspace y todo aviso público lleva `data.workspace_id` = el workspace al que se ruteó (Q35, `EventWorkspaceRouting::stamp()`: la última clave de `data`). Los ejemplos del catálogo de accounts usan 37 (`WebhookEventCatalog::EXAMPLE_WORKSPACE_ID`). conversations v1.19.7 y communities v2.35.5 confinan sus rutas igual.",
+      "communities-group-messages": "communities v2.35.5 (`2be913d4`, en producción el 04-11): `GroupManagement/routes.php`, `ApiGroupActionController::sendMessage` y `show`, `SendGroupMessageRequest`, `ApiGroupActionTargetResolver`, `ApiGroupActionAcceptedResource`, `ApiGroupActionResource` y `ApiGroupActionEventPublisher`. Enviar un mensaje a un grupo responde 202 con `action_id`, y el resultado se consulta en GET groups/actions/{action}. Las dos rutas están detrás del interruptor `API_GROUP_ACTIONS_ENABLED` (apagado por defecto; el 21-10 estaba apagado en producción y el repo no muestra si se encendió): apagado, toda clave recibe 403 route_not_available del portero. Confinadas al workspace de la clave (#1913)."
     }
   },
   "components": {
@@ -565,6 +567,124 @@
         },
         "required": [
           "message"
+        ]
+      },
+      "PendingSandboxGroupAction": {
+        "type": "object",
+        "description": "A group action by API (communities `ApiGroupActionResource`).",
+        "properties": {
+          "action_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "send_message"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed"
+            ]
+          },
+          "device_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "`null` if the number is not of the key's workspace."
+          },
+          "group": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "uid": {
+                "type": "string"
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "uid",
+              "name"
+            ]
+          },
+          "result": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "`completed`: `{message: {uid}}`, the id of the message in WhatsApp. `null` before and on a failure.",
+            "properties": {
+              "message": {
+                "type": "object",
+                "properties": {
+                  "uid": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Only when `failed`: `disabled`, `device_not_found`, `group_not_found`, `device_not_connected`, `provider_unsupported`, `unsupported_group_type`, `device_not_group_number`, `device_not_group_admin`, `window_closed`, `number_restricted`, `provider_error`, `internal_error` or `expired`."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "completed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "failed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "action_id",
+          "type",
+          "status",
+          "device_id",
+          "group",
+          "result",
+          "reason",
+          "created_at",
+          "started_at",
+          "completed_at",
+          "failed_at"
         ]
       }
     }
@@ -2099,6 +2219,248 @@
           }
         }
       }
+    },
+    "/api/v1/groups/{group}/messages": {
+      "post": {
+        "operationId": "pendingSandboxGroups.messages.send",
+        "summary": "Send a message to a group now",
+        "description": "Asynchronous: answers `202` with `action_id`; follow it with `GET /api/v1/groups/actions/{action}` (`result.message.uid` is the id of the message in WhatsApp). `type`: `text` (with `text`, up to 4096), `image`, `video`, `audio` or `document` (with `media_url`, an `https` URL up to 255 characters with an extension of the type; `caption` only for `image` and `video`, `file_name` only for `document`). A QR number must be an admin of the group; an official one, the group's own number, with the beta of official groups. When it settles, `group_action.completed` or `group_action.failed`.\n\nIt is behind communities' kill switch (`API_GROUP_ACTIONS_ENABLED`): while it is off, every key gets `403 route_not_available`.\n\n**Pending of the spec**: in communities v2.35.5, missing from the portal's snapshot.",
+        "tags": [
+          "GroupActions"
+        ],
+        "x-fc-domain": "communities",
+        "x-fc-permission": "communities:send",
+        "x-fc-pending": "communities-group-messages",
+        "parameters": [
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "description": "The `uid` of the group (`120363…@g.us`).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "device_id": {
+                    "type": "integer",
+                    "description": "The number that sends it: a number of the key's workspace that is in the group."
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "text",
+                      "image",
+                      "video",
+                      "audio",
+                      "document"
+                    ]
+                  },
+                  "text": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "media_url": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "caption": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "file_name": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "device_id",
+                  "type"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted: the send is queued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "action_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "status": {
+                      "type": "string",
+                      "const": "queued"
+                    }
+                  },
+                  "required": [
+                    "action_id",
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`route_not_available` while the group actions are off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`device_not_found` or `group_not_found`: not of the account or of the key's workspace.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The body, or `device_not_connected`, `provider_unsupported`, `unsupported_group_type`, `device_not_group_number`, `device_not_group_admin`, `window_closed`, `number_restricted`."
+          },
+          "429": {
+            "description": "`too_many_pending_actions`, or Laravel's `Too Many Attempts.` (30 per minute)."
+          }
+        }
+      }
+    },
+    "/api/v1/groups/actions/{action}": {
+      "get": {
+        "operationId": "pendingSandboxGroups.actions.show",
+        "summary": "The state and result of a group action",
+        "description": "`queued` → `running` → `completed` (with `result`) or `failed` (with `reason`). An action of another workspace answers `404 action_not_found`.\n\nIt is behind communities' kill switch (`API_GROUP_ACTIONS_ENABLED`): while it is off, every key gets `403 route_not_available`.\n\n**Pending of the spec**: in communities v2.35.5, missing from the portal's snapshot.",
+        "tags": [
+          "GroupActions"
+        ],
+        "x-fc-domain": "communities",
+        "x-fc-permission": "communities:read",
+        "x-fc-pending": "communities-group-messages",
+        "parameters": [
+          {
+            "name": "action",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PendingSandboxGroupAction"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`route_not_available` while the group actions are off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`action_not_found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "responsePatches": [
@@ -2469,6 +2831,23 @@
           "reason": "meta_account_not_registered",
           "connect_link_id": null
         }
+      }
+    },
+    {
+      "type": "*",
+      "whileMissing": "workspace_id",
+      "x-fc-pending": "accounts-workspaces",
+      "dataProperties": {
+        "workspace_id": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace."
+        }
+      },
+      "exampleData": {
+        "workspace_id": 37
       }
     }
   ],

@@ -2,26 +2,44 @@
  * Webhook subscriptions: the unified subscriptions of accounts (`/api/v1/webhooks`), the same routes the SDKs and
  * the n8n trigger use.
  *
- * In production (accounts v1.4.24). Their types are in spec/pending.json (funnelchat-node), not in the snapshot; the
- * catalog (`/webhooks/events`) is spec/catalog.json, transcribed from accounts.
+ * In production since accounts v1.4.24. Their types are in spec/pending.json (funnelchat-node), not in the snapshot; the
+ * catalog (`/webhooks/events`) is spec/catalog.json, rendered from accounts.
+ *
+ * Workspaces (accounts v1.5.97): a subscription belongs to the workspace of the key that created it, a key only sees
+ * and changes the subscriptions of its workspace (another workspace's answers `404`), and the cap of 50 counts per
+ * workspace. A subscription only gets the events of its workspace.
  */
 import type { SandboxApp } from '../app.js';
 import { body, listContext, noContent, ok, type HandlerContext, type HandlerTable } from '../http/context.js';
-import { ApiError, notFound, validationFailed } from '../http/errors.js';
+import { RawApiError, validationFailed } from '../http/errors.js';
 import { paginate } from '../http/paginate.js';
 import { deliveryResource, subscriptionResource, subscriptionWithSecret } from '../state/resources.js';
 import type { Subscription } from '../state/store.js';
+import { sees } from '../state/workspaces.js';
 import { uuid, webhookSecret } from '../util.js';
 import { catalogResponse, isSubscribable } from '../webhooks/catalog.js';
 
-/** accounts `WebhookSubscriptionController::SUBSCRIPTION_LIMIT`. */
+/** accounts `WebhookSubscriptionController::SUBSCRIPTION_LIMIT`: per workspace. */
 const SUBSCRIPTION_LIMIT = 50;
 
-function getSubscription(app: SandboxApp, id: unknown): Subscription {
-  const subscription = app.store.subscriptions.get(String(id));
-  if (!subscription) throw notFound('Suscripción de webhook no encontrada.');
+function getSubscription(ctx: HandlerContext, id: unknown): Subscription {
+  const subscription = ctx.app.store.subscriptions.get(String(id));
+  // One of another workspace is out of the query (`inActiveWorkspace`): the same 404, `{message}` without `error`.
+  if (!subscription || !sees(ctx.workspace, subscription.workspaceId)) throw new RawApiError(404, { message: 'Suscripción de webhook no encontrada.' });
   return subscription;
 }
+
+/**
+ * accounts `WebhookSubscriptionTestController::untestableReason()`: a `disabled` subscription is not tested, and its
+ * `422` says why.
+ */
+function untestableReason(subscription: Subscription): string | null {
+  if (subscription.status !== 'disabled') return null;
+  if (subscription.disabledReason === 'too_many_failures') return 'La suscripción está deshabilitada por entregas fallidas consecutivas. Reactívala antes de probarla.';
+  return 'La suscripción está deshabilitada. Habilítala antes de probarla.';
+}
+
+const ofWorkspace = (ctx: HandlerContext): Subscription[] => [...ctx.app.store.subscriptions.values()].filter((s) => sees(ctx.workspace, s.workspaceId));
 
 /** The rules of `StoreWebhookSubscriptionRequest` that the schema does not express, and the destination check. */
 function checkSubscriptionBody(app: SandboxApp, b: Record<string, unknown>): void {
@@ -41,7 +59,7 @@ function checkSubscriptionBody(app: SandboxApp, b: Record<string, unknown>): voi
   const events = Array.isArray(b.events) ? (b.events as unknown[]) : [];
   events.forEach((type, i) => {
     if (typeof type !== 'string' || !isSubscribable(type)) {
-      errors[`events.${i}`] = ['Uno de los tipos de evento no existe o no se puede suscribir. Consultá GET api/v1/webhooks/events.'];
+      errors[`events.${i}`] = ['Uno de los tipos de evento no existe o no se puede suscribir. Consulta GET api/v1/webhooks/events.'];
     } else if (events.indexOf(type) !== i) {
       errors[`events.${i}`] = ['Los tipos de evento no pueden repetirse.'];
     }
@@ -58,7 +76,7 @@ export const webhookHandlers: HandlerTable = {
   'GET /api/v1/webhooks/events': () => ok(catalogResponse()),
 
   'GET /api/v1/webhooks': (ctx) => {
-    const list = [...ctx.app.store.subscriptions.values()].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    const list = ofWorkspace(ctx).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
     if (ctx.query.perPage !== undefined || ctx.query.per_page !== undefined) return ok(paginate(list, listContext(ctx), subscriptionResource));
     return ok(list.map(subscriptionResource));
   },
@@ -66,12 +84,14 @@ export const webhookHandlers: HandlerTable = {
   'POST /api/v1/webhooks': (ctx) => {
     const b = body(ctx);
     checkSubscriptionBody(ctx.app, b);
-    if (ctx.app.store.subscriptions.size >= SUBSCRIPTION_LIMIT) {
-      throw new ApiError(422, 'subscription_limit_reached', `Alcanzaste el límite de ${SUBSCRIPTION_LIMIT} suscripciones de webhook.`);
+    // accounts answers the cap with Laravel's own body, `{message}` without `error`.
+    if (ofWorkspace(ctx).length >= SUBSCRIPTION_LIMIT) {
+      throw new RawApiError(422, { message: `Alcanzaste el límite de ${SUBSCRIPTION_LIMIT} suscripciones de webhook.` });
     }
     const now = new Date();
     const subscription: Subscription = {
       id: uuid(),
+      workspaceId: ctx.workspace.id,
       url: String(b.url),
       description: b.description === undefined || b.description === null ? null : String(b.description),
       events: [...new Set(b.events as string[])],
@@ -91,10 +111,10 @@ export const webhookHandlers: HandlerTable = {
     return ok(subscriptionWithSecret(subscription), 201);
   },
 
-  'GET /api/v1/webhooks/{id}': (ctx) => ok(subscriptionResource(getSubscription(ctx.app, ctx.path.id))),
+  'GET /api/v1/webhooks/{id}': (ctx) => ok(subscriptionResource(getSubscription(ctx, ctx.path.id))),
 
   'PUT /api/v1/webhooks/{id}': (ctx) => {
-    const subscription = getSubscription(ctx.app, ctx.path.id);
+    const subscription = getSubscription(ctx, ctx.path.id);
     const b = body(ctx);
     checkSubscriptionBody(ctx.app, b);
     subscription.url = String(b.url);
@@ -114,24 +134,29 @@ export const webhookHandlers: HandlerTable = {
   },
 
   'DELETE /api/v1/webhooks/{id}': (ctx) => {
-    const subscription = getSubscription(ctx.app, ctx.path.id);
+    const subscription = getSubscription(ctx, ctx.path.id);
     ctx.app.store.subscriptions.delete(subscription.id);
     ctx.app.store.deliveries = ctx.app.store.deliveries.filter((d) => d.subscriptionId !== subscription.id);
     return noContent();
   },
 
   'POST /api/v1/webhooks/{id}/rotate-secret': (ctx) => {
-    const subscription = getSubscription(ctx.app, ctx.path.id);
+    const subscription = getSubscription(ctx, ctx.path.id);
     subscription.secret = webhookSecret();
     subscription.secretRotatedAt = new Date();
     subscription.updatedAt = subscription.secretRotatedAt;
     return ok(subscriptionWithSecret(subscription));
   },
 
-  'POST /api/v1/webhooks/{id}/test': async (ctx: HandlerContext) => ok(await ctx.app.webhooks.test(getSubscription(ctx.app, ctx.path.id))),
+  'POST /api/v1/webhooks/{id}/test': async (ctx: HandlerContext) => {
+    const subscription = getSubscription(ctx, ctx.path.id);
+    const reason = untestableReason(subscription);
+    if (reason) throw new RawApiError(422, { message: reason });
+    return ok(await ctx.app.webhooks.test(subscription));
+  },
 
   'GET /api/v1/webhooks/{id}/deliveries': (ctx) => {
-    const subscription = getSubscription(ctx.app, ctx.path.id);
+    const subscription = getSubscription(ctx, ctx.path.id);
     const q = ctx.query;
     const list = ctx.app.store.deliveries
       .filter((d) => d.subscriptionId === subscription.id && (!q.event_type || d.eventType === q.event_type) && (!q.event_id || d.eventId === q.event_id))

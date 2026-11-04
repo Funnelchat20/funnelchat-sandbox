@@ -60,7 +60,7 @@ describe('WhatsApp forms', () => {
     expect(done.status).toBe(200);
     const [event] = await receiver.waitFor(1);
     expect(event!.json.type).toBe('whatsapp_form.completed');
-    expect(Object.keys(event!.json.data)).toEqual(['form', 'message_id', 'contact_id', 'device_id', 'answers', 'occurred_at']);
+    expect(Object.keys(event!.json.data)).toEqual(['form', 'message_id', 'contact_id', 'device_id', 'answers', 'occurred_at', 'workspace_id']);
     expect(event!.json.data).toMatchObject({
       form: { id: created.family_id, name: 'lead', version_id: created.id },
       message_id: sent.body.message.id,

@@ -39,7 +39,7 @@ describe('sending with an API key', () => {
     ]);
     for (const e of events) {
       expect(e.json.type).toBe('message.status_changed');
-      expect(Object.keys(e.json.data)).toEqual(['message_id', 'contact_id', 'device_id', 'status', 'previous_status', 'occurred_at', 'client_reference']);
+      expect(Object.keys(e.json.data)).toEqual(['message_id', 'contact_id', 'device_id', 'status', 'previous_status', 'occurred_at', 'client_reference', 'workspace_id']);
       expect(e.json.data).toMatchObject({ message_id: id, contact_id: 2001, device_id: 3, client_reference: 'pedido-8841' });
     }
     expect(new Set(events.map((e) => e.json.id)).size).toBe(3);
@@ -112,7 +112,7 @@ describe('forcing failures', () => {
     expect(receiver.received).toHaveLength(1);
     expect(event!.json.data).toMatchObject({ status: 'failed', previous_status: null, error: { code: null, reason: 'insufficient_balance' } });
     expect(typeof event!.json.data.error.title).toBe('string');
-    expect(Object.keys(event!.json.data)).toEqual(['message_id', 'contact_id', 'device_id', 'status', 'previous_status', 'error', 'occurred_at', 'client_reference']);
+    expect(Object.keys(event!.json.data)).toEqual(['message_id', 'contact_id', 'device_id', 'status', 'previous_status', 'error', 'occurred_at', 'client_reference', 'workspace_id']);
     const lookup = await api.call('GET', `/api/v1/contacts/2001/messages/${res.body.message.id}`);
     expect(lookup.body.error).toEqual(event!.json.data.error);
   });

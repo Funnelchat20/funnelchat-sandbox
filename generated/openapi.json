@@ -16920,6 +16920,158 @@
     "x-fc-proposito": "Sirve para ver los mensajes que se enviaron a un grupo y de qué envío programado salió cada uno.",
     "x-fc-domain": "communities",
     "x-fc-permission": "communities:read"
+   },
+   "post": {
+    "operationId": "pendingSandboxGroups.messages.send",
+    "summary": "Send a message to a group now",
+    "description": "Asynchronous: answers `202` with `action_id`; follow it with `GET /api/v1/groups/actions/{action}` (`result.message.uid` is the id of the message in WhatsApp). `type`: `text` (with `text`, up to 4096), `image`, `video`, `audio` or `document` (with `media_url`, an `https` URL up to 255 characters with an extension of the type; `caption` only for `image` and `video`, `file_name` only for `document`). A QR number must be an admin of the group; an official one, the group's own number, with the beta of official groups. When it settles, `group_action.completed` or `group_action.failed`.\n\nIt is behind communities' kill switch (`API_GROUP_ACTIONS_ENABLED`): while it is off, every key gets `403 route_not_available`.\n\n**Pending of the spec**: in communities v2.35.5, missing from the portal's snapshot.",
+    "tags": [
+     "GroupActions"
+    ],
+    "x-fc-domain": "communities",
+    "x-fc-permission": "communities:send",
+    "x-fc-pending": "communities-group-messages",
+    "parameters": [
+     {
+      "name": "group",
+      "in": "path",
+      "required": true,
+      "description": "The `uid` of the group (`120363…@g.us`).",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "device_id": {
+          "type": "integer",
+          "description": "The number that sends it: a number of the key's workspace that is in the group."
+         },
+         "type": {
+          "type": "string",
+          "enum": [
+           "text",
+           "image",
+           "video",
+           "audio",
+           "document"
+          ]
+         },
+         "text": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "media_url": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "caption": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "file_name": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "required": [
+         "device_id",
+         "type"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "202": {
+      "description": "Accepted: the send is queued.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "action_id": {
+           "type": "string",
+           "format": "uuid"
+          },
+          "status": {
+           "type": "string",
+           "const": "queued"
+          }
+         },
+         "required": [
+          "action_id",
+          "status"
+         ]
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "`route_not_available` while the group actions are off.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string"
+          },
+          "message": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "error",
+          "message"
+         ]
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "`device_not_found` or `group_not_found`: not of the account or of the key's workspace.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string"
+          },
+          "message": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "error",
+          "message"
+         ]
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "The body, or `device_not_connected`, `provider_unsupported`, `unsupported_group_type`, `device_not_group_number`, `device_not_group_admin`, `window_closed`, `number_restricted`."
+     },
+     "429": {
+      "description": "`too_many_pending_actions`, or Laravel's `Too Many Attempts.` (30 per minute)."
+     }
+    }
    }
   },
   "/api/v1/groups/{group}/scheduled-messages": {
@@ -28505,6 +28657,94 @@
      }
     }
    }
+  },
+  "/api/v1/groups/actions/{action}": {
+   "get": {
+    "operationId": "pendingSandboxGroups.actions.show",
+    "summary": "The state and result of a group action",
+    "description": "`queued` → `running` → `completed` (with `result`) or `failed` (with `reason`). An action of another workspace answers `404 action_not_found`.\n\nIt is behind communities' kill switch (`API_GROUP_ACTIONS_ENABLED`): while it is off, every key gets `403 route_not_available`.\n\n**Pending of the spec**: in communities v2.35.5, missing from the portal's snapshot.",
+    "tags": [
+     "GroupActions"
+    ],
+    "x-fc-domain": "communities",
+    "x-fc-permission": "communities:read",
+    "x-fc-pending": "communities-group-messages",
+    "parameters": [
+     {
+      "name": "action",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "data": {
+           "$ref": "#/components/schemas/PendingSandboxGroupAction"
+          }
+         },
+         "required": [
+          "data"
+         ]
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "`route_not_available` while the group actions are off.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string"
+          },
+          "message": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "error",
+          "message"
+         ]
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "`action_not_found`.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string"
+          },
+          "message": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "error",
+          "message"
+         ]
+        }
+       }
+      }
+     }
+    }
+   }
   }
  },
  "webhooks": {
@@ -28592,6 +28832,14 @@
             ],
             "description": "The number of your account that received the message: the same `device_id` you answer through on that number. `null` if the message has no number.",
             "x-fc-pending": "conversations-received-device"
+           },
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
            }
           }
          }
@@ -28617,7 +28865,8 @@
          "receiver": {
           "phone": "+5491100000001"
          },
-         "device_id": 4521
+         "device_id": 4521,
+         "workspace_id": 37
         }
        }
       }
@@ -28669,7 +28918,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "id": "evt_000000000000000000000003",
@@ -28685,7 +28949,8 @@
           "id": 2001,
           "name": "Contacto de ejemplo",
           "phone": "+5491100000000"
-         }
+         },
+         "workspace_id": 37
         }
        }
       }
@@ -28737,7 +29002,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "id": "evt_000000000000000000000011",
@@ -28755,7 +29035,8 @@
           "processed": 1200,
           "failed": 30,
           "skipped_unreachable": 12
-         }
+         },
+         "workspace_id": 37
         }
        }
       }
@@ -28807,7 +29088,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "id": "evt_000000000000000000000008",
@@ -28834,7 +29130,8 @@
           "id": 6002,
           "name": "En seguimiento",
           "position": 1
-         }
+         },
+         "workspace_id": 37
         }
        }
       }
@@ -28886,7 +29183,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "id": "evt_000000000000000000000004",
@@ -28898,7 +29210,8 @@
           "id": 2001,
           "name": "Contacto de ejemplo",
           "phone": "+5491100000000"
-         }
+         },
+         "workspace_id": 37
         }
        }
       }
@@ -28950,7 +29263,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "id": "evt_000000000000000000000005",
@@ -28966,7 +29294,8 @@
          "assignee": {
           "type": "human",
           "name": "Agente de ejemplo"
-         }
+         },
+         "workspace_id": 37
         }
        }
       }
@@ -29018,7 +29347,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "id": "evt_000000000000000000000006",
@@ -29035,7 +29379,8 @@
           "id": 4001,
           "name": "Etiqueta de ejemplo"
          },
-         "source": "manual"
+         "source": "manual",
+         "workspace_id": 37
         }
        }
       }
@@ -29087,7 +29432,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "id": "evt_000000000000000000000007",
@@ -29101,7 +29461,8 @@
          },
          "reason": "quality_degraded",
          "quality": "YELLOW",
-         "quality_baseline": "GREEN"
+         "quality_baseline": "GREEN",
+         "workspace_id": 37
         }
        }
       }
@@ -29153,7 +29514,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "id": "evt_000000000000000000000009",
@@ -29170,7 +29546,8 @@
           "id": 4001,
           "name": "Etiqueta de ejemplo"
          },
-         "source": "manual"
+         "source": "manual",
+         "workspace_id": 37
         }
        }
       }
@@ -29222,7 +29599,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "id": "evt_000000000000000000000010",
@@ -29235,7 +29627,8 @@
           "name": "Contacto de ejemplo",
           "phone": "+5491100000000",
           "email": "contacto@example.com"
-         }
+         },
+         "workspace_id": 37
         }
        }
       }
@@ -29287,7 +29680,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "id": "evt_000000000000000000000012",
@@ -29303,7 +29711,8 @@
          },
          "previous_status": "PENDING",
          "status": "APPROVED",
-         "reason": null
+         "reason": null,
+         "workspace_id": 37
         }
        }
       }
@@ -29355,7 +29764,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "id": "evt_000000000000000000000013",
@@ -29372,7 +29796,8 @@
           "name": "Contacto de ejemplo",
           "phone": "+5491100000000"
          },
-         "reason": "execution_error"
+         "reason": "execution_error",
+         "workspace_id": 37
         }
        }
       }
@@ -29424,7 +29849,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "id": "evt_000000000000000000000002",
@@ -29433,7 +29873,8 @@
         "occurred_at": "2026-10-01T12:00:00Z",
         "data": {
          "subscription": "00000000-0000-4000-8000-000000000001",
-         "sent_at": "2026-10-01T12:00:00Z"
+         "sent_at": "2026-10-01T12:00:00Z",
+         "workspace_id": 37
         }
        }
       }
@@ -29492,7 +29933,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "id": "evt_00000000000000000000000000000001",
@@ -29509,7 +29965,8 @@
           "uuid": "00000000-0000-4000-8000-000000000001",
           "name": "Campaña de ejemplo"
          },
-         "source": "created"
+         "source": "created",
+         "workspace_id": 37
         }
        }
       }
@@ -29568,7 +30025,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "id": "evt_00000000000000000000000000000002",
@@ -29587,7 +30059,8 @@
           "identity": "+5491100000000",
           "identity_type": "phone",
           "name": "Ana Pérez"
-         }
+         },
+         "workspace_id": 37
         }
        }
       }
@@ -29646,7 +30119,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "id": "evt_00000000000000000000000000000003",
@@ -29665,7 +30153,8 @@
           "identity": "+5491100000000",
           "identity_type": "phone",
           "name": "Ana Pérez"
-         }
+         },
+         "workspace_id": 37
         }
        }
       }
@@ -29724,7 +30213,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "id": "evt_00000000000000000000000000000004",
@@ -29742,7 +30246,8 @@
           "failed": 1,
           "partially_failed": 2
          },
-         "occurrence": 1
+         "occurrence": 1,
+         "workspace_id": 37
         }
        }
       }
@@ -29801,7 +30306,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "id": "evt_00000000000000000000000000000005",
@@ -29816,7 +30336,8 @@
          "campaign": {
           "uuid": "00000000-0000-4000-8000-000000000001"
          },
-         "reason": "admin_access_lost"
+         "reason": "admin_access_lost",
+         "workspace_id": 37
         }
        }
       }
@@ -29875,7 +30396,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "id": "evt_00000000000000000000000000000006",
@@ -29890,7 +30426,8 @@
          "campaign": {
           "uuid": "00000000-0000-4000-8000-000000000001"
          },
-         "reason": "access_restored"
+         "reason": "access_restored",
+         "workspace_id": 37
         }
        }
       }
@@ -29949,7 +30486,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "id": "evt_00000000000000000000000000000007",
@@ -29966,7 +30518,8 @@
          },
          "reason": "device_disconnected",
          "partial": false,
-         "occurrence": 1
+         "occurrence": 1,
+         "workspace_id": 37
         }
        }
       }
@@ -30025,7 +30578,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "id": "evt_00000000000000000000000000000008",
@@ -30050,7 +30618,8 @@
            "Opción A"
           ],
           "rsvp": null
-         }
+         },
+         "workspace_id": 37
         }
        }
       }
@@ -30109,7 +30678,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "id": "evt_00000000000000000000000000000009",
@@ -30122,7 +30706,8 @@
           "name": "Campaña de ejemplo"
          },
          "from": "active",
-         "to": "paused"
+         "to": "paused",
+         "workspace_id": 37
         }
        }
       }
@@ -30181,7 +30766,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "id": "evt_0000000000000000000000000000000a",
@@ -30203,7 +30803,8 @@
           "failed": 0,
           "skipped": 1,
           "cancelled": 0
-         }
+         },
+         "workspace_id": 37
         }
        }
       }
@@ -30262,7 +30863,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "id": "evt_0000000000000000000000000000000b",
@@ -30286,7 +30902,8 @@
          },
          "options": [
           "Opción A"
-         ]
+         ],
+         "workspace_id": 37
         }
        }
       }
@@ -30345,7 +30962,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "id": "evt_0000000000000000000000000000000c",
@@ -30365,7 +30997,8 @@
          "invite_link": "https://chat.whatsapp.com/EjemploNuevo0000000000001",
          "previous_invite_link": "https://chat.whatsapp.com/EjemploAnterior000000000001",
          "trigger": "automatic",
-         "recovered": false
+         "recovered": false,
+         "workspace_id": 37
         }
        }
       }
@@ -30424,7 +31057,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "id": "evt_0000000000000000000000000000000d",
@@ -30442,7 +31090,8 @@
           "name": "Campaña de ejemplo"
          },
          "reason": "http_404",
-         "renewal_attempted": true
+         "renewal_attempted": true,
+         "workspace_id": 37
         }
        }
       }
@@ -30501,7 +31150,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "id": "evt_0000000000000000000000000000000e",
@@ -30510,7 +31174,8 @@
         "occurred_at": "2026-10-01T12:00:00Z",
         "data": {
          "subscription": "00000000-0000-4000-8000-00000000000c",
-         "sent_at": "2026-10-01T12:00:00Z"
+         "sent_at": "2026-10-01T12:00:00Z",
+         "workspace_id": 37
         }
        }
       }
@@ -30630,6 +31295,14 @@
              "null"
             ],
             "description": "La `client_reference` que mandaste en el envío, o `null`."
+           },
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
            }
           },
           "required": [
@@ -30661,7 +31334,8 @@
           "reason": null
          },
          "occurred_at": "2026-10-01T12:00:00Z",
-         "client_reference": "pedido-1001"
+         "client_reference": "pedido-1001",
+         "workspace_id": 37
         }
        }
       }
@@ -30739,6 +31413,14 @@
             ],
             "description": "The sign-up link of this connection, or `null`. Optional until accounts deploys it.",
             "x-fc-pending": "accounts-alta-de-numeros"
+           },
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
            }
           },
           "required": [
@@ -30762,7 +31444,8 @@
           "external_reference": "cliente-8841"
          },
          "connected_at": "2026-10-22T03:00:00+00:00",
-         "connect_link_id": 812
+         "connect_link_id": 812,
+         "workspace_id": 37
         }
        }
       }
@@ -30853,6 +31536,14 @@
             ],
             "description": "The sign-up link that connected this number last, or `null`. Optional until accounts deploys it.",
             "x-fc-pending": "accounts-alta-de-numeros"
+           },
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
            }
           },
           "required": [
@@ -30877,7 +31568,8 @@
          },
          "disconnected_at": "2026-10-22T03:00:00+00:00",
          "reason": "meta_account_not_registered",
-         "connect_link_id": null
+         "connect_link_id": null,
+         "workspace_id": 37
         }
        }
       }
@@ -30896,12 +31588,28 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "data": {
          "amount_cents": 2990,
-         "currency": "USD"
+         "currency": "USD",
+         "workspace_id": 37
         }
        }
       }
@@ -30920,7 +31628,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        }
       }
      }
@@ -30938,13 +31661,29 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "data": {
          "charge_date": "2026-11-05T00:00:00Z",
          "amount_cents": 2990,
-         "currency": "USD"
+         "currency": "USD",
+         "workspace_id": 37
         }
        }
       }
@@ -30963,7 +31702,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        }
       }
      }
@@ -30981,11 +31735,27 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "data": {
-         "trial_ends_at": "2026-10-04T00:00:00Z"
+         "trial_ends_at": "2026-10-04T00:00:00Z",
+         "workspace_id": 37
         }
        }
       }
@@ -31004,11 +31774,27 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "data": {
-         "renews_at": "2026-11-05T00:00:00Z"
+         "renews_at": "2026-11-05T00:00:00Z",
+         "workspace_id": 37
         }
        }
       }
@@ -31027,11 +31813,27 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "data": {
-         "access_until": "2026-11-05T00:00:00Z"
+         "access_until": "2026-11-05T00:00:00Z",
+         "workspace_id": 37
         }
        }
       }
@@ -31050,13 +31852,29 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "data": {
          "charge_date": "2026-10-08T00:00:00Z",
          "amount_cents": 1990,
-         "currency": "USD"
+         "currency": "USD",
+         "workspace_id": 37
         }
        }
       }
@@ -31075,7 +31893,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        }
       }
      }
@@ -31093,7 +31926,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        }
       }
      }
@@ -31111,7 +31959,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        }
       }
      }
@@ -31129,14 +31992,30 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "data": {
          "used": 8000,
          "limit": 10000,
          "percentage": 80,
-         "cycle_started_at": "2026-10-01T00:00:00Z"
+         "cycle_started_at": "2026-10-01T00:00:00Z",
+         "workspace_id": 37
         }
        }
       }
@@ -31155,7 +32034,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "data": {
@@ -31163,7 +32057,8 @@
          "limit": 10000,
          "percentage": 100,
          "cycle_started_at": "2026-10-01T00:00:00Z",
-         "grace_expires_at": "2026-10-02T12:00:00Z"
+         "grace_expires_at": "2026-10-02T12:00:00Z",
+         "workspace_id": 37
         }
        }
       }
@@ -31182,12 +32077,28 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "data": {
          "contacts_expiring": 1200,
-         "expires_at": "2026-10-08T03:00:00Z"
+         "expires_at": "2026-10-08T03:00:00Z",
+         "workspace_id": 37
         }
        }
       }
@@ -31206,13 +32117,29 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "data": {
          "reason": "mac_grace_expired",
          "grace_started_at": "2026-10-01T12:00:00Z",
-         "grace_expired_at": "2026-10-02T12:00:00Z"
+         "grace_expired_at": "2026-10-02T12:00:00Z",
+         "workspace_id": 37
         }
        }
       }
@@ -31231,7 +32158,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "data": {
@@ -31250,7 +32192,8 @@
          "action": {
           "type": "tipo_de_ejemplo"
          },
-         "reason": "motivo_de_ejemplo"
+         "reason": "motivo_de_ejemplo",
+         "workspace_id": 37
         }
        }
       }
@@ -31269,7 +32212,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "data": {
@@ -31280,7 +32238,8 @@
          "clicks": 120,
          "joins": 80,
          "leaves": 10,
-         "conversion_rate": 0.67
+         "conversion_rate": 0.67,
+         "workspace_id": 37
         }
        }
       }
@@ -31299,7 +32258,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "data": {
@@ -31307,7 +32281,8 @@
           "uuid": "xK9mQz",
           "name": "Campaña de ejemplo"
          },
-         "reason": "none_selectable"
+         "reason": "none_selectable",
+         "workspace_id": 37
         }
        }
       }
@@ -31326,7 +32301,22 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
+           }
+          }
+         }
+        }
        },
        "example": {
         "data": {
@@ -31340,7 +32330,8 @@
           "name": "Campaña de ejemplo"
          },
          "trigger": "participants_limit",
-         "participants": 1024
+         "participants": 1024,
+         "workspace_id": 37
         }
        }
       }
@@ -31416,6 +32407,14 @@
              "null"
             ],
             "description": "The sign-up link that connected this number last, or `null`. Optional until accounts deploys it."
+           },
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
            }
           },
           "required": [
@@ -31439,7 +32438,8 @@
           "external_reference": "cliente-8841"
          },
          "deleted_at": "2026-10-22T03:00:00+00:00",
-         "connect_link_id": 812
+         "connect_link_id": 812,
+         "workspace_id": 37
         }
        }
       }
@@ -31533,6 +32533,14 @@
              "null"
             ],
             "description": "The sign-up link that connected this number last, or `null`. Optional until accounts deploys it."
+           },
+           "workspace_id": {
+            "type": [
+             "integer",
+             "null"
+            ],
+            "description": "The workspace the event belongs to: the one of the subscriptions that get it (a subscription only gets the events of its workspace). `null` only if the account has no workspace.",
+            "x-fc-pending": "accounts-workspaces"
            }
           },
           "required": [
@@ -31560,7 +32568,8 @@
          "previous_state": "available",
          "state": "limited",
          "changed_at": "2026-10-22T03:00:00+00:00",
-         "connect_link_id": 812
+         "connect_link_id": 812,
+         "workspace_id": 37
         }
        }
       }
@@ -40991,6 +42000,124 @@
     "required": [
      "message"
     ]
+   },
+   "PendingSandboxGroupAction": {
+    "type": "object",
+    "description": "A group action by API (communities `ApiGroupActionResource`).",
+    "properties": {
+     "action_id": {
+      "type": "string",
+      "format": "uuid"
+     },
+     "type": {
+      "type": "string",
+      "enum": [
+       "send_message"
+      ]
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "queued",
+       "running",
+       "completed",
+       "failed"
+      ]
+     },
+     "device_id": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "description": "`null` if the number is not of the key's workspace."
+     },
+     "group": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "properties": {
+       "uid": {
+        "type": "string"
+       },
+       "name": {
+        "type": [
+         "string",
+         "null"
+        ]
+       }
+      },
+      "required": [
+       "uid",
+       "name"
+      ]
+     },
+     "result": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "`completed`: `{message: {uid}}`, the id of the message in WhatsApp. `null` before and on a failure.",
+      "properties": {
+       "message": {
+        "type": "object",
+        "properties": {
+         "uid": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        }
+       }
+      }
+     },
+     "reason": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Only when `failed`: `disabled`, `device_not_found`, `group_not_found`, `device_not_connected`, `provider_unsupported`, `unsupported_group_type`, `device_not_group_number`, `device_not_group_admin`, `window_closed`, `number_restricted`, `provider_error`, `internal_error` or `expired`."
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "started_at": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "completed_at": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "failed_at": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     }
+    },
+    "required": [
+     "action_id",
+     "type",
+     "status",
+     "device_id",
+     "group",
+     "result",
+     "reason",
+     "created_at",
+     "started_at",
+     "completed_at",
+     "failed_at"
+    ]
    }
   },
   "responses": {
@@ -41410,7 +42537,7 @@
   "inputs": {
    "spec/funnelchat.json": "8bbbae569b4cab520884db98f28204156c1bd6c629578bee609343c193e0dadb",
    "spec/pending.json": "a14bc4dbc3025d3e958ffda8afd1fa9fdab34af264418060825f3300799aceb0",
-   "spec/pending-sandbox.json": "b2f7c2ccbab7c90f7adf22f8c3cec6700ff647700571dc306c898af8127bb22d"
+   "spec/pending-sandbox.json": "9ec8916ff5f003e76073322cbf871ee5df132ab116a9da2ac9a637ed28da7a6a"
   },
   "snapshot_commit": "0ef4abb008870ed8c7cae49a08900a81e5e57ed8",
   "pending_commit": "88557ce7819c5a4061e84c58053a1b6c49f35ec2",
@@ -41475,6 +42602,8 @@
    "POST /api/v1/connect-links [pending-sandbox.json]",
    "GET /api/v1/connect-links/{link} [pending-sandbox.json]",
    "DELETE /api/v1/connect-links/{link} [pending-sandbox.json]",
+   "POST /api/v1/groups/{group}/messages [pending-sandbox.json]",
+   "GET /api/v1/groups/actions/{action} [pending-sandbox.json]",
    "POST /api/v1/contacts/{contact}/message (cuerpo: file_type, file_name) [pending-sandbox.json]",
    "POST /api/v1/message/send-message (cuerpo: file_type, file_name) [pending-sandbox.json]",
    "PUT /api/v1/devices/{device} (cuerpo: external_reference) [pending-sandbox.json]",
@@ -41490,7 +42619,8 @@
    "webhook message.received (data: device_id) [pending-sandbox.json]",
    "webhook message.status_changed (data: error) [pending-sandbox.json]",
    "webhook device.connected (data: device, connect_link_id) [pending-sandbox.json]",
-   "webhook device.disconnected (data: device, reason, connect_link_id) [pending-sandbox.json]"
+   "webhook device.disconnected (data: device, reason, connect_link_id) [pending-sandbox.json]",
+   "webhook * (data: workspace_id) [pending-sandbox.json]"
   ]
  }
 }

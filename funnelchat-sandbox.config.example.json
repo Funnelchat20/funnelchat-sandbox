@@ -5,7 +5,9 @@
   "rules": { "window": true, "antiblock": true, "rateLimit": true },
   "templateApprovalSeconds": 5,
   "numbers": { "limit": 5, "included": true, "trial": false, "metaConnect": false, "linksPerMinute": 10 },
+  "groupActions": false,
   "publicUrl": null,
+  "workspaces": [{ "name": "Cliente B", "keys": ["2|fc_live_clienteB"] }],
   "subscriptions": [
     {
       "url": "http://localhost:3000/hooks/funnelchat",

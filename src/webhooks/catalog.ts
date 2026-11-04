@@ -1,16 +1,14 @@
 /**
- * The event catalog of accounts in production (spec/catalog.json, transcribed from accounts v1.4.24): it answers
+ * The event catalog of accounts in production (spec/catalog.json, rendered from accounts v1.5.97): it answers
  * `GET /api/v1/webhooks/events` exactly as accounts does, decides which types a subscription accepts, and gives the
  * `data` the sandbox emits by default for each type (`POST /_sandbox/events/{type}`).
  *
- * The `example` of the catalog is what accounts publishes. For two types it is not what communities emits, and the
- * sandbox emits what communities emits (communities v2.34.52 `GroupMessageReceivedEventPublisher`,
- * `GroupReactionAddedEventPublisher`): `message.uid` instead of `message.id`, and every key of the message. For the
- * planned types accounts publishes `example: null`; the sandbox takes their `data` from the spec, if it has them.
- *
- * The sign-up by API (contract of 22-10, A3) is not in accounts' catalog yet: until it is, the sandbox adds
- * `device.deleted` and `device.health_changed` after the other `device.*`, and the new keys of `device.connected`
- * and `device.disconnected` to their examples (the `data` comes from spec/pending-sandbox.json).
+ * The `example` of the catalog is what accounts publishes, with `data.workspace_id` = 37 like every example of
+ * accounts (Q35); when the sandbox emits, `workspace_id` is the workspace the event is routed to. For two types the
+ * example is not what communities emits, and the sandbox emits what communities emits (communities
+ * `GroupMessageReceivedEventPublisher`, `GroupReactionAddedEventPublisher`): `message.uid` instead of `message.id`, and
+ * every key of the message. For the planned types accounts publishes `example: null`; the sandbox takes their `data`
+ * from the spec, if it has them.
  */
 import catalogFile from '../../spec/catalog.json' with { type: 'json' };
 import { exampleFor } from '../openapi/example.js';
@@ -64,54 +62,7 @@ function specData(type: string): unknown {
   return {};
 }
 
-/** The `device.*` events of the sign-up by API, while accounts' catalog lacks them. */
-const PENDING_DEVICE_ENTRIES: Omit<CatalogEntry, 'example'>[] = [
-  {
-    type: 'device.deleted',
-    area: 'accounts',
-    status: 'active',
-    is_critical: false,
-    label: 'Número eliminado',
-    description: 'Uno de los números de WhatsApp de la cuenta se eliminó y liberó su lugar del plan.',
-    subscribable: true,
-  },
-  {
-    type: 'device.health_changed',
-    area: 'accounts',
-    status: 'active',
-    is_critical: false,
-    label: 'Cambió la salud de un número',
-    description: 'Cambió el estado de salud de uno de los números oficiales de la cuenta: disponible, limitado, bloqueado o desconocido.',
-    subscribable: true,
-  },
-];
-
-function envelopeFromSpec(type: string): Envelope | null {
-  for (const [key, item] of Object.entries(spec.webhooks ?? {})) {
-    if (eventTypeOfKey(key) !== type) continue;
-    const example = item.post?.requestBody?.content?.['application/json']?.example;
-    if (isRecord(example) && 'data' in example) return structuredClone(example) as unknown as Envelope;
-  }
-  return null;
-}
-
-function withPendingDeviceEvents(entries: CatalogEntry[]): CatalogEntry[] {
-  const out = entries.map((entry) => {
-    if (entry.type !== 'device.connected' && entry.type !== 'device.disconnected') return entry;
-    // accounts already publishes the new keys: its example wins.
-    const data = entry.example?.data;
-    if (isRecord(data) && isRecord(data.device) && 'connection' in data.device) return entry;
-    const example = envelopeFromSpec(entry.type);
-    return example ? { ...entry, example } : entry;
-  });
-  const missing = PENDING_DEVICE_ENTRIES.filter((pending) => !out.some((entry) => entry.type === pending.type));
-  if (missing.length === 0) return out;
-  const after = out.map((entry) => entry.type.startsWith('device.')).lastIndexOf(true) + 1;
-  out.splice(after, 0, ...missing.map((pending) => ({ ...pending, example: envelopeFromSpec(pending.type) })));
-  return out;
-}
-
-export const catalog: CatalogEntry[] = withPendingDeviceEvents(catalogFile.entries as CatalogEntry[]);
+export const catalog: CatalogEntry[] = catalogFile.entries as CatalogEntry[];
 
 export function catalogEntry(type: string): CatalogEntry | undefined {
   return catalog.find((entry) => entry.type === type);

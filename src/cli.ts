@@ -25,6 +25,7 @@ Options:
       --no-rate-limit            Do not apply the per-number pace.
       --template-approval <s>    Seconds until a new template is approved (default 5; "-" leaves it pending).
       --meta-connect             Turn on the Meta sign-up by link (off by default, like production).
+      --group-actions            Turn on the send to a group by API (off by default, like production).
   -q, --quiet                    No line per request and per delivery.
   -h, --help                     This help.
   -v, --version                  The version.

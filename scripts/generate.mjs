@@ -173,7 +173,7 @@ function requestSchema(merged, op) {
  *   - `responsePatches`: replace responses of an operation of the snapshot while it meets `while`;
  *   - `parameterPatches`: add parameters to an operation of the snapshot, only those it lacks (by name and place);
  *   - `webhookPatches`: set properties of an event's `data` (schema and example), while the event meets
- *     `while` or while its `data` lacks `whileMissing`.
+ *     `while` or while its `data` lacks `whileMissing`. `type: "*"` patches every event.
  */
 function mergeLayer(merged, layer, layerName, report) {
   const tag = (label) => `${label} [${layerName}]`;
@@ -277,7 +277,7 @@ function mergeLayer(merged, layer, layerName, report) {
 
   for (const patch of layer.webhookPatches ?? []) {
     const label = tag(`webhook ${patch.type} (data: ${Object.keys(patch.dataProperties ?? {}).join(', ')})`);
-    const keys = Object.keys(merged.webhooks).filter((key) => eventTypeOfKey(key) === patch.type);
+    const keys = Object.keys(merged.webhooks).filter((key) => patch.type === '*' || eventTypeOfKey(key) === patch.type);
     if (keys.length === 0) {
       report.missing.push(label);
       continue;

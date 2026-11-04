@@ -6,9 +6,13 @@
  *
  * Statuses: `pending` → `completed` | `failed`, or `expired` (past `expires_at`) or `revoked` (`DELETE`). The id is an
  * integer. The raw token is only in the `url` of the create answer; the sandbox keeps its sha256.
+ *
+ * Workspaces (accounts v1.5.97): a link belongs to the workspace of the key that created it, a key only sees the links
+ * of its workspace (another workspace's answers `404`), `device_id` and `same_number_as` only take numbers the key
+ * sees (`422 invalid_reference_device`), and the number a link creates lands in the link's workspace.
  */
 import type { SandboxApp } from '../app.js';
-import { body, listContext, noContent, ok, type HandlerTable } from '../http/context.js';
+import { body, listContext, noContent, ok, type HandlerContext, type HandlerTable } from '../http/context.js';
 import { ApiError, invalidRequest, notFound, RawApiError } from '../http/errors.js';
 import { idempotent } from '../http/idempotency.js';
 import { paginate } from '../http/paginate.js';
@@ -24,12 +28,14 @@ import {
 } from '../numbers/numbers.js';
 import { connectLinkResource } from '../state/resources.js';
 import type { ConnectLink } from '../state/store.js';
+import { sees } from '../state/workspaces.js';
 
 const DEFAULT_EXPIRES_IN_MINUTES = 1440;
 
-function linkOf(app: SandboxApp, id: unknown): ConnectLink {
-  const link = app.store.connectLinks.get(Number(id));
-  if (!link) throw notFound('No encontramos ese link de alta en la cuenta.');
+function linkOf(ctx: HandlerContext, id: unknown): ConnectLink {
+  const link = ctx.app.store.connectLinks.get(Number(id));
+  // A link of another workspace is out of the query: the same 404 as one that does not exist.
+  if (!link || !sees(ctx.workspace, link.workspaceId)) throw notFound('No encontramos ese link de alta en la cuenta.');
   return refreshLink(link);
 }
 
@@ -102,12 +108,12 @@ export const connectLinkHandlers: HandlerTable = {
       const reconnect = present(b.device_id);
       if (reconnect) {
         const device = app.store.devices.get(Number(b.device_id));
-        if (!device) throw invalidReferenceDevice();
+        if (!device || !sees(ctx.workspace, device.workspaceId)) throw invalidReferenceDevice();
         if ((device.kind === 'qr') !== (b.type === 'qr')) {
           throw new ApiError(422, 'connection_type_mismatch', 'El type del link tiene que coincidir con el método del número a reconectar.');
         }
       }
-      const sameNumberAs = present(b.same_number_as) ? checkSameNumber(app, b.same_number_as).id : null;
+      const sameNumberAs = present(b.same_number_as) ? checkSameNumber(app, b.same_number_as, ctx.workspace).id : null;
       // A reconnection, or QR on a number in coexistence, takes no new place.
       if (!reconnect && sameNumberAs === null) checkQuota(app);
       if (openLinks(app) >= OPEN_LINKS_LIMIT) {
@@ -128,6 +134,7 @@ export const connectLinkHandlers: HandlerTable = {
       const minutes = present(b.expires_in_minutes) ? Number(b.expires_in_minutes) : DEFAULT_EXPIRES_IN_MINUTES;
       const link: ConnectLink = {
         id: app.store.ids.connectLink.next(),
+        workspaceId: ctx.workspace.id,
         type: b.type === 'meta' ? 'meta' : 'qr',
         status: 'pending',
         tokenHash: sha256(token),
@@ -157,6 +164,7 @@ export const connectLinkHandlers: HandlerTable = {
   'GET /api/v1/connect-links': (ctx) => {
     const { status, external_reference: reference } = ctx.query;
     const list = [...ctx.app.store.connectLinks.values()]
+      .filter((link) => sees(ctx.workspace, link.workspaceId))
       .map((link) => refreshLink(link))
       .filter((link) => !status || link.status === status)
       .filter((link) => reference === undefined || reference === '' || link.externalReference === String(reference))
@@ -164,10 +172,10 @@ export const connectLinkHandlers: HandlerTable = {
     return ok(paginate(list, listContext(ctx), connectLinkResource));
   },
 
-  'GET /api/v1/connect-links/{link}': (ctx) => ok({ data: connectLinkResource(linkOf(ctx.app, ctx.path.link)) }),
+  'GET /api/v1/connect-links/{link}': (ctx) => ok({ data: connectLinkResource(linkOf(ctx, ctx.path.link)) }),
 
   'DELETE /api/v1/connect-links/{link}': (ctx) => {
-    const link = linkOf(ctx.app, ctx.path.link);
+    const link = linkOf(ctx, ctx.path.link);
     if (link.status !== 'pending') {
       throw new ApiError(409, 'link_not_pending', `El link ya no está pendiente: está ${link.status}.`, { status: link.status });
     }

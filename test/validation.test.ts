@@ -108,12 +108,18 @@ describe('the rules of the real API', () => {
     const closed = await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 3, contact_id: 2001, text: 'hola' });
     expect(closed.status).toBe(422);
     expect(closed.body.error).toBe('window_closed');
-    expect((await api.call('GET', '/api/v1/contacts/2001/meta-window?device_id=3')).body).toEqual({ is_open: false, meta_device_id: null });
+    expect((await api.call('GET', '/api/v1/contacts/2001/meta-window?device_id=3')).body).toEqual({ is_open: false, meta_device_id: null, expires_at: null });
+    // A QR number has no window (conversations v1.19.7).
+    expect((await api.call('GET', '/api/v1/contacts/2001/meta-window?device_id=4')).body).toEqual({ is_open: true, meta_device_id: null, expires_at: null });
 
     expect((await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 4, contact_id: 2001, text: 'hola' })).status).toBe(200);
 
     await api.call('POST', '/_sandbox/inbound/message', { contact_id: 2001, device_id: 3 });
-    expect((await api.call('GET', '/api/v1/contacts/2001/meta-window?device_id=3')).body).toEqual({ is_open: true, meta_device_id: '100000000000003' });
+    expect((await api.call('GET', '/api/v1/contacts/2001/meta-window?device_id=3')).body).toEqual({
+      is_open: true,
+      meta_device_id: '100000000000003',
+      expires_at: expect.stringMatching(/\+00:00$/),
+    });
     expect((await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 3, contact_id: 2001, text: 'hola' })).status).toBe(200);
 
     // An incoming message from 25 hours ago does not open it.

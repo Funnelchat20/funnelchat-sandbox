@@ -13,6 +13,13 @@ export interface PresetSubscription {
   id?: string;
 }
 
+/** A workspace created at start (and after every reset) besides the default one, with fixed keys. */
+export interface PresetWorkspace {
+  name: string;
+  /** Keys of that workspace (`<id>|fc_live_<letters and digits>`). Any other key belongs to the default workspace. */
+  keys: string[];
+}
+
 export interface SandboxConfig {
   port: number;
   host: string;
@@ -38,8 +45,10 @@ export interface SandboxConfig {
   };
   /** Seconds until a template created through the API goes from `PENDING` to `APPROVED`. `null`: it stays pending. */
   templateApprovalSeconds: number | null;
-  /** Subscriptions to create at start and after every reset. */
+  /** Subscriptions to create at start and after every reset, in the default workspace. */
   subscriptions: PresetSubscription[];
+  /** Workspaces to create at start and after every reset, besides the default one (ids 2, 3… in this order). */
+  workspaces: PresetWorkspace[];
   /**
    * The number quota of the account and the Meta sign-up switch; `POST /_sandbox/numbers` changes them while it runs.
    * QR and Meta of the same phone count once; the two example numbers already use two places.
@@ -60,6 +69,12 @@ export interface SandboxConfig {
     linksPerMinute: number;
   };
   /**
+   * The group actions by API (`POST /groups/{group}/messages`, `GET /groups/actions/{action}`). `false` (the default,
+   * like production, where communities' kill switch `API_GROUP_ACTIONS_ENABLED` is off): every key gets
+   * `403 route_not_available`. Turn it on to test the send to a group.
+   */
+  groupActions: boolean;
+  /**
    * Where the sign-up page is reachable, for the `url` of a link (`<publicUrl>/connect/<token>`). Never taken from the
    * request's `Host`. `null`: the address the sandbox listens on.
    */
@@ -69,6 +84,9 @@ export interface SandboxConfig {
   /** One line per request and per delivery on the console. */
   log: boolean;
 }
+
+/** The shape of a key: `<id>|fc_live_<letters and digits>`. */
+export const SANDBOX_KEY = /^\d+\|fc_live_[A-Za-z0-9]+$/;
 
 export const DEFAULT_PORT = 4010;
 export const DEFAULT_CONFIG_FILE = 'funnelchat-sandbox.config.json';
@@ -82,7 +100,9 @@ export function defaultConfig(): SandboxConfig {
     rules: { window: true, antiblock: true, rateLimit: true },
     templateApprovalSeconds: 5,
     subscriptions: [],
+    workspaces: [],
     numbers: { limit: 5, included: true, trial: false, metaConnect: false, linksPerMinute: 10 },
+    groupActions: false,
     publicUrl: null,
     historyLimit: 200,
     log: true,
@@ -168,6 +188,22 @@ export function mergeConfig(base: SandboxConfig, input: ConfigInput): SandboxCon
       return structuredClone(s) as unknown as PresetSubscription;
     });
   }
+  if (input.workspaces !== undefined) {
+    if (!Array.isArray(input.workspaces)) throw new ConfigError('workspaces must be a list.');
+    const seen = new Set<string>();
+    out.workspaces = input.workspaces.map((w, i) => {
+      if (!isRecord(w) || typeof w.name !== 'string' || w.name.trim() === '') throw new ConfigError(`workspaces[${i}] needs name (a string).`);
+      const keys = w.keys === undefined ? [] : w.keys;
+      if (!Array.isArray(keys) || keys.some((k) => typeof k !== 'string' || !SANDBOX_KEY.test(k))) {
+        throw new ConfigError(`workspaces[${i}].keys must be a list of keys like 2|fc_live_cliente.`);
+      }
+      for (const key of keys as string[]) {
+        if (seen.has(key)) throw new ConfigError(`The key ${key} is in two workspaces.`);
+        seen.add(key);
+      }
+      return { name: w.name, keys: [...(keys as string[])] };
+    });
+  }
   if (input.numbers !== undefined) {
     const n = input.numbers;
     if (!isRecord(n)) throw new ConfigError('numbers must be an object {limit, included, trial, metaConnect, linksPerMinute}.');
@@ -180,6 +216,7 @@ export function mergeConfig(base: SandboxConfig, input: ConfigInput): SandboxCon
       if (n[key] !== undefined) out.numbers[key] = Boolean(n[key]);
     }
   }
+  if (input.groupActions !== undefined) out.groupActions = Boolean(input.groupActions);
   if (input.publicUrl !== undefined) {
     if (input.publicUrl !== null && (typeof input.publicUrl !== 'string' || !/^https?:\/\/[^/]+/.test(input.publicUrl))) {
       throw new ConfigError('publicUrl must be an http(s) URL, like https://sandbox.example.com, or null.');
@@ -307,6 +344,9 @@ export function parseArgs(argv: string[]): CliArgs {
       }
       case '--meta-connect':
         o.numbers = { ...o.numbers, metaConnect: true };
+        break;
+      case '--group-actions':
+        o.groupActions = true;
         break;
       case '-q':
       case '--quiet':

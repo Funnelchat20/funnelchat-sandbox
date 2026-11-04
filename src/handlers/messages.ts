@@ -4,6 +4,10 @@
  * As conversations v1.18.10 answers them in production: with an API key, every send that registers messages answers
  * `200` right away with the queued message (`{message: {...}}`, `{messages: [...]}` for cards, `message` in each
  * forward item; `ApiKeySendResponse`, `PublicMessageResource`), after the rules of each route, in their order.
+ *
+ * Workspaces (conversations v1.19.7): a contact or a number of another workspace answers `404 {"message": ""}` (a
+ * note only checks the account), a template of another workspace is not listed, and a template created by a key
+ * lands in its workspace.
  */
 import type { SandboxApp } from '../app.js';
 import { body, listContext, noContent, ok, type HandlerContext, type HandlerResult, type HandlerTable } from '../http/context.js';
@@ -24,7 +28,8 @@ import {
 } from '../messaging/rules.js';
 import { historyMessage, publicMessage, templateResource } from '../state/resources.js';
 import type { Contact, Device, Message, Template } from '../state/store.js';
-import { getContact } from './contacts.js';
+import { sees } from '../state/workspaces.js';
+import { getContact, outsideWorkspace } from './contacts.js';
 
 export function getDevice(app: SandboxApp, id: unknown, field = 'device_id'): Device {
   const device = app.store.devices.get(Number(id));
@@ -71,6 +76,8 @@ export interface SendInput {
  */
 export function send(ctx: HandlerContext, input: SendInput): Message[] {
   const { app } = ctx;
+  // `ApiKeySendAcceptor::resolve()`: a number of another workspace, before anything else of the send.
+  if (!sees(ctx.workspace, input.device.workspaceId)) throw outsideWorkspace();
   const check: SendCheck = {
     device: input.device,
     contact: input.contact,
@@ -163,9 +170,10 @@ function renderTemplate(template: Template, variables: unknown): string {
   return template.body.replace(PLACEHOLDER, (_, n: string) => String(values[Number(n) - 1]));
 }
 
-function getTemplate(app: SandboxApp, id: unknown): Template {
-  const template = app.store.templates.get(Number(id));
+function getTemplate(ctx: HandlerContext, id: unknown): Template {
+  const template = ctx.app.store.templates.get(Number(id));
   if (!template) throw notFound('La plantilla no existe en esta cuenta.');
+  if (!sees(ctx.workspace, template.workspaceId)) throw outsideWorkspace();
   return template;
 }
 
@@ -173,6 +181,9 @@ function sendTemplate(ctx: HandlerContext): HandlerResult {
   const b = body(ctx);
   const reference = clientReference(b);
   // `template_not_found` goes before everything else (`MessageTemplateController`).
+  // A number of another workspace answers 404 before anything else (`MessageTemplateController`, v1.19.7).
+  const own = ctx.app.store.devices.get(Number(ctx.path.device));
+  if (own && !sees(ctx.workspace, own.workspaceId)) throw outsideWorkspace();
   const template = ctx.app.store.templates.get(Number(ctx.path.template_id ?? ctx.path.template));
   if (!template) throw new ApiError(404, 'template_not_found', 'No se envió: la plantilla no existe en tu cuenta. Revisa el identificador de la plantilla.');
   const device = ctx.app.store.devices.get(Number(ctx.path.device));
@@ -200,13 +211,13 @@ function sendTemplate(ctx: HandlerContext): HandlerResult {
 }
 
 export const messageHandlers: HandlerTable = {
-  'POST /api/v1/contacts/{contact}/message': (ctx) => sendToContact(ctx, getContact(ctx.app, ctx.path.contact), 'conversation'),
+  'POST /api/v1/contacts/{contact}/message': (ctx) => sendToContact(ctx, getContact(ctx.app, ctx.path.contact, ctx.workspace), 'conversation'),
 
   'POST /api/v1/message/send-message': (ctx) => {
     const b = body(ctx);
     const contact = ctx.app.store.contacts.get(Number(b.contact_id));
-    // `MessageController`: its own bodies, `{status: "error", error}`.
-    if (!contact) throw new RawApiError(404, { status: 'error', error: 'Contacto no encontrado.' });
+    // `MessageController`: its own bodies, `{status: "error", error}`; a contact of another workspace, the same 404.
+    if (!contact || !sees(ctx.workspace, contact.workspaceId)) throw new RawApiError(404, { status: 'error', error: 'Contacto no encontrado.' });
     if (!ctx.app.store.devices.has(Number(b.device_id))) throw new RawApiError(403, { status: 'error', error: 'No autorizado' });
     return sendToContact(ctx, contact, 'direct');
   },
@@ -216,7 +227,7 @@ export const messageHandlers: HandlerTable = {
   'POST /api/v1/devices/{device}/templates/{template_id}/send-template': sendTemplate,
 
   'POST /api/v1/contacts/{contact}/message/contact-card': (ctx) => {
-    const contact = getContact(ctx.app, ctx.path.contact);
+    const contact = getContact(ctx.app, ctx.path.contact, ctx.workspace);
     const b = body(ctx);
     const reference = clientReference(b);
     const device = getDevice(ctx.app, b.device_id);
@@ -238,7 +249,7 @@ export const messageHandlers: HandlerTable = {
   },
 
   'POST /api/v1/contacts/{contact}/messages/{message}/forward': (ctx) => {
-    const origin = getContact(ctx.app, ctx.path.contact);
+    const origin = getContact(ctx.app, ctx.path.contact, ctx.workspace);
     const source = ctx.app.store.messages.get(Number(ctx.path.message));
     if (!source || source.contactId !== origin.id) throw objectNotFound();
     const b = body(ctx);
@@ -273,7 +284,7 @@ export const messageHandlers: HandlerTable = {
   },
 
   'PUT /api/v1/contacts/{contact}/messages/{message}/reaction': (ctx) => {
-    const contact = getContact(ctx.app, ctx.path.contact);
+    const contact = getContact(ctx.app, ctx.path.contact, ctx.workspace);
     const message = ctx.app.store.messages.get(Number(ctx.path.message));
     if (!message || message.contactId !== contact.id) throw objectNotFound();
     message.reactions = [...message.reactions.filter((r) => !r.own), { emoji: String(body(ctx).emoji), own: true }];
@@ -281,7 +292,7 @@ export const messageHandlers: HandlerTable = {
   },
 
   'DELETE /api/v1/contacts/{contact}/messages/{message}/reaction': (ctx) => {
-    const contact = getContact(ctx.app, ctx.path.contact);
+    const contact = getContact(ctx.app, ctx.path.contact, ctx.workspace);
     const message = ctx.app.store.messages.get(Number(ctx.path.message));
     if (!message || message.contactId !== contact.id) throw objectNotFound();
     message.reactions = message.reactions.filter((r) => !r.own);
@@ -290,7 +301,7 @@ export const messageHandlers: HandlerTable = {
 
   'GET /api/v1/contacts/{contactId}/messages': (ctx) => {
     const contact = ctx.app.store.contacts.get(Number(ctx.path.contactId));
-    if (!contact) throw new RawApiError(404, { message: 'Contacto no encontrado.' });
+    if (!contact || !sees(ctx.workspace, contact.workspaceId)) throw new RawApiError(404, { message: 'Contacto no encontrado.' });
     const since = ctx.query.updated_since ? new Date(String(ctx.query.updated_since)) : null;
     const list = ctx.app.store
       .contactMessages(contact.id)
@@ -302,6 +313,7 @@ export const messageHandlers: HandlerTable = {
   // One message by id (`ShowMessageController`): every refusal is the same 404.
   'GET /api/v1/contacts/{contact}/messages/{message}': (ctx) => {
     const contact = ctx.app.store.contacts.get(Number(ctx.path.contact));
+    if (contact && !sees(ctx.workspace, contact.workspaceId)) throw outsideWorkspace();
     const message = ctx.app.store.messages.get(Number(ctx.path.message));
     if (!contact || !message || message.contactId !== contact.id) throw objectNotFound();
     return ok(publicMessage(message));
@@ -314,6 +326,7 @@ export const messageHandlers: HandlerTable = {
     const list = [...ctx.app.store.templates.values()]
       .filter(
         (t) =>
+          sees(ctx.workspace, t.workspaceId) &&
           (!q.name || t.name.includes(String(q.name))) &&
           (!q.uid || t.uid === String(q.uid)) &&
           (!q.status || t.status === q.status) &&
@@ -330,12 +343,13 @@ export const messageHandlers: HandlerTable = {
     const b = body(ctx);
     const { app } = ctx;
     if (!/^[a-z0-9_]+$/.test(String(b.name))) throw fieldError('name', 'El nombre solo puede tener minúsculas, números y guiones bajos.');
-    const device = [...app.store.devices.values()].find((d) => d.kind === 'cloud');
+    const device = [...app.store.devices.values()].find((d) => d.kind === 'cloud' && sees(ctx.workspace, d.workspaceId));
     if (!device) throw fieldError('name', 'La cuenta no tiene un número oficial para registrar plantillas.');
     const now = new Date();
     const id = app.store.ids.template.next();
     const template: Template = {
       id,
+      workspaceId: ctx.workspace.id,
       uid: String(1_000_000_000 + id),
       name: String(b.name),
       body: String(b.body),
@@ -366,10 +380,10 @@ export const messageHandlers: HandlerTable = {
     return ok(templateResource(template));
   },
 
-  'GET /api/v1/templates/{template}': (ctx) => ok(templateResource(getTemplate(ctx.app, ctx.path.template))),
+  'GET /api/v1/templates/{template}': (ctx) => ok(templateResource(getTemplate(ctx, ctx.path.template))),
 
   'PUT /api/v1/templates/{template}': (ctx) => {
-    const template = getTemplate(ctx.app, ctx.path.template);
+    const template = getTemplate(ctx, ctx.path.template);
     const b = body(ctx);
     getDevice(ctx.app, b.device_id);
     template.category = String(b.category);
@@ -384,12 +398,12 @@ export const messageHandlers: HandlerTable = {
   },
 
   'GET /api/v1/templates/{template}/quick-reply-buttons': (ctx) => {
-    const template = getTemplate(ctx.app, ctx.path.template);
+    const template = getTemplate(ctx, ctx.path.template);
     return ok({ data: (template.buttons ?? []).filter((b) => b.type === 'QUICK_REPLY').map((b) => ({ text: b.text ?? '' })) });
   },
 
   'DELETE /api/v1/devices/{device}/templates/{template}': (ctx) => {
-    const template = getTemplate(ctx.app, ctx.path.template);
+    const template = getTemplate(ctx, ctx.path.template);
     if (template.deviceId !== Number(ctx.path.device)) throw notFound('La plantilla no es de este número.');
     ctx.app.store.templates.delete(template.id);
     return noContent();
@@ -403,10 +417,9 @@ export function setTemplateStatus(app: SandboxApp, template: Template, status: T
   template.status = status;
   template.rejectionReason = reason;
   template.updatedAt = new Date();
-  app.webhooks.emit('template.status_changed', {
-    template: { id: template.id, uid: template.uid, name: template.name, category: template.category },
-    previous_status: previous,
-    status,
-    reason,
-  });
+  app.webhooks.emit(
+    'template.status_changed',
+    { template: { id: template.id, uid: template.uid, name: template.name, category: template.category }, previous_status: previous, status, reason },
+    { workspaceId: template.workspaceId },
+  );
 }

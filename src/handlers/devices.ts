@@ -6,9 +6,12 @@
  * The phone of a number created by QR arrives when it is scanned; in the sandbox, with
  * `POST /_sandbox/devices/{id}/connect`. The optional `country` (two letters, the country of the phone, where the
  * WhatsApp session is opened from) is checked and has no other effect in the sandbox.
+ *
+ * Workspaces (accounts v1.5.97): a key lists and reaches only the numbers of its workspace (and, from the default one,
+ * those without a workspace); a number of another workspace answers `404`, and a number created by a key lands in its
+ * workspace.
  */
-import type { SandboxApp } from '../app.js';
-import { body, listContext, ok, type HandlerTable } from '../http/context.js';
+import { body, listContext, ok, type HandlerContext, type HandlerTable } from '../http/context.js';
 import { ApiError, RawApiError } from '../http/errors.js';
 import { idempotent } from '../http/idempotency.js';
 import { paginate } from '../http/paginate.js';
@@ -16,6 +19,7 @@ import { checkPendingNumber, checkQuota, checkSameNumber, createDevice, deleteDe
 import { fakeQrDataUri } from '../numbers/qr.js';
 import { deviceResource } from '../state/resources.js';
 import type { Device } from '../state/store.js';
+import { sees } from '../state/workspaces.js';
 
 /**
  * Seconds the QR is good for: ask for it again after them (0 once connected). accounts serves 5, the cadence of the
@@ -23,10 +27,12 @@ import type { Device } from '../state/store.js';
  */
 export const QR_EXPIRES_IN = 5;
 
-function deviceOf(app: SandboxApp, id: unknown): Device {
-  const device = app.store.devices.get(Number(id));
+export function deviceOf(ctx: HandlerContext, id: unknown): Device {
+  const device = ctx.app.store.devices.get(Number(id));
   // accounts `bootstrap/app.php`: the 404 of a model, in English and without `error`.
   if (!device) throw new RawApiError(404, { message: 'Object not found' });
+  // A number of the account in another workspace: `DevicePolicy` answers `denyAsNotFound()`, Laravel's 404.
+  if (!sees(ctx.workspace, device.workspaceId)) throw new RawApiError(404, { message: 'Not Found' });
   return device;
 }
 
@@ -38,16 +44,17 @@ export const deviceHandlers: HandlerTable = {
   'GET /api/v1/devices': (ctx) => {
     const reference = ctx.query.external_reference;
     const list = [...ctx.app.store.devices.values()]
+      .filter((d) => sees(ctx.workspace, d.workspaceId))
       .filter((d) => reference === undefined || reference === '' || d.externalReference === String(reference))
       .sort((a, b) => a.id - b.id);
     return ok(paginate(list, listContext(ctx), deviceResource));
   },
 
-  'GET /api/v1/devices/{device}': (ctx) => ok(deviceResource(deviceOf(ctx.app, ctx.path.device))),
+  'GET /api/v1/devices/{device}': (ctx) => ok(deviceResource(deviceOf(ctx, ctx.path.device))),
 
   // What the sandbox keeps: the alias and the external reference. The rest of the body is accepted and ignored.
   'PUT /api/v1/devices/{device}': (ctx) => {
-    const device = deviceOf(ctx.app, ctx.path.device);
+    const device = deviceOf(ctx, ctx.path.device);
     const b = body(ctx);
     if (typeof b.alias === 'string' && b.alias.trim() !== '') device.alias = b.alias;
     if ('external_reference' in b) device.externalReference = optionalText(b.external_reference);
@@ -56,7 +63,7 @@ export const deviceHandlers: HandlerTable = {
 
   // `200` with an empty body, as today.
   'DELETE /api/v1/devices/{device}': (ctx) => {
-    deleteDevice(ctx.app, deviceOf(ctx.app, ctx.path.device));
+    deleteDevice(ctx.app, deviceOf(ctx, ctx.path.device));
     return { status: 200 };
   },
 
@@ -65,13 +72,14 @@ export const deviceHandlers: HandlerTable = {
       const b = body(ctx);
       // QR on a number in coexistence takes no new place; any other number checks the quota, and the pool keeps one
       // unconnected QR number per account.
-      const target = b.same_number_as === undefined || b.same_number_as === null ? null : checkSameNumber(ctx.app, b.same_number_as);
+      const target = b.same_number_as === undefined || b.same_number_as === null ? null : checkSameNumber(ctx.app, b.same_number_as, ctx.workspace);
       if (!target) {
         checkQuota(ctx.app);
         checkPendingNumber(ctx.app);
       }
       const device = createDevice(ctx.app, {
         connection: 'qr',
+        workspaceId: ctx.workspace.id,
         alias: optionalText(b.alias) ?? target?.alias ?? null,
         number: target?.number ?? null,
         externalReference: optionalText(b.external_reference) ?? target?.externalReference ?? null,
@@ -81,7 +89,7 @@ export const deviceHandlers: HandlerTable = {
 
   // `Cache-Control: no-store`, as accounts: a QR read a few seconds ago may no longer link, so nothing may keep it.
   'GET /api/v1/devices/{device}/qr': (ctx) => {
-    const device = deviceOf(ctx.app, ctx.path.device);
+    const device = deviceOf(ctx, ctx.path.device);
     if (device.kind !== 'qr') throw new ApiError(422, 'provider_unsupported', 'El código QR solo existe para números por QR.');
     return {
       status: 200,

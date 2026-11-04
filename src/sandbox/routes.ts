@@ -7,6 +7,7 @@ import { parseEdge } from '../http/edge.js';
 import { ApiError, EDGE_ERRORS, fieldError, notFound, validationFailed } from '../http/errors.js';
 import { createContact, eventContact } from '../handlers/contacts.js';
 import { completeForm } from '../handlers/forms.js';
+import { createGroup, participantData } from '../handlers/groups.js';
 import { setTemplateStatus } from '../handlers/messages.js';
 import { createMessage, transition } from '../messaging/lifecycle.js';
 import {
@@ -23,7 +24,8 @@ import {
 } from '../numbers/numbers.js';
 import { FAILURE_REASONS, REJECTIONS, failureFor, parseForced } from '../messaging/rules.js';
 import { connectLinkResource, contactResource, deliveryResource, deviceResource, publicMessage } from '../state/resources.js';
-import type { ArmedFailure, Contact, HealthState, TemplateStatus } from '../state/store.js';
+import type { ArmedFailure, Contact, Group, HealthState, TemplateStatus } from '../state/store.js';
+import { createWorkspace, mintKey, workspaceView } from '../state/workspaces.js';
 import { digits, isRecord, iso8601, toE164 } from '../util.js';
 import { catalog, catalogEntry, emittedData } from '../webhooks/catalog.js';
 import { panelHtml } from './panel.js';
@@ -85,7 +87,8 @@ function numbersState(app: SandboxApp): Record<string, unknown> {
 function state(app: SandboxApp): Record<string, unknown> {
   const { store, config } = app;
   return {
-    devices: [...store.devices.values()].map(deviceResource),
+    workspaces: [...store.workspaces.values()].map((w) => workspaceView(store, w)),
+    devices: [...store.devices.values()].map((d) => ({ ...deviceResource(d), workspace_id: d.workspaceId ?? store.defaultWorkspace.id })),
     numbers: numbersState(app),
     // Never the tokens: they are only in the `url` of the create answer.
     connect_links: [...store.connectLinks.values()].map((link) => connectLinkResource(refreshLink(link))),
@@ -97,7 +100,10 @@ function state(app: SandboxApp): Record<string, unknown> {
       templates: store.templates.size,
       forms: store.formFamilies.size,
       form_runs: store.formRuns.size,
+      groups: store.groups.size,
+      group_actions: store.groupActions.size,
       subscriptions: store.subscriptions.size,
+      events: store.events.length,
       deliveries: store.deliveries.length,
       requests: store.requests.length,
       scheduled_tasks: app.scheduler.pending,
@@ -105,6 +111,7 @@ function state(app: SandboxApp): Record<string, unknown> {
     // Never the secrets: they were shown once, when the subscription was created or rotated.
     subscriptions: [...store.subscriptions.values()].map((s) => ({
       id: s.id,
+      workspace_id: s.workspaceId ?? store.defaultWorkspace.id,
       url: s.url,
       events: s.events,
       status: s.status,
@@ -147,7 +154,7 @@ function inboundMessage(app: SandboxApp, req: SandboxRequest): SandboxResponse {
   else {
     const phone = digits(b.phone);
     if (!phone) throw fieldError('phone', 'Send phone (the phone of who writes) or contact_id.');
-    contact = app.store.findContactByPhone(phone) ?? createContact(app, { phone, name: b.name ?? null });
+    contact = app.store.findContactByPhone(phone) ?? createContact(app, { workspaceId: device.workspaceId, phone, name: b.name ?? null });
   }
   const occurredAt = b.occurred_at ? new Date(String(b.occurred_at)) : new Date();
   if (Number.isNaN(occurredAt.getTime())) throw fieldError('occurred_at', 'occurred_at must be an ISO 8601 date.');
@@ -170,7 +177,8 @@ function inboundMessage(app: SandboxApp, req: SandboxRequest): SandboxResponse {
       // The number that received the message (conversations v1.18.10 `MessageReceivedPayload`).
       device_id: device.id,
     },
-    { occurredAt },
+    // Its workspace: the contact's, or the number's (conversations `EventWorkspace`).
+    { occurredAt, workspaceId: contact.workspaceId ?? device.workspaceId },
   );
   return {
     status: 201,
@@ -183,12 +191,44 @@ function inboundMessage(app: SandboxApp, req: SandboxRequest): SandboxResponse {
   };
 }
 
-function participantEvent(app: SandboxApp, req: SandboxRequest, type: string): SandboxResponse {
+/** A group of the sandbox by `group_id`, or by `group.uid` / `uid`; the example group (`120363000000000000@g.us`) otherwise. */
+function groupFor(app: SandboxApp, b: Record<string, unknown>): Group | undefined {
+  if (b.group_id !== undefined) {
+    const group = app.store.groups.get(Number(b.group_id));
+    if (!group) throw notFound('There is no such group in the sandbox. See GET /_sandbox/groups.');
+    return group;
+  }
+  const uid = isRecord(b.group) ? b.group.uid : b.uid;
+  const wanted = uid === undefined ? '120363000000000000@g.us' : String(uid);
+  for (const group of app.store.groups.values()) if (group.uid === wanted) return group;
+  return undefined;
+}
+
+/**
+ * Someone joins or leaves a group. A group of the sandbox changes (its participants) and the event goes to its
+ * workspace with the shape communities emits (`campaign: null`: the sandbox's groups have no campaign). A `group` the
+ * sandbox does not have is emitted as before, from the catalog's example with your changes, to the default workspace.
+ */
+function participantEvent(app: SandboxApp, req: SandboxRequest, type: 'group_participant.joined' | 'group_participant.left'): SandboxResponse {
   const b = obj(req.body);
-  const entry = catalogEntry(type);
-  const example = obj(entry ? emittedData(entry) : {});
   const participant = obj(b.participant);
   const phone = participant.phone ?? b.phone;
+  const name = participant.name ?? b.name;
+  const group = groupFor(app, b);
+  if (group) {
+    const identity = digits(phone ?? '5491100000099');
+    if (identity.length < 8) throw fieldError('participant.phone', 'participant.phone must be a phone, digits only.');
+    const index = group.participants.findIndex((p) => p.phone === identity);
+    const current = group.participants[index];
+    if (type === 'group_participant.joined' && !current) group.participants.push({ phone: identity, name: name === undefined ? null : String(name), admin: false });
+    if (type === 'group_participant.left' && current) group.participants.splice(index, 1);
+    group.updatedAt = new Date();
+    const data = participantData(group, { phone: identity, name: name === undefined ? (current?.name ?? null) : String(name) });
+    return { status: 202, body: { event: emitted(app.webhooks.emit(type, data, { workspaceId: group.workspaceId })), participants: group.participants.length } };
+  }
+  const entry = catalogEntry(type);
+  const example = obj(entry ? emittedData(entry) : {});
+  delete example.workspace_id;
   const data = deepMerge(example, {
     ...(isRecord(b.group) ? { group: b.group } : {}),
     ...(isRecord(b.campaign) ? { campaign: b.campaign } : {}),
@@ -196,11 +236,21 @@ function participantEvent(app: SandboxApp, req: SandboxRequest, type: string): S
       ...obj(example.participant),
       // communities `PlatformEventParticipant`: the phone in digits, without `+`.
       ...(phone !== undefined ? { identity: digits(phone), identity_type: 'phone' } : {}),
-      ...(participant.name !== undefined || b.name !== undefined ? { name: participant.name ?? b.name } : {}),
+      ...(name !== undefined ? { name } : {}),
     },
   });
   return { status: 202, body: { event: emitted(app.webhooks.emit(type, data)) } };
 }
+
+/** What `/_sandbox/groups` shows of a group. */
+const groupView = (group: Group) => ({
+  id: group.id,
+  uid: group.uid,
+  name: group.name,
+  device_id: group.deviceId,
+  workspace_id: group.workspaceId,
+  participants: group.participants.map((p) => ({ phone: p.phone, name: p.name, admin: p.admin })),
+});
 
 const ROUTES: Route[] = [
   { method: 'GET', pattern: /^\/_sandbox\/?$/, handle: () => ({ status: 200, html: panelHtml() }) },
@@ -241,6 +291,39 @@ const ROUTES: Route[] = [
       },
     }),
   },
+  {
+    method: 'GET',
+    pattern: /^\/_sandbox\/emitted$/,
+    handle: (app, req) => ({
+      status: 200,
+      body: { data: app.store.events.slice(-limitOf(req.query)).reverse().map((e) => ({ ...e.envelope, subscriptions: e.subscriptions })) },
+    }),
+  },
+  { method: 'GET', pattern: /^\/_sandbox\/workspaces$/, handle: (app) => ({ status: 200, body: { data: [...app.store.workspaces.values()].map((w) => workspaceView(app.store, w)) } }) },
+  {
+    // A workspace of the account and a key that only sees it, as the owner does in the panel (Developers → Create key).
+    method: 'POST',
+    pattern: /^\/_sandbox\/workspaces$/,
+    handle: (app, req) => {
+      const b = obj(req.body);
+      if (typeof b.name !== 'string' || b.name.trim() === '') throw fieldError('name', 'name must be the name of the workspace.');
+      const workspace = createWorkspace(app, b.name.trim());
+      const key = mintKey(app.store, workspace.id);
+      app.logger.info(`workspace ${workspace.id} «${workspace.name}» created, with a key`);
+      return { status: 201, body: { workspace: workspaceView(app.store, workspace), key } };
+    },
+  },
+  {
+    // Another key for a workspace (the default one without `workspace_id`).
+    method: 'POST',
+    pattern: /^\/_sandbox\/keys$/,
+    handle: (app, req) => {
+      const b = obj(req.body);
+      const id = b.workspace_id === undefined || b.workspace_id === null ? app.store.defaultWorkspace.id : Number(b.workspace_id);
+      if (!app.store.workspaces.has(id)) throw fieldError('workspace_id', 'There is no such workspace in the sandbox. See GET /_sandbox/workspaces.');
+      return { status: 201, body: { key: mintKey(app.store, id), workspace_id: id } };
+    },
+  },
   { method: 'POST', pattern: /^\/_sandbox\/inbound\/message$/, handle: inboundMessage },
   {
     method: 'GET',
@@ -254,8 +337,15 @@ const ROUTES: Route[] = [
       const entry = catalogEntry(type as string);
       if (!entry) throw notFound(`${type} is not in the catalog. See GET /_sandbox/events.`);
       if (!entry.subscribable) throw fieldError('type', `${type} cannot be subscribed to: use POST /api/v1/webhooks/{id}/test.`);
-      const data = deepMerge(emittedData(entry), obj(req.body).data);
-      return { status: 202, body: { event: emitted(app.webhooks.emit(entry.type, data)), data } };
+      const b = obj(req.body);
+      // The example's `workspace_id` (37, like accounts') never routes: the event goes to `workspace_id` of the body,
+      // or of its `data`, if it is a workspace of the sandbox, and to the default one otherwise.
+      const example = emittedData(entry);
+      if (isRecord(example)) delete example.workspace_id;
+      const data = deepMerge(example, b.data);
+      const declared = b.workspace_id ?? (isRecord(data) ? data.workspace_id : undefined);
+      const result = app.webhooks.emit(entry.type, data, { workspaceId: Number.isInteger(declared) ? (declared as number) : null });
+      return { status: 202, body: { event: emitted(result), data: result.envelope.data } };
     },
   },
   {
@@ -267,7 +357,7 @@ const ROUTES: Route[] = [
       if (!tag) throw fieldError('tag_id', 'The tag does not exist in the sandbox.');
       if (contact.tags.has(tag.id)) return { status: 200, body: { contact: contactResource(app.store, contact), event: null } };
       contact.tags.set(tag.id, new Date());
-      const event = app.webhooks.emit('contact.tag_added', { contact: eventContact(contact), tag: { id: tag.id, name: tag.name }, source: 'manual' });
+      const event = app.webhooks.emit('contact.tag_added', { contact: eventContact(contact), tag: { id: tag.id, name: tag.name }, source: 'manual' }, { workspaceId: contact.workspaceId });
       return { status: 201, body: { contact: contactResource(app.store, contact), event: emitted(event) } };
     },
   },
@@ -278,8 +368,30 @@ const ROUTES: Route[] = [
       const contact = contactOf(app, id);
       const tag = app.store.tags.get(Number(tagId));
       if (!tag || !contact.tags.delete(tag.id)) throw notFound('The contact does not have that tag.');
-      const event = app.webhooks.emit('contact.tag_removed', { contact: eventContact(contact), tag: { id: tag.id, name: tag.name }, source: 'manual' });
+      const event = app.webhooks.emit('contact.tag_removed', { contact: eventContact(contact), tag: { id: tag.id, name: tag.name }, source: 'manual' }, { workspaceId: contact.workspaceId });
       return { status: 200, body: { contact: contactResource(app.store, contact), event: emitted(event) } };
+    },
+  },
+  { method: 'GET', pattern: /^\/_sandbox\/groups$/, handle: (app) => ({ status: 200, body: { data: [...app.store.groups.values()].map(groupView) } }) },
+  {
+    // A group the number is in, as its admin: what communities finds when it syncs the groups of a QR number.
+    method: 'POST',
+    pattern: /^\/_sandbox\/groups$/,
+    handle: (app, req) => {
+      const b = obj(req.body);
+      const device = deviceOf(app, b.device_id ?? 4);
+      if (device.kind !== 'qr') throw fieldError('device_id', 'Only QR numbers have groups in the sandbox: the account is not in the beta of official groups.');
+      if (!device.connected || device.number === null) throw fieldError('device_id', 'The number is not connected: connect it first (POST /_sandbox/devices/{id}/connect).');
+      if (typeof b.name !== 'string' || b.name.trim() === '') throw fieldError('name', 'name must be the name of the group.');
+      const participants = Array.isArray(b.participants)
+        ? b.participants.map((p, i) => {
+            const phone = digits(obj(p).phone ?? p);
+            if (phone.length < 8) throw fieldError(`participants.${i}`, 'Each participant is {"phone": "549…", "name": "…"} or a phone.');
+            const name = obj(p).name;
+            return { phone, name: typeof name === 'string' ? name : null };
+          })
+        : [];
+      return { status: 201, body: { group: groupView(createGroup(app, { name: b.name.trim(), device, participants })) } };
     },
   },
   { method: 'POST', pattern: /^\/_sandbox\/groups\/participant-joined$/, handle: (app, req) => participantEvent(app, req, 'group_participant.joined') },
@@ -386,11 +498,14 @@ const ROUTES: Route[] = [
       if (action === 'connect') {
         const number = b.number === undefined || b.number === null ? null : digits(b.number);
         if (number !== null && number.length < 8) throw fieldError('number', 'number must be a phone, digits only.');
-        return { status: 200, body: { device: deviceResource(device), event: emitted(connectDevice(app, device, { number })) } };
+        // The event first: the answer shows the number as it is after the scan.
+        const event = emitted(connectDevice(app, device, { number }));
+        return { status: 200, body: { device: deviceResource(device), event } };
       }
       const reason = (b.reason ?? (device.kind === 'qr' ? 'qr_logged_out' : 'unknown')) as DisconnectReason;
       if (!DISCONNECT_REASONS.includes(reason)) throw fieldError('reason', `reason must be one of: ${DISCONNECT_REASONS.join(', ')}.`);
-      return { status: 200, body: { device: deviceResource(device), event: emitted(disconnectDevice(app, device, reason)) } };
+      const event = emitted(disconnectDevice(app, device, reason));
+      return { status: 200, body: { device: deviceResource(device), event } };
     },
   },
   {
@@ -401,7 +516,8 @@ const ROUTES: Route[] = [
       if (device.kind !== 'cloud') throw fieldError('device_id', 'Only official numbers have a health state.');
       const state = obj(req.body).state as HealthState;
       if (!HEALTH_STATES.includes(state)) throw fieldError('state', `state must be one of: ${HEALTH_STATES.join(', ')}.`);
-      return { status: 200, body: { device: deviceResource(device), event: emitted(setHealth(app, device, state)) } };
+      const event = emitted(setHealth(app, device, state));
+      return { status: 200, body: { device: deviceResource(device), event } };
     },
   },
   { method: 'GET', pattern: /^\/_sandbox\/numbers$/, handle: (app) => ({ status: 200, body: numbersState(app) }) },
