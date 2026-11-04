@@ -17,7 +17,7 @@
       "conversations-forms": "conversations v1.18.10 (en producción): `routes/api/whatsapp-forms.php`, `WhatsappFormController`, `WhatsappFormSendController`, `SendWhatsappFormRequest`. Las rutas de formularios abiertas a claves (`config/platform-gate.php`) y el envío de un formulario a un contacto. El portal no las documenta todavía: su `config/borde.json` no tiene el prefijo `forms`.",
       "accounts-alta-de-numeros": "Contrato «alta y conexión de números por API» v0 (funnelchat-dev-platform `docs/initiatives/api-abierta/contratos/1022-alta-de-numeros.md`, 22-10-2026), secciones A1 y A3, y sus decisiones Q1–Q26. accounts lo programa en `feat/alta-de-numeros-api`: hasta que su OpenAPI llegue a la instantánea, esto sale del contrato. Enmienda v0.1 del contrato (23-10, commit `8c68067` de funnelchat-dev-platform), leída de accounts `feat/alta-de-numeros-api` `52d49b319`: errores, id entero del link, `invalid_request`, `pending_number_exists`, `connection_type_mismatch`, `invalid_idempotency_key`, `Idempotent-Replayed` y, de la parte 2 en curso, `connect_link_id` en los cuatro avisos y el motivo `disconnected_by_user`. Enmienda v0.2 (23-10, commit `720ee83`), leída de accounts `8852b3fad` (parte 2 terminada): `provision_us_number` exige `dedicated` y no va con `device_id`; el link Meta tolera cinco intentos fallidos de Facebook o Meta; en `device.connected`, `connect_link_id` es el link de esa conexión.",
       "accounts-workspaces": "accounts v1.5.97 (`558332bcf`, en producción desde el 04-11, workspaces-api-keys; platform-gate v0.9.1): cada API key es de un workspace y solo ve y crea ahí; un evento llega solo a las suscripciones de su workspace y todo aviso público lleva `data.workspace_id` = el workspace al que se ruteó (Q35, `EventWorkspaceRouting::stamp()`: la última clave de `data`). Los ejemplos del catálogo de accounts usan 37 (`WebhookEventCatalog::EXAMPLE_WORKSPACE_ID`). conversations v1.19.7 y communities v2.35.5 confinan sus rutas igual.",
-      "communities-group-messages": "communities v2.35.5 (`2be913d4`, en producción el 04-11): `GroupManagement/routes.php`, `ApiGroupActionController::sendMessage` y `show`, `SendGroupMessageRequest`, `ApiGroupActionTargetResolver`, `ApiGroupActionAcceptedResource`, `ApiGroupActionResource` y `ApiGroupActionEventPublisher`. Enviar un mensaje a un grupo responde 202 con `action_id`, y el resultado se consulta en GET groups/actions/{action}. Las dos rutas están detrás del interruptor `API_GROUP_ACTIONS_ENABLED` (apagado por defecto; el 21-10 estaba apagado en producción y el repo no muestra si se encendió): apagado, toda clave recibe 403 route_not_available del portero. Confinadas al workspace de la clave (#1913)."
+      "communities-group-messages": "communities v2.35.5 (`2be913d4`, en producción el 04-11): `GroupManagement/routes.php`, `ApiGroupActionController::sendMessage` y `show`, `SendGroupMessageRequest`, `ApiGroupActionTargetResolver`, `ApiGroupActionAcceptedResource`, `ApiGroupActionResource` y `ApiGroupActionEventPublisher`. Enviar un mensaje a un grupo responde 202 con `action_id`, y el resultado se consulta en GET groups/actions/{action}. Las dos rutas están detrás del interruptor `API_GROUP_ACTIONS_ENABLED` (apagado por defecto en el código), encendido en producción según el usuario el 04-11; apagado, toda clave recibe 403 route_not_available del portero. Confinadas al workspace de la clave (#1913)."
     }
   },
   "components": {
@@ -2224,7 +2224,7 @@
       "post": {
         "operationId": "pendingSandboxGroups.messages.send",
         "summary": "Send a message to a group now",
-        "description": "Asynchronous: answers `202` with `action_id`; follow it with `GET /api/v1/groups/actions/{action}` (`result.message.uid` is the id of the message in WhatsApp). `type`: `text` (with `text`, up to 4096), `image`, `video`, `audio` or `document` (with `media_url`, an `https` URL up to 255 characters with an extension of the type; `caption` only for `image` and `video`, `file_name` only for `document`). A QR number must be an admin of the group; an official one, the group's own number, with the beta of official groups. When it settles, `group_action.completed` or `group_action.failed`.\n\nIt is behind communities' kill switch (`API_GROUP_ACTIONS_ENABLED`): while it is off, every key gets `403 route_not_available`.\n\n**Pending of the spec**: in communities v2.35.5, missing from the portal's snapshot.",
+        "description": "Asynchronous: answers `202` with `action_id`; follow it with `GET /api/v1/groups/actions/{action}` (`result.message.uid` is the id of the message in WhatsApp). `type`: `text` (with `text`, up to 4096), `image`, `video`, `audio` or `document` (with `media_url`, an `https` URL up to 255 characters with an extension of the type; `caption` only for `image` and `video`, `file_name` only for `document`). A QR number must be an admin of the group; an official one, the group's own number, with the beta of official groups. When it settles, `group_action.completed` or `group_action.failed`.\n\nIt is behind communities' kill switch (`API_GROUP_ACTIONS_ENABLED`), on in production: were it off, every key would get `403 route_not_available`.\n\n**Pending of the spec**: in communities v2.35.5, missing from the portal's snapshot.",
         "tags": [
           "GroupActions"
         ],
@@ -2322,7 +2322,7 @@
             }
           },
           "403": {
-            "description": "`route_not_available` while the group actions are off.",
+            "description": "`route_not_available` if the group actions were turned off.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2378,7 +2378,7 @@
       "get": {
         "operationId": "pendingSandboxGroups.actions.show",
         "summary": "The state and result of a group action",
-        "description": "`queued` → `running` → `completed` (with `result`) or `failed` (with `reason`). An action of another workspace answers `404 action_not_found`.\n\nIt is behind communities' kill switch (`API_GROUP_ACTIONS_ENABLED`): while it is off, every key gets `403 route_not_available`.\n\n**Pending of the spec**: in communities v2.35.5, missing from the portal's snapshot.",
+        "description": "`queued` → `running` → `completed` (with `result`) or `failed` (with `reason`). An action of another workspace answers `404 action_not_found`.\n\nIt is behind communities' kill switch (`API_GROUP_ACTIONS_ENABLED`), on in production: were it off, every key would get `403 route_not_available`.\n\n**Pending of the spec**: in communities v2.35.5, missing from the portal's snapshot.",
         "tags": [
           "GroupActions"
         ],
@@ -2416,7 +2416,7 @@
             }
           },
           "403": {
-            "description": "`route_not_available` while the group actions are off.",
+            "description": "`route_not_available` if the group actions were turned off.",
             "content": {
               "application/json": {
                 "schema": {

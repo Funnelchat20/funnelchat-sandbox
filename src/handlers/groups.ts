@@ -3,9 +3,9 @@
  * and the send of a message to a group, a group action that answers `202` with an `action_id` and is followed with
  * `GET /groups/actions/{action}`.
  *
- * The group actions are behind communities' kill switch (`API_GROUP_ACTIONS_ENABLED`, off by default): while it is
- * off every key gets the gate's `403 route_not_available` before anything is validated. The sandbox starts the same
- * way (`groupActions: false`); `--group-actions` turns them on.
+ * The group actions are behind communities' kill switch (`API_GROUP_ACTIONS_ENABLED`), on in production since the
+ * user confirmed it on 04-11. The sandbox starts the same way (`groupActions: true`); `--no-group-actions` imitates
+ * the switch off, where every key gets the gate's `403 route_not_available` before anything is validated.
  *
  * Workspaces: a key lists and reaches only the groups of its workspace (and, from the default one, those without a
  * workspace); one of another workspace answers `404`, and so does a number of another workspace on a send.

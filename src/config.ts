@@ -69,9 +69,9 @@ export interface SandboxConfig {
     linksPerMinute: number;
   };
   /**
-   * The group actions by API (`POST /groups/{group}/messages`, `GET /groups/actions/{action}`). `false` (the default,
-   * like production, where communities' kill switch `API_GROUP_ACTIONS_ENABLED` is off): every key gets
-   * `403 route_not_available`. Turn it on to test the send to a group.
+   * The group actions by API (`POST /groups/{group}/messages`, `GET /groups/actions/{action}`). `true` (the default,
+   * like production, where communities' kill switch `API_GROUP_ACTIONS_ENABLED` is on). `false` imitates the switch
+   * off: every key gets `403 route_not_available`.
    */
   groupActions: boolean;
   /**
@@ -102,7 +102,7 @@ export function defaultConfig(): SandboxConfig {
     subscriptions: [],
     workspaces: [],
     numbers: { limit: 5, included: true, trial: false, metaConnect: false, linksPerMinute: 10 },
-    groupActions: false,
+    groupActions: true,
     publicUrl: null,
     historyLimit: 200,
     log: true,
@@ -345,8 +345,8 @@ export function parseArgs(argv: string[]): CliArgs {
       case '--meta-connect':
         o.numbers = { ...o.numbers, metaConnect: true };
         break;
-      case '--group-actions':
-        o.groupActions = true;
+      case '--no-group-actions':
+        o.groupActions = false;
         break;
       case '-q':
       case '--quiet':

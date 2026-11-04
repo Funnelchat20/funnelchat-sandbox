@@ -48,9 +48,10 @@ describe('configuration', () => {
     expect((await api.call('GET', '/_sandbox/numbers')).body).toMatchObject({ limit: 3, in_use: 2, meta_connect: true });
   });
 
-  it('group actions start off, like production; workspaces need a name and keys with the shape of one', async () => {
-    expect(defaultConfig().groupActions).toBe(false);
-    expect(mergeConfig(defaultConfig(), parseArgs(['--group-actions']).overrides).groupActions).toBe(true);
+  it('group actions start on, like production; workspaces need a name and keys with the shape of one', async () => {
+    expect(defaultConfig().groupActions).toBe(true);
+    expect(mergeConfig(defaultConfig(), parseArgs(['--no-group-actions']).overrides).groupActions).toBe(false);
+    expect(mergeConfig(defaultConfig(), { groupActions: false }).groupActions).toBe(false);
     expect(() => mergeConfig(defaultConfig(), { workspaces: [{ name: '', keys: [] }] })).toThrow(/workspaces\[0\] needs name/);
     expect(() => mergeConfig(defaultConfig(), { workspaces: [{ name: 'B', keys: ['nope'] }] })).toThrow(/keys must be a list of keys/);
     expect(() => mergeConfig(defaultConfig(), { workspaces: [{ name: 'B', keys: ['2|fc_live_b'] }, { name: 'C', keys: ['2|fc_live_b'] }] })).toThrow(/two workspaces/);

@@ -54,15 +54,15 @@ describe('the groups of the account', () => {
 });
 
 describe('sending a message to a group', () => {
-  it('is off by default, like production: 403 route_not_available before any validation', async () => {
-    const api = await startSandbox();
+  it('with --no-group-actions (the switch off): 403 route_not_available before any validation', async () => {
+    const api = await startSandbox({ groupActions: false });
     const res = await api.call('POST', `/api/v1/groups/${encodeURIComponent(UID)}/messages`, {});
     expect(res).toMatchObject({ status: 403, body: { error: 'route_not_available' } });
     expect((await api.call('GET', '/api/v1/groups/actions/7c9e6679-7425-40de-944b-e07fc1f90ae7')).status).toBe(403);
   });
 
-  it('with --group-actions: 202 with action_id, then running, completed and group_action.completed', async () => {
-    const api = await startSandbox({ groupActions: true });
+  it('on by default, like production: 202 with action_id, then running, completed and group_action.completed', async () => {
+    const api = await startSandbox();
     const receiver = await startReceiver();
     await subscribe(api, receiver.url, ['group_action.completed']);
     const res = await api.call('POST', `/api/v1/groups/${encodeURIComponent(UID)}/messages`, { device_id: 4, type: 'text', text: 'Hola a todos' });
@@ -92,7 +92,7 @@ describe('sending a message to a group', () => {
   });
 
   it('refuses like communities: the body, the number, the group and the official number without the beta', async () => {
-    const api = await startSandbox({ groupActions: true });
+    const api = await startSandbox();
     const path = `/api/v1/groups/${encodeURIComponent(UID)}/messages`;
     expect((await api.call('POST', path, { device_id: 4, type: 'text' })).body.errors.text).toBeDefined();
     expect((await api.call('POST', path, { device_id: 4, type: 'image', media_url: 'http://example.com/a.jpg' })).body.errors.media_url).toEqual([
@@ -136,7 +136,7 @@ describe('participants', () => {
 
 describe('groups and workspaces', () => {
   it('a key only sees the groups of its workspace, and their events go to its subscriptions', async () => {
-    const api = await startSandbox({ groupActions: true });
+    const api = await startSandbox();
     const created = await api.call('POST', '/_sandbox/workspaces', { name: 'Cliente B' });
     const asB = (method: string, path: string, body?: unknown) => api.call(method, path, body, { Authorization: `Bearer ${created.body.key}` });
     const device = await asB('POST', '/api/v1/devices', { connection: 'qr' });

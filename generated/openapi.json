@@ -16924,7 +16924,7 @@
    "post": {
     "operationId": "pendingSandboxGroups.messages.send",
     "summary": "Send a message to a group now",
-    "description": "Asynchronous: answers `202` with `action_id`; follow it with `GET /api/v1/groups/actions/{action}` (`result.message.uid` is the id of the message in WhatsApp). `type`: `text` (with `text`, up to 4096), `image`, `video`, `audio` or `document` (with `media_url`, an `https` URL up to 255 characters with an extension of the type; `caption` only for `image` and `video`, `file_name` only for `document`). A QR number must be an admin of the group; an official one, the group's own number, with the beta of official groups. When it settles, `group_action.completed` or `group_action.failed`.\n\nIt is behind communities' kill switch (`API_GROUP_ACTIONS_ENABLED`): while it is off, every key gets `403 route_not_available`.\n\n**Pending of the spec**: in communities v2.35.5, missing from the portal's snapshot.",
+    "description": "Asynchronous: answers `202` with `action_id`; follow it with `GET /api/v1/groups/actions/{action}` (`result.message.uid` is the id of the message in WhatsApp). `type`: `text` (with `text`, up to 4096), `image`, `video`, `audio` or `document` (with `media_url`, an `https` URL up to 255 characters with an extension of the type; `caption` only for `image` and `video`, `file_name` only for `document`). A QR number must be an admin of the group; an official one, the group's own number, with the beta of official groups. When it settles, `group_action.completed` or `group_action.failed`.\n\nIt is behind communities' kill switch (`API_GROUP_ACTIONS_ENABLED`), on in production: were it off, every key would get `403 route_not_available`.\n\n**Pending of the spec**: in communities v2.35.5, missing from the portal's snapshot.",
     "tags": [
      "GroupActions"
     ],
@@ -17022,7 +17022,7 @@
       }
      },
      "403": {
-      "description": "`route_not_available` while the group actions are off.",
+      "description": "`route_not_available` if the group actions were turned off.",
       "content": {
        "application/json": {
         "schema": {
@@ -28662,7 +28662,7 @@
    "get": {
     "operationId": "pendingSandboxGroups.actions.show",
     "summary": "The state and result of a group action",
-    "description": "`queued` → `running` → `completed` (with `result`) or `failed` (with `reason`). An action of another workspace answers `404 action_not_found`.\n\nIt is behind communities' kill switch (`API_GROUP_ACTIONS_ENABLED`): while it is off, every key gets `403 route_not_available`.\n\n**Pending of the spec**: in communities v2.35.5, missing from the portal's snapshot.",
+    "description": "`queued` → `running` → `completed` (with `result`) or `failed` (with `reason`). An action of another workspace answers `404 action_not_found`.\n\nIt is behind communities' kill switch (`API_GROUP_ACTIONS_ENABLED`), on in production: were it off, every key would get `403 route_not_available`.\n\n**Pending of the spec**: in communities v2.35.5, missing from the portal's snapshot.",
     "tags": [
      "GroupActions"
     ],
@@ -28700,7 +28700,7 @@
       }
      },
      "403": {
-      "description": "`route_not_available` while the group actions are off.",
+      "description": "`route_not_available` if the group actions were turned off.",
       "content": {
        "application/json": {
         "schema": {
@@ -42537,7 +42537,7 @@
   "inputs": {
    "spec/funnelchat.json": "8bbbae569b4cab520884db98f28204156c1bd6c629578bee609343c193e0dadb",
    "spec/pending.json": "a14bc4dbc3025d3e958ffda8afd1fa9fdab34af264418060825f3300799aceb0",
-   "spec/pending-sandbox.json": "9ec8916ff5f003e76073322cbf871ee5df132ab116a9da2ac9a637ed28da7a6a"
+   "spec/pending-sandbox.json": "6adc6e69a8f687d5e5b0192334fb82beea20e227f4776d65cf9c299a2aa0829b"
   },
   "snapshot_commit": "0ef4abb008870ed8c7cae49a08900a81e5e57ed8",
   "pending_commit": "88557ce7819c5a4061e84c58053a1b6c49f35ec2",

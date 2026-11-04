@@ -169,8 +169,8 @@ export function createSandbox(options: CreateSandboxOptions = {}): Sandbox {
       if (!key) throw unauthenticated();
       // The key's workspace, always: `X-Workspace-Id` is ignored when a key calls (platform-gate v0.9).
       const workspace = scopeOfKey(app.store, key);
-      // A route no key enables: the gate answers before the domain validates anything. The group actions are off in
-      // production (communities' kill switch) unless the sandbox runs with `--group-actions`.
+      // A route no key enables: the gate answers before the domain validates anything. The group actions are on, like
+      // production (communities' kill switch); `--no-group-actions` closes them as the switch off does.
       const route = `${op.method.toUpperCase()} ${op.path}`;
       if (GATE_CLOSED.has(route) || (!config.groupActions && GROUP_ACTION_ROUTES.has(route))) throw routeNotAvailable();
       requestBody = parseBody(await readBody(req), headers['content-type']);

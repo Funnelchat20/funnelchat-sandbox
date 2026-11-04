@@ -79,16 +79,15 @@ curl -s -X POST http://localhost:4010/_sandbox/groups/participant-joined -H 'Con
   -d '{"group_id": 7001, "participant": {"phone": "5491155550000", "name": "Ana"}}'
 ```
 
-**Sending a message to a group** is `POST /api/v1/groups/{uid}/messages`, a group action: it answers `202` with an `action_id`, and `GET /api/v1/groups/actions/{action}` says when it is `completed` (with `result.message.uid`, the message's id in WhatsApp), as does the event `group_action.completed`. **It is off in production** (communities' switch `API_GROUP_ACTIONS_ENABLED`; any key gets `403 route_not_available`), and so it is in the sandbox. To try it, start it with `--group-actions`:
+**Sending a message to a group** is `POST /api/v1/groups/{uid}/messages`, a group action: it answers `202` with an `action_id`, and `GET /api/v1/groups/actions/{action}` says when it is `completed` (with `result.message.uid`, the message's id in WhatsApp), as does the event `group_action.completed`:
 
 ```bash
-npx @funnelchat-hq/sandbox --group-actions
 curl -s -X POST "$API/groups/120363000000000000@g.us/messages" -H "Authorization: Bearer $FUNNELCHAT_API_KEY" \
   -H 'Content-Type: application/json' -d '{"device_id": 4, "type": "text", "text": "Hola a todos"}'
 # 202 {"action_id": "…", "status": "queued"}
 ```
 
-`type` is `text` (with `text`), `image`, `video`, `audio` or `document` (with `media_url`, an `https` URL with an extension of the type; `caption` for `image` and `video`, `file_name` for `document`). The number must be a QR number that is an admin of the group: `404 device_not_found` or `group_not_found`, `422 device_not_connected`, `device_not_group_admin` or, for an official number, `provider_unsupported` (the sandbox account is not in the beta of official groups).
+`type` is `text` (with `text`), `image`, `video`, `audio` or `document` (with `media_url`, an `https` URL with an extension of the type; `caption` for `image` and `video`, `file_name` for `document`). The number must be a QR number that is an admin of the group: `404 device_not_found` or `group_not_found`, `422 device_not_connected`, `device_not_group_admin` or, for an official number, `provider_unsupported` (the sandbox account is not in the beta of official groups). To imitate communities' switch `API_GROUP_ACTIONS_ENABLED` off, start it with `--no-group-actions`: every key then gets `403 route_not_available`.
 
 ### Workspaces
 
@@ -183,7 +182,7 @@ await sandbox.close();
 | `--no-rate-limit` | Do not apply the per-number pace. | — |
 | `--template-approval <s>` | Seconds until a template created through the API is approved. A `-` leaves it pending. | `5` |
 | `--meta-connect` | Turns on the [Meta sign-up by link](#connecting-numbers), off like in production. | off |
-| `--group-actions` | Turns on [sending a message to a group](#groups), off like in production. | off |
+| `--no-group-actions` | Turns off [sending a message to a group](#groups) (`403 route_not_available`), on like in production. | on |
 | `-q`, `--quiet` | No line per request and per delivery on the console. | — |
 
 Options win over the file. The file has the same options and, besides, subscriptions created at start (and after every reset) with a fixed secret, so your receiver keeps working when you restart the sandbox:
@@ -203,7 +202,7 @@ Options win over the file. The file has the same options and, besides, subscript
 }
 ```
 
-The file also takes `groupActions` (`true` is `--group-actions`), `numbers`, the quota of the account for [connecting numbers](#connecting-numbers): `{"limit": 5, "included": true, "trial": false, "metaConnect": false, "linksPerMinute": 10}`, and `publicUrl`. `metaConnect`
+The file also takes `groupActions` (`false` is `--no-group-actions`), `numbers`, the quota of the account for [connecting numbers](#connecting-numbers): `{"limit": 5, "included": true, "trial": false, "metaConnect": false, "linksPerMinute": 10}`, and `publicUrl`. `metaConnect`
 is the Meta sign-up by link: off by default, like production; `true` (or `--meta-connect`) turns it on to test it.
 
 And `workspaces`, more [workspaces](#workspaces) with fixed keys, created after the default one (ids `2`, `3`… in order): `[{"name": "Cliente B", "keys": ["2|fc_live_clienteB"]}]`. Any key not listed there belongs to the default workspace; the preset subscriptions too.
@@ -721,7 +720,7 @@ Everything below is in production on 04-11 (accounts v1.5.97, conversations v1.1
 | `capabilities` and the new keys of the numbers | accounts v1.5.97 (`DeviceResource`, `DeviceCapabilities`) |
 | Connecting numbers: `POST /api/v1/devices`, `GET …/{device}/qr`, `external_reference`, `/api/v1/connect-links…`, `/connect/{token}`, `Idempotency-Key`, `device.deleted`, `device.health_changed` and the new keys of `device.connected` and `device.disconnected` | The contract of the sign-up by API of 22-10 and its amendments, checked against accounts v1.5.97; the Meta sign-up is off until the domain is registered with Meta |
 | Workspaces: each key confined to its workspace, and `data.workspace_id` in every event | accounts v1.5.97 (`workspaces-api-keys`, Q35), conversations v1.19.7, communities v2.35.5, platform-gate v0.9.1 |
-| Sending a message to a group: `POST /api/v1/groups/{group}/messages`, `GET /api/v1/groups/actions/{action}` | communities v2.35.5, behind its switch `API_GROUP_ACTIONS_ENABLED`, off |
+| Sending a message to a group: `POST /api/v1/groups/{group}/messages`, `GET /api/v1/groups/actions/{action}` | communities v2.35.5, behind its switch `API_GROUP_ACTIONS_ENABLED`, on in production |
 | `X-Request-Id` and the edge's errors (`route_not_found`, `origin_unreachable`, `edge_misconfigured`) | api-edge v0.3.0, platform-gate (since v0.8.0) |
 
 ## Regenerating
