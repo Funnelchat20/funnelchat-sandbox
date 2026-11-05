@@ -17,8 +17,10 @@ import { contactHandlers } from './handlers/contacts.js';
 import { deviceHandlers } from './handlers/devices.js';
 import { formHandlers } from './handlers/forms.js';
 import { GATE_CLOSED, gateHandlers } from './handlers/gate.js';
+import { GROUP_ACTION_ROUTES, groupHandlers } from './handlers/groups.js';
 import { messageHandlers } from './handlers/messages.js';
-import { webhookHandlers } from './handlers/webhooks.js';
+import { readTypingHandlers } from './handlers/read-typing.js';
+import { SUBSCRIPTION_BODY_ROUTES, subscriptionBodyErrors, webhookHandlers } from './handlers/webhooks.js';
 import type { HandlerResult, HandlerTable } from './http/context.js';
 import { takeEdgeFailure } from './http/edge.js';
 import { ApiError, edgeError, invalidRequest, methodNotAllowed, notFound, routeNotAvailable, routeNotFound, unauthenticated, validationFailed } from './http/errors.js';
@@ -28,20 +30,29 @@ import { exampleFor } from './openapi/example.js';
 import { matchRoute, requestBodySchema, spec, successResponse } from './openapi/spec.js';
 import { validateRequest } from './openapi/validate.js';
 import { handleSandbox } from './sandbox/routes.js';
+import { scopeOfKey } from './state/workspaces.js';
 import { truncate } from './util.js';
 import { VERSION } from './version.js';
 
 const MAX_BODY_BYTES = 1024 * 1024;
 
 /** `Authorization: Bearer <id>|fc_live_...`: any well-formed key is accepted. */
-const API_KEY = /^Bearer\s+(\d+)\|fc_live_[A-Za-z0-9]+$/;
+const API_KEY = /^Bearer\s+(\d+\|fc_live_[A-Za-z0-9]+)$/;
+
+/**
+ * The routes of the sign-up by API whose `422` is accounts' `invalid_request` (`{error, message, errors}`), not
+ * Laravel's: `StoreDeviceRequest`, `StoreConnectLinkRequest` and the list of links.
+ */
+const INVALID_REQUEST_ROUTES = new Set(['POST /api/v1/devices', 'GET /api/v1/connect-links', 'POST /api/v1/connect-links']);
 
 const handlers: HandlerTable = {
   ...contactHandlers,
   ...messageHandlers,
+  ...readTypingHandlers,
   ...deviceHandlers,
   ...connectLinkHandlers,
   ...formHandlers,
+  ...groupHandlers,
   ...gateHandlers,
   ...webhookHandlers,
 };
@@ -162,14 +173,24 @@ export function createSandbox(options: CreateSandboxOptions = {}): Sandbox {
     }
     const { op } = match;
     try {
-      if (!API_KEY.test(headers.authorization?.trim() ?? '')) throw unauthenticated();
-      // A route no key enables: the gate answers before the domain validates anything.
-      if (GATE_CLOSED.has(`${op.method.toUpperCase()} ${op.path}`)) throw routeNotAvailable();
+      const key = API_KEY.exec(headers.authorization?.trim() ?? '')?.[1];
+      if (!key) throw unauthenticated();
+      // The key's workspace, always: `X-Workspace-Id` is ignored when a key calls (platform-gate v0.9).
+      const workspace = scopeOfKey(app.store, key);
+      // A route no key enables: the gate answers before the domain validates anything. The group actions are on, like
+      // production (communities' kill switch); `--no-group-actions` closes them as the switch off does.
+      const route = `${op.method.toUpperCase()} ${op.path}`;
+      if (GATE_CLOSED.has(route) || (!config.groupActions && GROUP_ACTION_ROUTES.has(route))) throw routeNotAvailable();
       requestBody = parseBody(await readBody(req), headers['content-type']);
       const validation = validateRequest(op.operation, match.params, parseQuery(url.searchParams), requestBody, requestBodySchema(op.operation));
       if (!validation.ok) {
         if (validation.kind === 'not_found') throw notFound();
-        throw op.operation['x-fc-validation-error'] === 'invalid_request' ? invalidRequest(validation.errors) : validationFailed(validation.errors);
+        const invalid = op.operation['x-fc-validation-error'] === 'invalid_request' || INVALID_REQUEST_ROUTES.has(route);
+        // Laravel checks every rule at once: the subscription's own rules join the schema's, and for a field both
+        // refuse, accounts' message wins.
+        const own = SUBSCRIPTION_BODY_ROUTES.has(route) ? subscriptionBodyErrors(app, requestBody) : {};
+        const errors = { ...validation.errors, ...own };
+        throw invalid ? invalidRequest(errors) : validationFailed(errors);
       }
       const handler = handlers[`${op.method.toUpperCase()} ${op.path}`];
       const ctx = {
@@ -181,6 +202,7 @@ export function createSandbox(options: CreateSandboxOptions = {}): Sandbox {
         headers,
         origin: `http://${headers.host ?? `localhost:${config.port}`}`,
         pathname: url.pathname,
+        workspace,
       };
       if (handler) return { result: await handler(ctx), operation: op.key, requestBody };
       // No state for this route: the example of its response schema.

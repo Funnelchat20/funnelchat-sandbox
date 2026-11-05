@@ -48,6 +48,24 @@ describe('configuration', () => {
     expect((await api.call('GET', '/_sandbox/numbers')).body).toMatchObject({ limit: 3, in_use: 2, meta_connect: true });
   });
 
+  it('group actions start on, like production; workspaces need a name and keys with the shape of one', async () => {
+    expect(defaultConfig().groupActions).toBe(true);
+    expect(mergeConfig(defaultConfig(), parseArgs(['--no-group-actions']).overrides).groupActions).toBe(false);
+    expect(mergeConfig(defaultConfig(), { groupActions: false }).groupActions).toBe(false);
+    expect(() => mergeConfig(defaultConfig(), { workspaces: [{ name: '', keys: [] }] })).toThrow(/workspaces\[0\] needs name/);
+    expect(() => mergeConfig(defaultConfig(), { workspaces: [{ name: 'B', keys: ['nope'] }] })).toThrow(/keys must be a list of keys/);
+    expect(() => mergeConfig(defaultConfig(), { workspaces: [{ name: 'B', keys: ['2|fc_live_b'] }, { name: 'C', keys: ['2|fc_live_b'] }] })).toThrow(/two workspaces/);
+
+    // Kept across a reset, with the same ids.
+    const api = await startSandbox({ workspaces: [{ name: 'B', keys: ['2|fc_live_b'] }] });
+    await api.call('POST', '/_sandbox/workspaces', { name: 'C' });
+    await api.call('POST', '/_sandbox/reset');
+    expect((await api.call('GET', '/_sandbox/workspaces')).body.data.map((w: { id: number; name: string }) => [w.id, w.name])).toEqual([
+      [1, 'Principal'],
+      [2, 'B'],
+    ]);
+  });
+
   it('reads a configuration file, and the flags win over it', () => {
     const dir = mkdtempSync(join(tmpdir(), 'sandbox-config-'));
     const file = join(dir, 'funnelchat-sandbox.config.json');

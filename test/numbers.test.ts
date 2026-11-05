@@ -64,8 +64,9 @@ describe('a number by QR', () => {
     expect(delivery!.headers['x-funnelchat-signature']).toBe(signature(sub.secret, delivery!.raw, Number(t)));
     expect(delivery!.json.data).toEqual({
       device: { id: device.id, name: 'Tienda Ana', number: '5491155550101', connection: 'qr', external_reference: 'cliente-8841' },
-      connected_at: expect.any(String),
+      connected_at: expect.stringMatching(/\+00:00$/),
       connect_link_id: null,
+      workspace_id: 1,
     });
 
     const filtered = await api.call('GET', '/api/v1/devices?external_reference=cliente-8841');
@@ -413,11 +414,16 @@ describe('device events', () => {
     await subscribe(api, receiver.url, DEVICE_EVENTS);
     const link = await createLink(api, { type: 'meta', allowed_connection_types: ['dedicated'], external_reference: 'r-9' });
     await start(link.url);
+    await receiver.waitFor(1);
     const id = (await api.call('GET', `/api/v1/connect-links/${link.id}`)).body.data.device_id;
+    // One at a time: deliveries are concurrent, so each one is awaited before the next event.
     await api.call('POST', `/_sandbox/devices/${id}/health`, { state: 'limited' });
+    await receiver.waitFor(2);
     await api.call('POST', `/_sandbox/devices/${id}/disconnect`, { reason: 'disconnected_by_user' });
+    await receiver.waitFor(3);
     // Connected again without a link: that connection has none, but the number still remembers the last link.
     await api.call('POST', `/_sandbox/devices/${id}/connect`);
+    await receiver.waitFor(4);
     await api.call('DELETE', `/api/v1/devices/${id}`);
     const deliveries = await receiver.waitFor(5);
     expect(deliveries.map((d) => [d.json.type, d.json.data.connect_link_id, d.json.data.device.external_reference])).toEqual([
@@ -428,7 +434,8 @@ describe('device events', () => {
       ['device.deleted', link.id, 'r-9'],
     ]);
     expect(deliveries[2]!.json.data.reason).toBe('disconnected_by_user');
-    for (const d of deliveries) expect(Object.keys(d.json.data).at(-1)).toBe('connect_link_id');
+    // `connect_link_id`, and then the workspace the event is routed to (accounts stamps it last).
+    for (const d of deliveries) expect(Object.keys(d.json.data).slice(-2)).toEqual(['connect_link_id', 'workspace_id']);
   });
 
   it('disconnected carries a reason; health_changed only when the state changes', async () => {

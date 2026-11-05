@@ -1,5 +1,6 @@
 import type { SandboxApp } from '../app.js';
 import type { IndexedOperation } from '../openapi/spec.js';
+import type { WorkspaceScope } from '../state/workspaces.js';
 
 export interface HandlerContext {
   app: SandboxApp;
@@ -16,6 +17,8 @@ export interface HandlerContext {
   origin: string;
   /** The requested path, without the query. */
   pathname: string;
+  /** The workspace of the key that calls: it only sees and creates there. */
+  workspace: WorkspaceScope;
 }
 
 export interface HandlerResult {

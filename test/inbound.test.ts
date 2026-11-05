@@ -17,13 +17,14 @@ describe('POST /_sandbox/inbound/message', () => {
 
     const [created, received] = await receiver.waitFor(2);
     expect(created!.json.type).toBe('contact.created');
-    expect(created!.json.data).toEqual({ contact: { id: res.body.contact.id, name: 'Lucía', phone: '+5491155550001', email: null } });
+    expect(created!.json.data).toEqual({ contact: { id: res.body.contact.id, name: 'Lucía', phone: '+5491155550001', email: null }, workspace_id: 1 });
     expect(received!.json.type).toBe('message.received');
     expect(received!.json.data).toEqual({
       message: { id: res.body.message.id, type: 'text', text: 'Hola, ¿tienen stock?', media: null },
       contact: { id: res.body.contact.id, name: 'Lucía', phone: '+5491155550001' },
       receiver: { phone: '+5491100000001' },
       device_id: 3,
+      workspace_id: 1,
     });
     // The API stores the phone without `+`.
     expect(res.body.contact.phone).toBe('5491155550001');
@@ -74,7 +75,8 @@ describe('other simulated events', () => {
     const receiver = await startReceiver();
     await subscribe(api, receiver.url, ['group_participant.joined', 'group_participant.left']);
     await api.call('POST', '/_sandbox/groups/participant-joined', { group: { uid: '120363000000000099@g.us', name: 'Clientes VIP' }, participant: { phone: '5491100000044', name: 'Ana' } });
-    await api.call('POST', '/_sandbox/groups/participant-left', { participant: { phone: '5491100000044' } });
+    // A group the sandbox does not have: emitted from the catalog's example, with your changes.
+    await api.call('POST', '/_sandbox/groups/participant-left', { group: { uid: '120363000000000099@g.us' }, participant: { phone: '5491100000044' } });
     const [joined, left] = await receiver.waitFor(2);
     expect(joined!.json).toMatchObject({
       type: 'group_participant.joined',
@@ -105,7 +107,12 @@ describe('other simulated events', () => {
     expect((await api.call('GET', '/api/v1/contacts?tag_ids[]=4001&tag_mode=any')).body.meta.total).toBe(1);
     await api.call('DELETE', '/_sandbox/contacts/2001/tags/4001');
     const [added, removed] = await receiver.waitFor(2);
-    expect(added!.json.data).toEqual({ contact: { id: 2001, name: 'Contacto de ejemplo', phone: '+5491100000000' }, tag: { id: 4001, name: 'Cliente' }, source: 'manual' });
+    expect(added!.json.data).toEqual({
+      contact: { id: 2001, name: 'Contacto de ejemplo', phone: '+5491100000000' },
+      tag: { id: 4001, name: 'Cliente' },
+      source: 'manual',
+      workspace_id: 1,
+    });
     expect(removed!.json.type).toBe('contact.tag_removed');
   });
 

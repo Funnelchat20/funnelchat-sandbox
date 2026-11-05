@@ -176,8 +176,36 @@ describe('numbers and groups', () => {
     const res = await api.call('GET', '/api/v1/devices');
     expect(Object.keys(res.body)).toEqual(['data', 'links', 'meta']);
     const [cloud, qr] = res.body.data;
-    // accounts v1.4.24 in its order, plus the two keys of the sign-up by API (contract A1, 22-10).
-    expect(Object.keys(cloud).slice(-13)).toEqual(['health', 'number_key', 'number_key_confirmed', 'is_coexistence', 'slot_state', 'pool_suspended', 'pool_suspension_reason', 'pool_keep', 'qr_allowed', 'can_change_to_meta', 'capabilities', 'external_reference', 'connection']);
+    // accounts v1.5.97 `DeviceResource`, in its order.
+    expect(Object.keys(cloud).slice(14)).toEqual([
+      'health',
+      'number_key',
+      'number_key_confirmed',
+      'is_coexistence',
+      'slot_state',
+      'pool_suspended',
+      'pool_suspension_reason',
+      'pool_keep',
+      'qr_allowed',
+      'can_change_to_meta',
+      'connected_by_user_id',
+      'connected_by_name',
+      'abilities',
+      'capabilities',
+      'connection',
+      'external_reference',
+      'overloaded',
+      'overloaded_computed_at',
+      'overloaded_groups_count',
+      'overloaded_one_to_one_count',
+      'overloaded_has_pending_broadcast',
+      'overloaded_has_active_flow',
+      'overloaded_has_active_ai_agent',
+      'overloaded_alert_level',
+      'overloaded_dismissed_at',
+      'sync_all_groups',
+    ]);
+    expect(cloud.abilities).toEqual({ connect: true, disconnect: true, delete: true, update: true });
     expect([cloud.connection, qr.connection]).toEqual(['dedicated', 'qr']);
     expect(cloud.capabilities.messages).toMatchObject({ templates: true, polls: false, reactions: false });
     expect(cloud.capabilities.groups.create).toBe(false);

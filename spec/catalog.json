@@ -1,18 +1,20 @@
 {
-  "description": "The event catalog of GET /api/v1/webhooks/events as accounts answers it in production: every entry with its keys and in its order, and `example` as accounts publishes it (null for the planned ones). Transcribed from the code, not from a response: if accounts changes the catalog, transcribe it again from the new tag.",
+  "description": "The event catalog of GET /api/v1/webhooks/events as accounts answers it in production: every entry with its keys and in its order, and `example` as accounts publishes it (null for the planned ones). Rendered from the code of the tag, not from a response, with scripts/transcribe-catalog.php: if accounts changes the catalog, render it again from the new tag.",
   "source": {
     "repository": "Funnelchat20/accounts",
-    "tag": "v1.4.24",
-    "commit": "300cc8435",
+    "tag": "v1.5.97",
+    "commit": "558332bcf",
     "files": [
       "back/app/Modules/Webhook/Catalogs/WebhookEventCatalog.php",
       "back/app/Modules/Webhook/Catalogs/Areas/AccountsEvents.php",
       "back/app/Modules/Webhook/Catalogs/Areas/ConversationsEvents.php",
       "back/app/Modules/Webhook/Catalogs/Areas/CommunitiesEvents.php",
-      "back/app/Modules/Webhook/Http/Controllers/WebhookEventCatalogController.php"
+      "back/app/Modules/Webhook/Http/Controllers/WebhookEventCatalogController.php",
+      "back/app/Modules/Webhook/Services/DeviceWebhookEmitter.php",
+      "back/app/Modules/Webhook/Services/WebhookEventDispatcher.php"
     ],
-    "platform_gate": "v0.8.0 (back/composer.lock)",
-    "transcribed_at": "2026-10-22"
+    "platform_gate": "v0.9.1 (back/composer.lock)",
+    "transcribed_at": "2026-11-04"
   },
   "meta": {
     "envelope_version": "v1",
@@ -26,7 +28,7 @@
       "status": "active",
       "is_critical": true,
       "label": "Número desconectado",
-      "description": "Uno de los números de WhatsApp de la cuenta se desconectó y dejó de poder enviar o recibir.",
+      "description": "Uno de los números de WhatsApp de la cuenta se desconectó y dejó de poder enviar o recibir. `reason` dice por qué: `qr_logged_out` (se cerró la sesión de un número por QR), `meta_account_not_registered` (un número oficial dejó de estar registrado en Meta y no se pudo volver a registrar solo), `shadow_ban_protection` (Funnelchat lo desconectó para protegerlo de un posible bloqueo), `disconnected_by_user` (alguien de la cuenta desconectó o borró los datos de un número oficial), `provider_error` o `unknown`. Trae `device.connection`, `device.external_reference` y `connect_link_id` (el link de alta que conectó el número por última vez, o null).",
       "subscribable": true,
       "example": {
         "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
@@ -37,9 +39,14 @@
           "device": {
             "id": 4521,
             "name": "Ventas",
-            "number": "5491100000000"
+            "number": "5491100000000",
+            "connection": "qr",
+            "external_reference": "cliente-42"
           },
-          "disconnected_at": "2026-10-05T03:00:00+00:00"
+          "disconnected_at": "2026-10-05T03:00:00+00:00",
+          "reason": "qr_logged_out",
+          "connect_link_id": 812,
+          "workspace_id": 37
         }
       }
     },
@@ -49,7 +56,7 @@
       "status": "active",
       "is_critical": false,
       "label": "Número conectado",
-      "description": "Uno de los números de WhatsApp de la cuenta quedó conectado: al escanear el código QR o al terminar el alta de un número de WhatsApp Cloud.",
+      "description": "Uno de los números de WhatsApp de la cuenta quedó conectado: al escanear el código QR o al terminar el alta de un número de WhatsApp Cloud. Trae `device.connection` (`qr`, `coexistence` o `dedicated`), `device.external_reference` y `connect_link_id` (el link de alta que lo conectó, o null).",
       "subscribable": true,
       "example": {
         "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
@@ -60,9 +67,159 @@
           "device": {
             "id": 4521,
             "name": "Ventas",
-            "number": "5491100000000"
+            "number": "5491100000000",
+            "connection": "qr",
+            "external_reference": "cliente-42"
           },
-          "connected_at": "2026-10-05T03:00:00+00:00"
+          "connected_at": "2026-10-05T03:00:00+00:00",
+          "connect_link_id": 812,
+          "workspace_id": 37
+        }
+      }
+    },
+    {
+      "type": "device.deleted",
+      "area": "accounts",
+      "status": "active",
+      "is_critical": false,
+      "label": "Número borrado",
+      "description": "Uno de los números de WhatsApp de la cuenta se borró y liberó su lugar en el plan (desde el panel, la API o porque un link de alta venció sin conectarlo). Un número oficial deja de recibir mensajes en Funnelchat, pero sigue registrado en Meta; a uno por QR se le cierra la sesión. Trae `connect_link_id` (el link de alta que conectó el número por última vez, o null).",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "device.deleted",
+        "version": 1,
+        "occurred_at": "2026-10-05T03:00:00Z",
+        "data": {
+          "device": {
+            "id": 4521,
+            "name": "Ventas",
+            "number": "5491100000000",
+            "connection": "qr",
+            "external_reference": "cliente-42"
+          },
+          "deleted_at": "2026-10-05T03:00:00+00:00",
+          "connect_link_id": 812,
+          "workspace_id": 37
+        }
+      }
+    },
+    {
+      "type": "device.health_changed",
+      "area": "accounts",
+      "status": "active",
+      "is_critical": true,
+      "label": "Cambió la salud del número",
+      "description": "Cambió el estado de envío de uno de los números oficiales de la cuenta, según Meta: `available`, `limited`, `blocked` o `unknown` (`previous_state` y `state`). Sale solo cuando el estado cambia, no con cada aviso de Meta. El motivo se consulta en `GET api/v1/devices/{device}/health`. Trae `connect_link_id` (el link de alta que conectó el número por última vez, o null).",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "device.health_changed",
+        "version": 1,
+        "occurred_at": "2026-10-05T03:00:00Z",
+        "data": {
+          "device": {
+            "id": 4522,
+            "name": "Soporte",
+            "number": "5491100000000",
+            "connection": "dedicated",
+            "external_reference": "cliente-42"
+          },
+          "previous_state": "available",
+          "state": "limited",
+          "changed_at": "2026-10-05T03:00:00+00:00",
+          "connect_link_id": null,
+          "workspace_id": 37
+        }
+      }
+    },
+    {
+      "type": "device.quality_changed",
+      "area": "accounts",
+      "status": "active",
+      "is_critical": true,
+      "label": "Cambió la calidad del número",
+      "description": "Cambió la calidad que Meta le da a uno de los números oficiales de la cuenta (`previous` y `current`, tal cual los manda Meta: `GREEN`, `YELLOW` o `RED`). Si la calidad baja, conviene frenar los envíos de ese número antes de que Meta lo limite. Sale una vez por cambio, no con cada aviso de Meta, y no sale cuando Meta no tiene datos de calidad (`NA` o `UNKNOWN`). Trae `connect_link_id` (el link de alta que conectó el número por última vez, o null).",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "device.quality_changed",
+        "version": 1,
+        "occurred_at": "2026-10-05T03:00:00Z",
+        "data": {
+          "device": {
+            "id": 4522,
+            "name": "Soporte",
+            "number": "5491100000000",
+            "connection": "dedicated",
+            "external_reference": "cliente-42"
+          },
+          "previous": "GREEN",
+          "current": "YELLOW",
+          "changed_at": "2026-10-05T03:00:00+00:00",
+          "connect_link_id": null,
+          "workspace_id": 37
+        }
+      }
+    },
+    {
+      "type": "device.messaging_limit_changed",
+      "area": "accounts",
+      "status": "active",
+      "is_critical": true,
+      "label": "Cambio del límite de mensajes",
+      "description": "Cambió el límite de mensajes que Meta le da a uno de los números oficiales de la cuenta: cuántas personas distintas se pueden contactar por día con mensajes que inicia la empresa (`previous` y `current`, tal cual los manda Meta: `TIER_250`, `TIER_1K`, `TIER_2K`, `TIER_10K`, `TIER_100K` o `TIER_UNLIMITED`). Meta fija el límite para todos los números de una misma empresa: llega un aviso por cada número de la cuenta que cambió. Sale una vez por cambio y no sale cuando el número todavía no tiene límite asignado (`TIER_NOT_SET`). Trae `connect_link_id` (el link de alta que conectó el número por última vez, o null).",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "device.messaging_limit_changed",
+        "version": 1,
+        "occurred_at": "2026-10-05T03:00:00Z",
+        "data": {
+          "device": {
+            "id": 4522,
+            "name": "Soporte",
+            "number": "5491100000000",
+            "connection": "dedicated",
+            "external_reference": "cliente-42"
+          },
+          "previous": "TIER_1K",
+          "current": "TIER_10K",
+          "changed_at": "2026-10-05T03:00:00+00:00",
+          "connect_link_id": null,
+          "workspace_id": 37
+        }
+      }
+    },
+    {
+      "type": "device.display_name_reviewed",
+      "area": "accounts",
+      "status": "active",
+      "is_critical": false,
+      "label": "Nombre visible revisado",
+      "description": "Meta aprobó (`decision`: `approved`) o rechazó (`rejected`) el nombre visible de uno de los números oficiales de la cuenta. Trae el estado anterior y el nuevo, tal cual los manda Meta (`previous_status`; `status`: `APPROVED` o `DECLINED`), el nombre visible actual (`verified_name`) y, en un rechazo, el motivo que da Meta en su aviso (`rejection_reason`), o null si Meta no lo informa. Sale una vez por revisión. Trae `connect_link_id` (el link de alta que conectó el número por última vez, o null).",
+      "subscribable": true,
+      "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "device.display_name_reviewed",
+        "version": 1,
+        "occurred_at": "2026-10-05T03:00:00Z",
+        "data": {
+          "device": {
+            "id": 4522,
+            "name": "Soporte",
+            "number": "5491100000000",
+            "connection": "dedicated",
+            "external_reference": "cliente-42"
+          },
+          "decision": "approved",
+          "previous_status": "PENDING_REVIEW",
+          "status": "APPROVED",
+          "verified_name": "Soporte Lucky Shrub",
+          "rejection_reason": null,
+          "reviewed_at": "2026-10-05T03:00:00+00:00",
+          "connect_link_id": null,
+          "workspace_id": 37
         }
       }
     },
@@ -81,7 +238,8 @@
         "occurred_at": "2026-10-01T12:00:00Z",
         "data": {
           "amount_cents": 2990,
-          "currency": "USD"
+          "currency": "USD",
+          "workspace_id": 37
         }
       }
     },
@@ -111,7 +269,8 @@
         "data": {
           "charge_date": "2026-11-05T00:00:00Z",
           "amount_cents": 2990,
-          "currency": "USD"
+          "currency": "USD",
+          "workspace_id": 37
         }
       }
     },
@@ -139,7 +298,8 @@
         "version": 1,
         "occurred_at": "2026-10-01T12:00:00Z",
         "data": {
-          "trial_ends_at": "2026-10-04T00:00:00Z"
+          "trial_ends_at": "2026-10-04T00:00:00Z",
+          "workspace_id": 37
         }
       }
     },
@@ -157,7 +317,8 @@
         "version": 1,
         "occurred_at": "2026-10-01T12:00:00Z",
         "data": {
-          "renews_at": "2026-11-05T00:00:00Z"
+          "renews_at": "2026-11-05T00:00:00Z",
+          "workspace_id": 37
         }
       }
     },
@@ -175,7 +336,8 @@
         "version": 1,
         "occurred_at": "2026-10-01T12:00:00Z",
         "data": {
-          "access_until": "2026-11-05T00:00:00Z"
+          "access_until": "2026-11-05T00:00:00Z",
+          "workspace_id": 37
         }
       }
     },
@@ -195,7 +357,8 @@
         "data": {
           "charge_date": "2026-10-08T00:00:00Z",
           "amount_cents": 1990,
-          "currency": "USD"
+          "currency": "USD",
+          "workspace_id": 37
         }
       }
     },
@@ -235,7 +398,7 @@
       "status": "active",
       "is_critical": false,
       "label": "Contactos activos al 80%",
-      "description": "La cuenta alcanzó el 80% de sus contactos activos mensuales del ciclo.",
+      "description": "La cuenta alcanzó el 80% de sus contactos activos mensuales del ciclo. `workspace_id` es el workspace al que se rutea el aviso, como en todos los eventos: el workspace con facturación propia cuyo pool alcanzó el umbral, o el workspace por defecto cuando el pool es el de la cuenta.",
       "subscribable": true,
       "example": {
         "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
@@ -246,7 +409,8 @@
           "used": 8000,
           "limit": 10000,
           "percentage": 80,
-          "cycle_started_at": "2026-10-01T00:00:00Z"
+          "cycle_started_at": "2026-10-01T00:00:00Z",
+          "workspace_id": 37
         }
       }
     },
@@ -256,7 +420,7 @@
       "status": "active",
       "is_critical": true,
       "label": "Contactos activos al 100%",
-      "description": "La cuenta agotó sus contactos activos mensuales del ciclo; se abre una gracia de 24 horas cuyo vencimiento viaja en `grace_expires_at`.",
+      "description": "La cuenta agotó sus contactos activos mensuales del ciclo; se abre una gracia de 24 horas cuyo vencimiento viaja en `grace_expires_at`. `workspace_id` es el workspace al que se rutea el aviso, como en todos los eventos: el workspace con facturación propia cuyo pool se agotó, o el workspace por defecto cuando el pool es el de la cuenta.",
       "subscribable": true,
       "example": {
         "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
@@ -268,7 +432,8 @@
           "limit": 10000,
           "percentage": 100,
           "cycle_started_at": "2026-10-01T00:00:00Z",
-          "grace_expires_at": "2026-10-02T12:00:00Z"
+          "grace_expires_at": "2026-10-02T12:00:00Z",
+          "workspace_id": 37
         }
       }
     },
@@ -287,7 +452,8 @@
         "occurred_at": "2026-10-01T12:00:00Z",
         "data": {
           "contacts_expiring": 1200,
-          "expires_at": "2026-10-08T03:00:00Z"
+          "expires_at": "2026-10-08T03:00:00Z",
+          "workspace_id": 37
         }
       }
     },
@@ -307,7 +473,8 @@
         "data": {
           "reason": "mac_grace_expired",
           "grace_started_at": "2026-10-01T12:00:00Z",
-          "grace_expired_at": "2026-10-02T12:00:00Z"
+          "grace_expired_at": "2026-10-02T12:00:00Z",
+          "workspace_id": 37
         }
       }
     },
@@ -326,7 +493,8 @@
         "occurred_at": "2026-10-01T12:00:00Z",
         "data": {
           "subscription": "00000000-0000-4000-8000-000000000001",
-          "sent_at": "2026-10-01T12:00:00Z"
+          "sent_at": "2026-10-01T12:00:00Z",
+          "workspace_id": 37
         }
       }
     },
@@ -358,7 +526,8 @@
           "receiver": {
             "phone": "+5491100000001"
           },
-          "device_id": 4521
+          "device_id": 4521,
+          "workspace_id": 37
         }
       }
     },
@@ -384,7 +553,8 @@
             "id": 2001,
             "name": "Contacto de ejemplo",
             "phone": "+5491100000000"
-          }
+          },
+          "workspace_id": 37
         }
       }
     },
@@ -412,7 +582,8 @@
             "processed": 1200,
             "failed": 30,
             "skipped_unreachable": 12
-          }
+          },
+          "workspace_id": 37
         }
       }
     },
@@ -449,7 +620,8 @@
             "id": 6002,
             "name": "En seguimiento",
             "position": 1
-          }
+          },
+          "workspace_id": 37
         }
       }
     },
@@ -478,7 +650,8 @@
             "reason": null
           },
           "occurred_at": "2026-10-01T12:00:00Z",
-          "client_reference": "pedido-1234"
+          "client_reference": "pedido-1234",
+          "workspace_id": 37
         }
       }
     },
@@ -500,7 +673,8 @@
             "id": 2001,
             "name": "Contacto de ejemplo",
             "phone": "+5491100000000"
-          }
+          },
+          "workspace_id": 37
         }
       }
     },
@@ -526,7 +700,8 @@
           "assignee": {
             "type": "human",
             "name": "Agente de ejemplo"
-          }
+          },
+          "workspace_id": 37
         }
       }
     },
@@ -553,7 +728,8 @@
             "id": 4001,
             "name": "Etiqueta de ejemplo"
           },
-          "source": "manual"
+          "source": "manual",
+          "workspace_id": 37
         }
       }
     },
@@ -577,7 +753,8 @@
           },
           "reason": "quality_degraded",
           "quality": "YELLOW",
-          "quality_baseline": "GREEN"
+          "quality_baseline": "GREEN",
+          "workspace_id": 37
         }
       }
     },
@@ -604,7 +781,8 @@
             "id": 4001,
             "name": "Etiqueta de ejemplo"
           },
-          "source": "manual"
+          "source": "manual",
+          "workspace_id": 37
         }
       }
     },
@@ -627,7 +805,8 @@
             "name": "Contacto de ejemplo",
             "phone": "+5491100000000",
             "email": "contacto@example.com"
-          }
+          },
+          "workspace_id": 37
         }
       }
     },
@@ -653,7 +832,8 @@
           },
           "previous_status": "PENDING",
           "status": "APPROVED",
-          "reason": null
+          "reason": null,
+          "workspace_id": 37
         }
       }
     },
@@ -680,7 +860,8 @@
             "name": "Contacto de ejemplo",
             "phone": "+5491100000000"
           },
-          "reason": "execution_error"
+          "reason": "execution_error",
+          "workspace_id": 37
         }
       }
     },
@@ -741,7 +922,8 @@
               "value": null
             }
           ],
-          "occurred_at": "2026-10-01T12:00:00Z"
+          "occurred_at": "2026-10-01T12:00:00Z",
+          "workspace_id": 37
         }
       }
     },
@@ -768,7 +950,8 @@
             "uuid": "xK9mQz",
             "name": "Campaña de ejemplo"
           },
-          "source": "manual"
+          "source": "manual",
+          "workspace_id": 37
         }
       }
     },
@@ -796,7 +979,8 @@
             "name": "Campaña de ejemplo"
           },
           "reason": "link_revoked",
-          "renewal_attempted": true
+          "renewal_attempted": true,
+          "workspace_id": 37
         }
       }
     },
@@ -826,7 +1010,8 @@
           "invite_link": "https://chat.whatsapp.com/EJEMPLO01",
           "previous_invite_link": "https://chat.whatsapp.com/EJEMPLO00",
           "trigger": "automatic",
-          "recovered": true
+          "recovered": true,
+          "workspace_id": 37
         }
       }
     },
@@ -855,7 +1040,8 @@
             "identity": "5491100000000",
             "identity_type": "phone",
             "name": "Ana Ejemplo"
-          }
+          },
+          "workspace_id": 37
         }
       }
     },
@@ -884,7 +1070,8 @@
             "identity": "5491100000000",
             "identity_type": "phone",
             "name": "Ana Ejemplo"
-          }
+          },
+          "workspace_id": 37
         }
       }
     },
@@ -911,7 +1098,8 @@
           },
           "reason": "send_failed",
           "partial": false,
-          "occurrence": "2026-10-01T12:00:00Z"
+          "occurrence": "2026-10-01T12:00:00Z",
+          "workspace_id": 37
         }
       }
     },
@@ -944,7 +1132,8 @@
             "type": "rsvp",
             "options": [],
             "rsvp": "yes"
-          }
+          },
+          "workspace_id": 37
         }
       }
     },
@@ -978,7 +1167,8 @@
           },
           "options": [
             "Opción A"
-          ]
+          ],
+          "workspace_id": 37
         }
       }
     },
@@ -1010,7 +1200,8 @@
             "failed": 1,
             "skipped": 0,
             "cancelled": 0
-          }
+          },
+          "workspace_id": 37
         }
       }
     },
@@ -1035,7 +1226,8 @@
           "campaign": {
             "uuid": "xK9mQz"
           },
-          "reason": "whatsapp_restriction"
+          "reason": "whatsapp_restriction",
+          "workspace_id": 37
         }
       }
     },
@@ -1060,7 +1252,8 @@
           "campaign": {
             "uuid": "xK9mQz"
           },
-          "reason": "restriction_lifted"
+          "reason": "restriction_lifted",
+          "workspace_id": 37
         }
       }
     },
@@ -1083,7 +1276,8 @@
             "name": "Campaña de ejemplo"
           },
           "from": "active",
-          "to": "paused"
+          "to": "paused",
+          "workspace_id": 37
         }
       }
     },
@@ -1111,7 +1305,8 @@
             "failed": 1,
             "partially_failed": 2
           },
-          "occurrence": "2026-10-01T12:00:00Z"
+          "occurrence": "2026-10-01T12:00:00Z",
+          "workspace_id": 37
         }
       }
     },
@@ -1142,7 +1337,8 @@
             "uuid": "00000000-0000-4000-8000-000000000001",
             "type": "add_participants"
           },
-          "reason": "motivo_de_ejemplo"
+          "reason": "motivo_de_ejemplo",
+          "workspace_id": 37
         }
       }
     },
@@ -1167,7 +1363,8 @@
           "clicks": 120,
           "joins": 80,
           "leaves": 10,
-          "conversion_rate": 0.67
+          "conversion_rate": 0.67,
+          "workspace_id": 37
         }
       }
     },
@@ -1189,7 +1386,8 @@
             "uuid": "xK9mQz",
             "name": "Campaña de ejemplo"
           },
-          "reason": "none_selectable"
+          "reason": "none_selectable",
+          "workspace_id": 37
         }
       }
     },
@@ -1217,7 +1415,8 @@
             "name": "Campaña de ejemplo"
           },
           "trigger": "participants_limit",
-          "participants": 1024
+          "participants": 1024,
+          "workspace_id": 37
         }
       }
     },
@@ -1256,7 +1455,8 @@
                 "reason": null
               }
             ]
-          }
+          },
+          "workspace_id": 37
         }
       }
     },
@@ -1287,7 +1487,8 @@
             "id": "msg-ejemplo-01",
             "type": "text",
             "text": "Hola a todos"
-          }
+          },
+          "workspace_id": 37
         }
       }
     },
@@ -1317,7 +1518,8 @@
           "message": {
             "id": "msg-ejemplo-01"
           },
-          "reaction": "👍"
+          "reaction": "👍",
+          "workspace_id": 37
         }
       }
     },
@@ -1343,7 +1545,8 @@
             "identity": "5491100000000",
             "identity_type": "phone",
             "name": "Ana Ejemplo"
-          }
+          },
+          "workspace_id": 37
         }
       }
     },
@@ -1369,7 +1572,8 @@
             "identity": "5491100000000",
             "identity_type": "phone",
             "name": "Ana Ejemplo"
-          }
+          },
+          "workspace_id": 37
         }
       }
     }

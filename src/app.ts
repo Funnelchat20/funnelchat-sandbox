@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { type SandboxConfig } from './config.js';
 import { seed, Store, type Subscription } from './state/store.js';
+import { createWorkspace, mintKey } from './state/workspaces.js';
 import { uuid, webhookSecret } from './util.js';
 import { isSubscribable } from './webhooks/catalog.js';
 import { Webhooks } from './webhooks/dispatcher.js';
@@ -71,12 +72,17 @@ export class SandboxApp {
   private populate(): void {
     seed(this.store);
     this.store.numbers = { ...this.config.numbers };
+    for (const preset of this.config.workspaces) {
+      const workspace = createWorkspace(this, preset.name);
+      for (const key of preset.keys) mintKey(this.store, workspace.id, key);
+    }
     for (const preset of this.config.subscriptions) {
       const unknown = preset.events.filter((e) => !isSubscribable(e));
       if (unknown.length) this.logger.warn(`subscription from the configuration with types that are not in the catalog: ${unknown.join(', ')}`);
       const now = new Date();
       const subscription: Subscription = {
         id: preset.id ?? uuid(),
+        workspaceId: this.store.defaultWorkspace.id,
         url: preset.url,
         description: preset.description ?? 'Subscription from the sandbox configuration',
         events: [...new Set(preset.events)],

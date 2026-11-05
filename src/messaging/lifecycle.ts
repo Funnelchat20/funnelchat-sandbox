@@ -37,7 +37,9 @@ export function createMessage(app: SandboxApp, input: NewMessage): Message {
     status: input.status,
     error: null,
     clientReference: input.clientReference ?? null,
-    uid: input.own ? `wamid.SANDBOX${randomAlnum(24)}` : `false_${randomAlnum(20)}`,
+    // What WhatsApp gives: a `wamid.` for what is sent and for what an official number receives, the id of Z-API for
+    // what a QR number receives.
+    uid: input.own || app.store.devices.get(input.deviceId ?? -1)?.kind === 'cloud' ? `wamid.SANDBOX${randomAlnum(24)}` : `false_${randomAlnum(20)}`,
     viaApi: input.viaApi,
     templateId: input.templateId ?? null,
     reactions: [],
@@ -85,7 +87,9 @@ export function transition(app: SandboxApp, message: Message, status: 'sent' | '
 
   // The event id is deterministic per (message, state): a repeated emission does not mint a second one.
   const id = deterministicEventId(app.store.eventSalt, `message.status_changed|${message.id}|${status}`);
-  app.webhooks.emit('message.status_changed', data, { id, occurredAt: now });
+  // Its workspace: the contact's, or the number's (conversations `EventWorkspace`).
+  const workspaceId = app.store.contacts.get(message.contactId)?.workspaceId ?? (message.deviceId === null ? null : (app.store.devices.get(message.deviceId)?.workspaceId ?? null));
+  app.webhooks.emit('message.status_changed', data, { id, occurredAt: now, workspaceId });
   return true;
 }
 

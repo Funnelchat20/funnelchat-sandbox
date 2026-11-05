@@ -400,7 +400,10 @@ export function completeForm(app: SandboxApp, input: Record<string, unknown>): R
     answers: publicAnswers(form, run.answers),
     occurred_at: isoSeconds(run.respondedAt),
   };
-  const result = app.webhooks.emit('whatsapp_form.completed', data, { occurredAt: run.respondedAt });
+  const result = app.webhooks.emit('whatsapp_form.completed', data, {
+    occurredAt: run.respondedAt,
+    workspaceId: app.store.contacts.get(run.contactId)?.workspaceId ?? app.store.devices.get(run.deviceId)?.workspaceId ?? null,
+  });
   return { run: runDetail(app, run), event: { id: result.envelope.id, type: result.envelope.type, subscriptions: result.subscriptions } };
 }
 

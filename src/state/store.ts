@@ -1,8 +1,8 @@
 /**
- * The in-memory state of the sandbox: one account, its two example numbers, and what a real integration touches
- * (numbers and sign-up links, contacts, conversations and messages, tags, custom fields, templates and webhook
- * subscriptions). Everything is
- * lost when the process stops or on `POST /_sandbox/reset`.
+ * The in-memory state of the sandbox: one account, its workspaces (one, the default, unless you create more), its two
+ * example numbers, and what a real integration touches (numbers and sign-up links, contacts, conversations and
+ * messages, groups, tags, custom fields, templates and webhook subscriptions). Everything is lost when the process
+ * stops or on `POST /_sandbox/reset`.
  */
 import { randomBytes } from 'node:crypto';
 
@@ -22,8 +22,21 @@ export type Connection = 'qr' | 'coexistence' | 'dedicated';
 /** The aggregated health of an official number (accounts `MetaHealthStatusService`). */
 export type HealthState = 'available' | 'limited' | 'blocked' | 'unknown';
 
+/**
+ * A workspace of the account (accounts `workspaces`). Every API key belongs to one and only sees and creates there
+ * (accounts v1.5.97, workspaces-api-keys). What has no workspace (`null`) counts as the default one's.
+ */
+export interface Workspace {
+  id: number;
+  name: string;
+  isDefault: boolean;
+  createdAt: Date;
+}
+
 export interface Device {
   id: number;
+  /** The workspace the number is in; `null` counts as the default one. */
+  workspaceId: number | null;
   alias: string;
   /** Digits only, without `+`. `null` while a number created by QR has not been scanned. */
   number: string | null;
@@ -52,6 +65,8 @@ export type ConnectLinkStatus = 'pending' | 'completed' | 'failed' | 'expired' |
 /** A sign-up link (contract A1 `connect-links`): it creates (or reconnects) a number when the page completes. */
 export interface ConnectLink {
   id: number;
+  /** The workspace of the key that created it: the number it creates lands there. */
+  workspaceId: number | null;
   type: 'meta' | 'qr';
   status: ConnectLinkStatus;
   /** sha256 of the token: the raw token is only in the `url` of the create answer. */
@@ -86,6 +101,8 @@ export interface IdempotentAnswer {
 
 export interface Contact {
   id: number;
+  /** The workspace the contact is in; `null` counts as the default one. */
+  workspaceId: number | null;
   name: string | null;
   email: string | null;
   /** Digits only: the API stores the phone without `+`. */
@@ -144,10 +161,56 @@ export interface CustomField {
   updatedAt: Date;
 }
 
+/** A participant of a group: the phone in digits, and whether it is an admin. */
+export interface GroupParticipant {
+  phone: string;
+  name: string | null;
+  admin: boolean;
+}
+
+/** A WhatsApp group of a number of the account (communities `groups`). */
+export interface Group {
+  id: number;
+  /** The WhatsApp id of the group, `120363…@g.us`: the `{group}` of the routes and `group.uid` of the events. */
+  uid: string;
+  name: string;
+  description: string;
+  /** The number that is in the group (a QR number: the sandbox account has no official groups). */
+  deviceId: number;
+  /** The workspace the group is in; `null` counts as the default one. */
+  workspaceId: number | null;
+  participants: GroupParticipant[];
+  link: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** `queued` → `running` → `completed` | `failed` (communities `ApiGroupAction::publicStatus()`). */
+export type GroupActionStatus = 'queued' | 'running' | 'completed' | 'failed';
+
+/** A group action by API (communities `api_group_actions`): here, only `send_message`. */
+export interface GroupAction {
+  uuid: string;
+  type: 'send_message';
+  status: GroupActionStatus;
+  deviceId: number;
+  groupId: number;
+  /** The workspace of the key that called (`call_context.workspace_id`). */
+  workspaceId: number;
+  result: Record<string, unknown> | null;
+  reason: string | null;
+  createdAt: Date;
+  startedAt: Date | null;
+  completedAt: Date | null;
+  failedAt: Date | null;
+}
+
 export type TemplateStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'PAUSED' | 'DISABLED';
 
 export interface Template {
   id: number;
+  /** The workspace it belongs to; `null` counts as the default one. */
+  workspaceId: number | null;
   uid: string;
   name: string;
   body: string;
@@ -170,6 +233,8 @@ export type SubscriptionStatus = 'active' | 'paused' | 'disabled';
 
 export interface Subscription {
   id: string;
+  /** The workspace it belongs to: it only gets that workspace's events. `null` counts as the default one. */
+  workspaceId: number | null;
   url: string;
   description: string | null;
   events: string[];
@@ -258,6 +323,13 @@ export interface RequestLogEntry {
   responseBody: unknown;
 }
 
+/** An event the sandbox emitted, delivered or not: the panel shows them, so a status is seen without a receiver. */
+export interface EmittedEvent {
+  envelope: { id: string; type: string; version: number; occurred_at: string; data: unknown };
+  /** How many subscriptions got it. */
+  subscriptions: number;
+}
+
 /** A failure armed with `POST /_sandbox/failures` or the `X-Sandbox-*` headers. */
 export interface ArmedFailure {
   id: number;
@@ -287,6 +359,9 @@ class Sequence {
 }
 
 export class Store {
+  workspaces = new Map<number, Workspace>();
+  /** The sandbox keys minted for a workspace (`POST /_sandbox/workspaces`, `/_sandbox/keys`): any other key is the default one's. */
+  keys = new Map<string, number>();
   devices = new Map<number, Device>();
   contacts = new Map<number, Contact>();
   messages = new Map<number, Message>();
@@ -296,11 +371,14 @@ export class Store {
   subscriptions = new Map<string, Subscription>();
   deliveries: Delivery[] = [];
   requests: RequestLogEntry[] = [];
+  events: EmittedEvent[] = [];
   failures: ArmedFailure[] = [];
   forms = new Map<number, FormVersion>();
   formFamilies = new Map<number, FormFamily>();
   formRuns = new Map<number, FormRun>();
   connectLinks = new Map<number, ConnectLink>();
+  groups = new Map<number, Group>();
+  groupActions = new Map<string, GroupAction>();
   /** When each `POST /connect-links` arrived in the last minute: the per-minute limit. */
   linkAttempts: number[] = [];
   /** Answers by `Idempotency-Key`, per resource (`devices`, `connect-links`): one account. */
@@ -323,6 +401,8 @@ export class Store {
   eventSalt = randomBytes(16).toString('hex');
 
   readonly ids = {
+    workspace: new Sequence(1),
+    apiKey: new Sequence(101),
     contact: new Sequence(2001),
     message: new Sequence(9001),
     tag: new Sequence(4001),
@@ -337,15 +417,27 @@ export class Store {
     formRun: new Sequence(1),
     device: new Sequence(5),
     connectLink: new Sequence(1),
+    group: new Sequence(7001),
   };
 
   constructor(readonly historyLimit = 200) {}
+
+  /** The default workspace of the account: where what has no workspace belongs. */
+  get defaultWorkspace(): Workspace {
+    for (const workspace of this.workspaces.values()) if (workspace.isDefault) return workspace;
+    throw new Error('The sandbox account has no default workspace.');
+  }
 
   logRequest(entry: Omit<RequestLogEntry, 'id'>): RequestLogEntry {
     const full = { id: this.ids.request.next(), ...entry };
     this.requests.push(full);
     if (this.requests.length > this.historyLimit) this.requests.splice(0, this.requests.length - this.historyLimit);
     return full;
+  }
+
+  logEvent(entry: EmittedEvent): void {
+    this.events.push(entry);
+    if (this.events.length > this.historyLimit) this.events.splice(0, this.events.length - this.historyLimit);
   }
 
   addDelivery(entry: Omit<Delivery, 'id'>): Delivery {
@@ -373,8 +465,12 @@ export class Store {
 
 /** The example numbers, contact, tag and template every session starts with. */
 export function seed(store: Store, now = new Date()): void {
+  const workspaceId = store.ids.workspace.next();
+  store.workspaces.set(workspaceId, { id: workspaceId, name: 'Principal', isDefault: true, createdAt: now });
+
   store.devices.set(3, {
     id: 3,
+    workspaceId,
     alias: 'Número oficial de ejemplo',
     number: '5491100000001',
     provider: 2,
@@ -392,6 +488,7 @@ export function seed(store: Store, now = new Date()): void {
   });
   store.devices.set(4, {
     id: 4,
+    workspaceId,
     alias: 'Número QR de ejemplo',
     number: '5491100000002',
     provider: 1,
@@ -411,6 +508,7 @@ export function seed(store: Store, now = new Date()): void {
   const contactId = store.ids.contact.next();
   store.contacts.set(contactId, {
     id: contactId,
+    workspaceId,
     name: 'Contacto de ejemplo',
     email: 'contacto@example.com',
     phone: '5491100000000',
@@ -431,12 +529,30 @@ export function seed(store: Store, now = new Date()): void {
     updatedAt: now,
   });
 
+  const groupId = store.ids.group.next();
+  store.groups.set(groupId, {
+    id: groupId,
+    uid: '120363000000000000@g.us',
+    name: 'Grupo de ejemplo',
+    description: '',
+    deviceId: 4,
+    workspaceId,
+    participants: [
+      { phone: '5491100000002', name: null, admin: true },
+      { phone: '5491100000000', name: 'Contacto de ejemplo', admin: false },
+    ],
+    link: 'https://chat.whatsapp.com/SandboxEjemplo0000000000',
+    createdAt: now,
+    updatedAt: now,
+  });
+
   const tagId = store.ids.tag.next();
   store.tags.set(tagId, { id: tagId, name: 'Cliente', color: '#2E7D32', createdAt: now, updatedAt: now });
 
   const templateId = store.ids.template.next();
   store.templates.set(templateId, {
     id: templateId,
+    workspaceId,
     uid: '1234567890',
     name: 'bienvenida',
     body: 'Hola {{1}}, gracias por escribirnos. ¿En qué te podemos ayudar?',

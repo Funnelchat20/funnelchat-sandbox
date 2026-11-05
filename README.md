@@ -1,27 +1,125 @@
 # @funnelchat-hq/sandbox
 
-A local server that imitates the Funnelchat public API and sends signed webhooks, with no real effects. Use it to build and test your integration without a real account, without WhatsApp and without spending anything: nothing goes out to WhatsApp, everything stays in memory.
+A local server that imitates the Funnelchat public API and sends signed webhooks, with no real effects: nothing goes out to WhatsApp, nothing is charged, everything stays in memory. Build and test your integration without an account.
 
-- The same routes, bodies and errors as the API in production (accounts v1.4.24, conversations v1.18.10, communities v2.34.52 and the API edge v0.3.0, since 21-10).
-- In-memory state for a real flow: contacts, conversations and messages, tags, custom fields, templates, WhatsApp forms and webhook subscriptions.
-- A send answers at once with the queued message, and then announces `sent`, `delivered` and `read` through `message.status_changed`.
-- Webhooks signed with the portal's exact algorithm, with its retries, and the event catalog of production.
-- The WhatsApp rules the API applies: the 24-hour window on official numbers, the per-number pace, the spam brakes and the MAC lockout.
-- `X-Request-Id` on every response, like the API.
+It imitates production on 04-11: accounts v1.5.97, conversations v1.19.7, communities v2.35.5, platform-gate v0.9.1 and the API edge v0.3.0.
 
-> **Status: v0.** The public API is in v0 and may change. What the sandbox does not imitate is in [What it does not imitate](#what-it-does-not-imitate).
+## Try it in 3 minutes, without an account
 
-**About the language.** This documentation, the command line, the panel and the sandbox's own routes (`/_sandbox`) are in English. The answers under `/api/v1` imitate the API, which answers in Spanish, so their messages are in Spanish, word for word where they come from the API's code. Decide by the HTTP status and by `error`, never by `message`.
-
-## Starting it
-
-You need Node 20.11 or later.
+You need Node 20.11 or later. Start the sandbox and leave it running:
 
 ```bash
 npx @funnelchat-hq/sandbox
 ```
 
-Or, in your project, as a development dependency (the command it installs is `funnelchat-sandbox`):
+In another terminal, the key. Against the sandbox any well-formed key works; against Funnelchat you create it in the panel (Developers → Create key) and it is shown only once. Either way, read it from `FUNNELCHAT_API_KEY`:
+
+```bash
+export FUNNELCHAT_API_KEY='1|fc_live_sandbox'
+API=http://localhost:4010/api/v1
+```
+
+**1. Connect a number.** Create a number by QR, ask for its QR and "scan" it (in the sandbox the scan is a route, or the **Scan the QR** button of the panel):
+
+```bash
+curl -s -X POST $API/devices -H "Authorization: Bearer $FUNNELCHAT_API_KEY" \
+  -H 'Content-Type: application/json' -d '{"connection": "qr"}'
+# {"data": {"id": 5, "connected": 0, "connection": "qr", …}}
+curl -s $API/devices/5/qr -H "Authorization: Bearer $FUNNELCHAT_API_KEY"
+# {"data": {"connected": false, "qr_code": "data:image/png;base64,…", "expires_in": 5}}: show it, ask again every 5 s
+curl -s -X POST http://localhost:4010/_sandbox/devices/5/connect
+# device.connected: number 5 is connected
+```
+
+**2. Send a message.** Create the contact first, then send it a text through number 5:
+
+```bash
+curl -s -X POST $API/contacts -H "Authorization: Bearer $FUNNELCHAT_API_KEY" \
+  -H 'Content-Type: application/json' -d '{"name": "Ana", "phone": "5491155550000"}'
+# {"id": 2002, "phone": "5491155550000", …}
+curl -s -X POST $API/contacts/2002/message -H "Authorization: Bearer $FUNNELCHAT_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"device_id": 5, "contact_id": 2002, "phone": "5491155550000", "text": "Hola, Ana", "client_reference": "pedido-8841"}'
+# {"message": {"id": 9001, "status": "queued", "client_reference": "pedido-8841", …}}
+```
+
+**3. Know when it was read.** Within six seconds the message goes `sent` → `delivered` → `read`. Watch it at [http://localhost:4010/_sandbox](http://localhost:4010/_sandbox), under **Events** (every `message.status_changed`, delivered or not), or read the message:
+
+```bash
+curl -s $API/contacts/2002/messages/9001 -H "Authorization: Bearer $FUNNELCHAT_API_KEY"
+# {"id": 9001, "status": "read", …}
+```
+
+In your code, subscribe a webhook to `message.status_changed` and verify its signature (see [Webhooks](#webhooks) and [End to end](#end-to-end)). That is the whole first use; against Funnelchat it is the same calls with your key and `https://api.funnelchat.com` instead of `http://localhost:4010`.
+
+### Receive messages
+
+A contact writes to one of your numbers: the sandbox creates the contact if it is new (`contact.created`) and emits `message.received`, with the `device_id` that received it. From the panel (**Incoming message**) or:
+
+```bash
+curl -s -X POST http://localhost:4010/_sandbox/inbound/message -H 'Content-Type: application/json' \
+  -d '{"phone": "5491155550000", "device_id": 5, "text": "¿Tienen stock?"}'
+```
+
+On an official number (`3`) this also opens the 24-hour window: free text only goes out within it, after that only [templates](#sending-a-message).
+
+### Groups
+
+The groups of your numbers, with the shape of communities: `GET /api/v1/groups` (paginated, 25 per page, sorted by `created_at`; `name`, `deviceId`… filter) and `GET /api/v1/groups/{uid}`. The sandbox starts with one, `120363000000000000@g.us`, of the QR number `4`; `POST /_sandbox/groups` (`{"device_id": 5, "name": "Clientes", "participants": ["5491155550000"]}`) gives a connected QR number another one.
+
+```bash
+curl -s "$API/groups" -H "Authorization: Bearer $FUNNELCHAT_API_KEY"
+# {"data": [{"id": 7001, "uid": "120363000000000000@g.us", "name": "Grupo de ejemplo", "deviceId": 4, "participants_count": 2, …}], "links": {…}, "meta": {…}}
+```
+
+**Someone joins or leaves a group:** `group_participant.joined` and `group_participant.left`, with `group`, `campaign` (`null` without one) and `participant` (`identity`, the phone in digits). In the sandbox they are simulated:
+
+```bash
+curl -s -X POST http://localhost:4010/_sandbox/groups/participant-joined -H 'Content-Type: application/json' \
+  -d '{"group_id": 7001, "participant": {"phone": "5491155550000", "name": "Ana"}}'
+```
+
+**Sending a message to a group** is `POST /api/v1/groups/{uid}/messages`, a group action: it answers `202` with an `action_id`, and `GET /api/v1/groups/actions/{action}` says when it is `completed` (with `result.message.uid`, the message's id in WhatsApp), as does the event `group_action.completed`:
+
+```bash
+curl -s -X POST "$API/groups/120363000000000000@g.us/messages" -H "Authorization: Bearer $FUNNELCHAT_API_KEY" \
+  -H 'Content-Type: application/json' -d '{"device_id": 4, "type": "text", "text": "Hola a todos"}'
+# 202 {"action_id": "…", "status": "queued"}
+```
+
+`type` is `text` (with `text`), `image`, `video`, `audio` or `document` (with `media_url`, an `https` URL with an extension of the type; `caption` for `image` and `video`, `file_name` for `document`). The number must be a QR number that is an admin of the group: `404 device_not_found` or `group_not_found`, `422 device_not_connected`, `device_not_group_admin` or, for an official number, `provider_unsupported` (the sandbox account is not in the beta of official groups). To imitate communities' switch `API_GROUP_ACTIONS_ENABLED` off, start it with `--no-group-actions`: every key then gets `403 route_not_available`.
+
+### Workspaces
+
+An account can have several workspaces (one per client of an agency, for example), and every key belongs to one: it only sees and operates the numbers, contacts, conversations, messages, groups and webhook subscriptions of its workspace, and what it creates lands there. A record of another workspace answers like one that does not exist (`404`). Every event carries `data.workspace_id`, the workspace it belongs to, and reaches only the subscriptions of that workspace.
+
+The sandbox starts with one workspace, `1` («Principal»), and every well-formed key belongs to it, so nothing above changes. To try a second one, create it with its key (in production it is created in the panel, and its keys in Developers):
+
+```bash
+curl -s -X POST http://localhost:4010/_sandbox/workspaces -H 'Content-Type: application/json' -d '{"name": "Cliente B"}'
+# {"workspace": {"id": 2, "name": "Cliente B", "is_default": false, "keys": ["101|fc_live_…"]}, "key": "101|fc_live_…"}
+```
+
+With that key, `GET /api/v1/devices` is empty until you connect a number there, and its events go out with `"workspace_id": 2`. `POST /_sandbox/keys` (`{"workspace_id": 2}`) gives another key, `GET /_sandbox/workspaces` lists them, and the configuration file can create workspaces with fixed keys (see [Options](#options)).
+
+## Reference
+
+**About the language.** This documentation, the command line, the panel and the sandbox's own routes (`/_sandbox`) are in English. The answers under `/api/v1` imitate the API, which answers in Spanish, so their messages are in Spanish, word for word where they come from the API's code. Decide by the HTTP status and by `error`, never by `message`.
+
+What it imitates, beyond the first use:
+
+- The same routes, bodies and errors as the API in production, validated against its spec.
+- In-memory state for a real flow: numbers and sign-up links, contacts, conversations and messages, groups, tags, custom fields, templates, WhatsApp forms and webhook subscriptions, in one or more workspaces.
+- A send answers at once with the queued message, and then announces `sent`, `delivered` and `read` through `message.status_changed`.
+- Webhooks signed with the portal's exact algorithm, with its retries, and the event catalog of production.
+- The WhatsApp rules the API applies: the 24-hour window on official numbers, the per-number pace, the spam brakes and the MAC lockout.
+- `X-Request-Id` on every response, like the API.
+
+What it does not imitate is in [What it does not imitate](#what-it-does-not-imitate).
+
+## Starting it
+
+You need Node 20.11 or later. `npx @funnelchat-hq/sandbox` starts it; or, in your project, as a development dependency (the command it installs is `funnelchat-sandbox`):
 
 ```bash
 npm install --save-dev @funnelchat-hq/sandbox
@@ -29,7 +127,7 @@ npx funnelchat-sandbox
 ```
 
 ```
-funnelchat-sandbox 0.2.0 at http://127.0.0.1:4010
+funnelchat-sandbox 0.3.0 at http://127.0.0.1:4010
   API:    http://127.0.0.1:4010/api/v1/...   (Authorization: Bearer 1|fc_live_sandbox, or any well-formed key)
   panel:  http://127.0.0.1:4010/_sandbox
   example numbers: 3 (official, with the 24-hour window) and 4 (QR, no window); contact 2001; template 45
@@ -84,6 +182,7 @@ await sandbox.close();
 | `--no-rate-limit` | Do not apply the per-number pace. | — |
 | `--template-approval <s>` | Seconds until a template created through the API is approved. A `-` leaves it pending. | `5` |
 | `--meta-connect` | Turns on the [Meta sign-up by link](#connecting-numbers), off like in production. | off |
+| `--no-group-actions` | Turns off [sending a message to a group](#groups) (`403 route_not_available`), on like in production. | on |
 | `-q`, `--quiet` | No line per request and per delivery on the console. | — |
 
 Options win over the file. The file has the same options and, besides, subscriptions created at start (and after every reset) with a fixed secret, so your receiver keeps working when you restart the sandbox:
@@ -103,20 +202,22 @@ Options win over the file. The file has the same options and, besides, subscript
 }
 ```
 
-The file also takes `numbers`, the quota of the account for [connecting numbers](#connecting-numbers): `{"limit": 5, "included": true, "trial": false, "metaConnect": false, "linksPerMinute": 10}`, and `publicUrl`. `metaConnect`
+The file also takes `groupActions` (`false` is `--no-group-actions`), `numbers`, the quota of the account for [connecting numbers](#connecting-numbers): `{"limit": 5, "included": true, "trial": false, "metaConnect": false, "linksPerMinute": 10}`, and `publicUrl`. `metaConnect`
 is the Meta sign-up by link: off by default, like production; `true` (or `--meta-connect`) turns it on to test it.
+
+And `workspaces`, more [workspaces](#workspaces) with fixed keys, created after the default one (ids `2`, `3`… in order): `[{"name": "Cliente B", "keys": ["2|fc_live_clienteB"]}]`. Any key not listed there belongs to the default workspace; the preset subscriptions too.
 
 There is a complete one in [funnelchat-sandbox.config.example.json](funnelchat-sandbox.config.example.json). The file `funnelchat-sandbox.config.json` is in `.gitignore`: do not commit a secret, even a test one.
 
 ## The key
 
-Any key with the shape of a real one works: `Authorization: Bearer <id>|fc_live_<letters and digits>`, for example `1|fc_live_sandbox`. Without a key, or with a malformed one, it answers `401` like the API:
+Any key with the shape of a real one works: `Authorization: Bearer <id>|fc_live_<letters and digits>`, for example `1|fc_live_sandbox`. It belongs to the default workspace, unless it was minted for another one ([workspaces](#workspaces)); `X-Workspace-Id` is ignored, as in production. Without a key, or with a malformed one, it answers `401` like the API:
 
 ```json
 { "error": "unauthenticated", "message": "Falta la API key o no es válida." }
 ```
 
-Every key sees the same account and has every permission.
+Every key has every permission.
 
 **Every response carries `X-Request-Id`**, like the API: a different UUID v4 per request, also on errors (`401`, `404 route_not_found`, `422`…) and on the `/_sandbox` routes. It is only in the header, never in the body, and one you send in the request is ignored. The panel shows it next to each response, so you can quote it as you would quote the API's.
 
@@ -151,10 +252,12 @@ Every session starts with this:
 | Contact «Contacto de ejemplo» | `2001` | Phone `5491100000000`. |
 | Tag «Cliente» | `4001` | |
 | Template `bienvenida`, approved, of number 3 | `45` | One variable: «Hola {{1}}, gracias por escribirnos…». |
+| Group «Grupo de ejemplo» of number 4 | `7001`, `120363000000000000@g.us` | Number 4 is its admin; contact 2001, a participant. |
+| Workspace «Principal» | `1` | The default one: every key belongs to it unless it was minted for another. |
 
 `POST /_sandbox/reset` goes back to this and cancels everything that was scheduled.
 
-**With state** (what you create, change or delete stays): contacts (`/api/v1/contacts…`, with their tags, fields and the `meta-window`), conversations (`/api/v1/conversations…`), messages (send, history, reactions, forward, cards and the lookup by id), tags, custom fields, templates, [WhatsApp forms](#whatsapp-forms), numbers and sign-up links ([connecting numbers](#connecting-numbers)) and webhook subscriptions with their history.
+**With state** (what you create, change or delete stays): contacts (`/api/v1/contacts…`, with their tags, fields and the `meta-window`), conversations (`/api/v1/conversations…`), messages (send, history, reactions, forward, cards, the lookup by id, mark as read and «typing…»), tags, custom fields, templates, [WhatsApp forms](#whatsapp-forms), numbers and sign-up links ([connecting numbers](#connecting-numbers)), [groups](#groups) (the list, one group and the send) and webhook subscriptions with their history, in one or more [workspaces](#workspaces).
 
 **The numbers** are those of accounts: `GET /api/v1/devices` always paginates (`{data, links, meta}`, `perPage` from 1 to 100), and each number carries `capabilities`, with what the API can do through it:
 
@@ -174,7 +277,7 @@ The official number (`3`) has no groups (the sandbox account is not in the offic
 { "error": "route_not_available", "message": "Esta ruta no está disponible para API keys en el piloto. No es un permiso que falte: ninguna key la habilita." }
 ```
 
-**Everything else** in the spec (broadcasts, flows, kanban, groups, campaigns, alerts…) answers an example built from the response schema: the spec's operations carry no examples of their own. The key, the route, the query and the body are still validated.
+**Everything else** in the spec (broadcasts, flows, kanban, the rest of groups, campaigns, alerts…) answers an example built from the response schema: the spec's operations carry no examples of their own. The key, the route, the query and the body are still validated.
 
 **Validation** follows the spec and reads values like Laravel (`"5"` works as an integer, `"1"` as a boolean). A validation error is a `422` with Laravel's messages per field; a route that does not exist, `404 route_not_found`:
 
@@ -189,7 +292,7 @@ The official number (`3`) has no groups (the sandbox account is not in the offic
 }
 ```
 
-**What does not exist in the account** answers like each domain: in conversations (contacts, messages, tags, fields, forms) `404 {"message": "Objeto no encontrado."}`, without `error`; in accounts (numbers) `404 {"message": "Object not found"}`.
+**What does not exist in the account** answers like each domain: in conversations (contacts, messages, tags, fields, forms) `404 {"message": "Objeto no encontrado."}`, without `error`; in accounts (numbers) `404 {"message": "Object not found"}`; in communities (a group by its uid) Laravel's `404 {"message": "No query results for model [App\\Modules\\Shared\\Models\\Group] <uid>"}`. **What is in another workspace** answers `404` too: `{"message": ""}` in conversations, `{"message": "Not Found"}` for a number, the same `404` as one that does not exist for links, subscriptions and groups.
 
 The complete spec the sandbox uses is at `GET /_sandbox/openapi.json`.
 
@@ -329,8 +432,9 @@ It emits `whatsapp_form.completed` once per send, with `form` (`id` is the `fami
 
 Create and connect WhatsApp numbers through the API: a number by QR, or a sign-up link your customer opens. It is in
 production in accounts since 25-10; the sandbox follows the contract of 22-10, its amendments v0.1 and v0.2 of 23-10
-and the changes of 25-10 (the QR every 5 seconds, `country`). accounts' OpenAPI will be the final word (see
-[Pending of the spec](#pending-of-the-spec)).
+and the changes of 25-10 (the QR every 5 seconds, `country`), checked against accounts v1.5.97 (see
+[Pending of the spec](#pending-of-the-spec)). A number, a link and the number a link creates belong to the workspace
+of the key that created them.
 
 **The official sign-up (`type: meta`) is not available in production yet:** it stays off until the domain is
 registered with Meta, and `POST /api/v1/connect-links` with `type: meta` answers `503 meta_connect_disabled`. The sandbox
@@ -367,8 +471,8 @@ starts the same way. To test it, turn it on with `--meta-connect`, `"numbers": {
 **Each number has** `external_reference` (your text, not unique) and `connection` (`qr`, `coexistence` or
 `dedicated`). The four `device.*` events carry both inside `device`, and `connect_link_id`: in `device.connected`, the
 link of that connection; in the other three, the link that connected the number last; `null` without one. `device.disconnected` brings `reason`: `qr_logged_out`, `meta_account_not_registered`,
-`shadow_ban_protection`, `provider_error`, `unknown` or `disconnected_by_user`. Type the new keys as optional:
-production does not send them until accounts deploys.
+`shadow_ban_protection`, `provider_error`, `unknown` or `disconnected_by_user`. Like every event, they end with
+`workspace_id`, the number's workspace.
 
 **The quota** counts phones: QR and Meta of the same phone count once. The sandbox account allows 5 and the two
 example numbers use two; change it with `POST /_sandbox/numbers`. The rejections:
@@ -448,7 +552,7 @@ You subscribe with the same routes the SDKs and the n8n trigger use (the unified
 | `POST /api/v1/webhooks/{id}/rotate-secret` | A new secret; the previous one stops working. |
 | `POST /api/v1/webhooks/{id}/test` | Sends a signed `webhook.test` now and answers `{succeeded, response_status, error, duration_ms, delivery_id}`. |
 | `GET /api/v1/webhooks/{id}/deliveries` | The history: one record per attempt, newest first. |
-| `GET /api/v1/webhooks/events` | The catalog of accounts in production: 54 types (49 `active`), with `area`, `status`, `is_critical`, `label`, `description` and `example`. |
+| `GET /api/v1/webhooks/events` | The catalog of accounts in production: 59 types (54 `active`), with `area`, `status`, `is_critical`, `label`, `description` and `example`. |
 
 **Each delivery** is a `POST` with the portal's envelope and these headers:
 
@@ -469,11 +573,13 @@ X-Funnelchat-Delivery: 7c9e6679-7425-40de-944b-e07fc1f90ae7
     "message": { "id": 9002, "type": "text", "text": "Hola, quiero más información", "media": null },
     "contact": { "id": 2001, "name": "Contacto de ejemplo", "phone": "+5491100000000" },
     "receiver": { "phone": "+5491100000001" },
-    "device_id": 3
+    "device_id": 3,
+    "workspace_id": 1
   }
 }
 ```
 
+- **`data.workspace_id`** is in every event, the last key of `data`: the workspace the event belongs to (the number's, the contact's or the group's). A subscription belongs to the workspace of the key that created it and only gets that workspace's events; `webhook.test` carries the subscription's.
 - **The signature** is the portal's: `v1` is the HMAC-SHA256, with the full secret (with `whsec_`), of `"<t>." + raw body`. Verify it with `Funnelchat.webhooks.verify` (Node), `Webhook::verify` (PHP) or the portal's snippets. The sandbox's tests verify it with the Node SDK's `verify` and with the portal's `verificar-firma.js`, on the vectors of `tests/test_firmas.py`.
 - **The retries** are the portal's: up to 4 attempts, waiting 60 s, 300 s and 1800 s (shorten them with `--retry-delays`). A network error, a timeout (10 s), a `5xx` or a `429` is retried; any other `4xx` or a `3xx` is final. Every attempt carries the same body and the same `id`, a new signature and another `X-Funnelchat-Delivery`.
 - **Five failed deliveries in a row** disable the subscription (`status: disabled`, `disabled_reason: too_many_failures`), as in accounts. A `PUT` with `"status": "active"` turns it back on.
@@ -487,7 +593,8 @@ These routes take no key: they belong to the sandbox, not to the API.
 | Route | What it simulates |
 |---|---|
 | `POST /_sandbox/inbound/message` | A contact writes to you: `{"phone": "5491100000000", "device_id": 3, "text": "Hola"}` (or `contact_id`; optional `name`, `type`, `file` and `occurred_at`). If the phone is new it creates the contact (`contact.created`); then it emits `message.received` and opens the 24-hour window of that number. |
-| `POST /_sandbox/groups/participant-joined`, `…/participant-left` | Someone joins or leaves a group: `{"group": {"uid": "…@g.us", "name": "…"}, "participant": {"phone": "…", "name": "…"}}`. |
+| `POST /_sandbox/groups`, `GET /_sandbox/groups` | A group of a connected QR number, its admin, in the number's workspace: `{"device_id": 5, "name": "Clientes", "participants": [{"phone": "5491155550000", "name": "Ana"}]}`. |
+| `POST /_sandbox/groups/participant-joined`, `…/participant-left` | Someone joins or leaves a group: `{"group_id": 7001, "participant": {"phone": "…", "name": "…"}}` (or `"uid"`; the example group without either). The group's participants change and the event goes to its workspace. A `group` the sandbox does not have (`{"group": {"uid": "…@g.us", "name": "…"}}`) goes out from the catalog's example. |
 | `POST /_sandbox/forms/complete` | The contact completes a sent form: emits `whatsapp_form.completed` (see [WhatsApp forms](#whatsapp-forms)). |
 | `POST /_sandbox/mac`, `GET /_sandbox/mac` | The account's MAC: `{"lockout": true, "active_contact_ids": [2001], "inactive_contact_ids": []}`. With `lockout`, sends to contacts that are not active answer `429 mac_lockout_24h`; an inactive contact always gets it. |
 | `POST /_sandbox/contacts/{id}/tags` with `{"tag_id": 4001}`, `DELETE /_sandbox/contacts/{id}/tags/{tag}` | Someone tags the contact in the panel: `contact.tag_added` and `contact.tag_removed`. |
@@ -495,14 +602,15 @@ These routes take no key: they belong to the sandbox, not to the API.
 | `POST /_sandbox/devices/{id}/health` | The health of an official number changes: `{"state": "limited"}` (`available`, `limited`, `blocked`, `unknown`) emits `device.health_changed`, only if it changed. |
 | `POST /_sandbox/numbers`, `GET /_sandbox/numbers` | The quota of the account: `{"limit": 3, "included": true, "trial": false, "meta_connect": true, "links_per_minute": 10}` (`meta_connect` turns the Meta sign-up on or off). `GET` also says how many places are in use and which QR numbers are pending. |
 | `POST /_sandbox/templates/{id}/status` | Meta approves or rejects a template: `{"status": "REJECTED", "reason": "…"}` emits `template.status_changed`. |
-| `POST /_sandbox/events/{type}` | Any event of the catalog, with its example; what you send in `{"data": {…}}` overrides it. `GET /_sandbox/events` lists them. `group.message_received` and `group.reaction_added` go out with the shape communities emits (`message.uid` and every key of the message), not with the example of the accounts catalog, which uses `message.id`. |
+| `POST /_sandbox/events/{type}` | Any event of the catalog, with its example; what you send in `{"data": {…}}` overrides it, and `{"workspace_id": 2}` sends it to that workspace (the default one otherwise). `GET /_sandbox/events` lists them. `group.message_received` and `group.reaction_added` go out with the shape communities emits (`message.uid` and every key of the message), not with the example of the accounts catalog, which uses `message.id`. |
 | `POST /_sandbox/window` | Opens or closes the window by hand: `{"contact_id": 2001, "device_id": 3, "open": false}`. |
+| `POST /_sandbox/workspaces`, `GET /_sandbox/workspaces` | A [workspace](#workspaces) with a key that only sees it: `{"name": "Cliente B"}` answers `201 {workspace, key}`. `POST /_sandbox/keys` with `{"workspace_id": 2}` mints another key (of the default workspace without `workspace_id`). |
 | `POST /_sandbox/reset` | Back to the initial state. |
-| `GET /_sandbox/state`, `/_sandbox/requests`, `/_sandbox/deliveries` | The state, the last requests and the last deliveries with what your server answered. |
+| `GET /_sandbox/state`, `/_sandbox/requests`, `/_sandbox/deliveries`, `/_sandbox/emitted` | The state, the last requests, the last deliveries with what your server answered, and every event emitted, delivered or not (with how many subscriptions got it). |
 
 Besides, as in the API: creating a contact emits `contact.created`, closing a conversation (`active_conversation: false`) emits `conversation.closed`, assigning it emits `conversation.assigned`, and a template created through the API goes from `PENDING` to `APPROVED` after 5 seconds with `template.status_changed`.
 
-**The panel** is at `http://localhost:4010/_sandbox`: the last requests, the webhook deliveries with your server's answer, and a form to send an incoming message.
+**The panel** is at `http://localhost:4010/_sandbox`: the numbers (with **Scan the QR** for one waiting for it), every event emitted, the last requests, the webhook deliveries with your server's answer, and a form to send an incoming message.
 
 ## End to end
 
@@ -576,46 +684,49 @@ And at `http://localhost:4010/_sandbox` you see each request and each delivery w
 ## What it does not imitate
 
 - **It sends nothing to WhatsApp** and charges nothing: the `sent`, `delivered` and `read` statuses are made up by the sandbox, with the delays you configure. In the real API, a message still `queued` after an hour reads as `status: null`; in the sandbox it always moves on.
-- **One account and every permission:** any well-formed key gets in, is never revoked and there is no `403 permission_denied`. API keys are not created here, and subscriptions are not filtered by the key's areas (the real API answers `422` on `events` if the key lacks the event's `{area}:read`). The only `403 route_not_available` is the one of the routes no key enables.
+- **One account and every permission:** any well-formed key gets in, is never revoked and there is no `403 permission_denied`. Workspaces are created and their keys minted through `/_sandbox`, never deleted, and a number does not move between workspaces. API keys are not created here, and subscriptions are not filtered by the key's areas (the real API answers `422` on `events` if the key lacks the event's `{area}:read`). The only `403 route_not_available` is the one of the routes no key enables.
 - **There are no daily call caps** (`429 daily_cap_exceeded`), no `503 gate_unavailable` and no balance: to test those cases, force the failure. Of the MAC there is the lockout (`429 mac_lockout_24h`); `429 mac_limit_reached` is only forced, and the real API also stores in the history an error row for every send stopped by the MAC, which the sandbox does not.
 - **The state is memory only:** it is lost when the process stops or with `POST /_sandbox/reset`. So your receiver does not lose the secret, put the subscription in the configuration file.
 - **The routes without state** answer an example built from the schema, always the same, even if it does not match your data.
 - **The validation messages** are Laravel's in Spanish, built from the schema: they may not match the API's word for word (decide by the HTTP status and by `error`, not by `message`). The real API's validation `422` is Laravel's, `{message, errors}`, without `error`; the sandbox adds `"error": "validation_failed"`.
 - **Webhook URLs** may be `http` and local, without the real API's protection against internal destinations (try `--require-https`). Do not expose the sandbox to the internet: the `/_sandbox` routes take no key and the sandbox `POST`s to any URL subscribed to it.
-- **The catalog** is transcribed from the code of accounts v1.4.24 (`spec/catalog.json`), not read from a response: if accounts changes it, it has to be transcribed again.
-- **There are no groups or campaigns with state:** their events are fired from `/_sandbox`, and their routes answer examples.
-- **Forms do not talk to Meta:** `sync` and `publish` succeed unless the linter finds an error, and the linter is a short version of the real one (screens without a title, without an ending, without questions, with a connection to the server). There are no metrics (`…/metrics`) and no dynamic forms.
+- **The catalog** is rendered from the code of accounts v1.5.97 (`spec/catalog.json`, with `scripts/transcribe-catalog.php`), not read from a response: if accounts changes it, it has to be rendered again.
+- **Groups have state only for the list, one group and the send of a message** (the action is `completed` after the delays of `sent` and `delivered`; it never fails on its own). The other group actions, the campaigns and the rest of the groups' routes answer examples, and their events are fired from `/_sandbox`. There are no official groups (the account is not in their beta), no `too_many_pending_actions` and no rate limit of 30 sends per minute.
+- **Workspaces confine** numbers, sign-up links, webhook subscriptions, contacts, conversations, messages, templates and groups. Tags, custom fields and forms are not confined in the sandbox. A contact belongs to one workspace, and the phone stays unique in the account: `POST /api/v1/contacts` with a phone of another workspace gives back that contact (`200`), as conversations v1.19.7 does.
+- **Forms do not talk to Meta:** `sync` and `publish` succeed unless the linter finds an error, and the linter is a short version of the real one (screens without a title, without an ending, without questions, with a connection to the server). The metrics (`…/metrics`) answer the example of their schema, and there are no dynamic forms.
 - **Files are not downloaded:** the type comes from the extension or from `file_type`. The «known» extensions (the ones that give `415` instead of `422 errors.file_type`) are the common ones; the API uses symfony/mime's full list.
 - **Connecting numbers** follows a contract, not production: no real QR, no Meta Embedded Signup and no 15-minute hold of a pool number. The page has no `POST /connect/{token}/qr` (the button connects at once) and no `POST /connect/{token}/offer` (the pool number is given when the link completes). A QR link that fails does not create (and delete) a number, links do not die when a key is revoked, the per-minute limit counts only the calls that pass the schema, and `409 operation_in_progress` only appears if two calls with the same `Idempotency-Key` overlap. The errors that depend on the plan, the payment or the provider (`connect_not_allowed`, `number_suspended_by_plan`, `payment_required`, `device_inactive`, `provider_error`…) are documented but never answered.
+- **Template metrics and the WhatsApp Business accounts** (`GET /api/v1/templates/{template}/metrics`, `GET /api/v1/me/whatsapp-business-accounts…`) answer the example of their schema, not data of the sandbox. **Mark as read and «typing…»** have no per-second ceilings (`429 rate_limited`) and never fail at WhatsApp (`502 provider_error`).
+- **`POST /api/v1/webhooks/{id}/rotate-secret` works with a key here**, as it always did in the sandbox; production keeps it out of the keys' routes (the secret is rotated from the panel), so a key gets `403 route_not_available` there.
+- **Forms** are served here, but the API edge does not route `forms` yet: through the public URL they answer `404 route_not_found`.
 - **The pace and the brakes** use the numbers of conversations in production (`config/send_guards.php`, `config/antiblock.php`); the official number paired with a QR one in coexistence (15 per second, shared) is not there.
 
 ## Pending of the spec
 
-The spec's snapshot (`spec/funnelchat.json`) is the portal's of 15-10. What went to production afterwards, or what the portal does not document yet, is in two separate layers that the next regeneration replaces on its own once the snapshot carries it:
+The spec (`spec/funnelchat.json`) is the portal's full unified spec of 04-11 (developers-portal `c90565e4`, v0.6.0), made from accounts v1.5.97, conversations v1.19.7 and communities v2.35.5: every route an API key reaches, not only the ones the portal shows. What production has and that spec lacks is in two separate layers, which the next regeneration drops on its own once the spec carries it:
 
-- `spec/pending.json`: the pending layer of the Node SDK, copied unchanged (`funnelchat-node` `feat/inicial` @ `88557ce`).
+- `spec/pending.json`: the pending layer of the Node SDK, copied unchanged (`funnelchat-node` `feat/primer-uso` @ `8469a5c`). It brings what the spec lacks (the forms, the send to a group, `rotate-secret`, the accounts and communities events) and, guarded by JSON Pointer conditions, corrections where the spec says otherwise than production answers (the send answers, `devices/{device}/qr`, the template list, `PUT webhooks/{id}`, and `message.received`, `message.status_changed` and `whatsapp_form.completed`).
 - `spec/pending-sandbox.json`: what the sandbox adds, with its sources inside.
 
-Besides, `spec/catalog.json` is the event catalog of accounts v1.4.24, with its provenance.
+Besides, `spec/catalog.json` is the event catalog of accounts v1.5.97, with its provenance.
 
-| What | Where it comes from | Status |
-|---|---|---|
-| Webhook subscriptions: `/api/v1/webhooks`, `/{id}`, `rotate-secret`, `test`, `deliveries` | accounts v1.4.24 | In production. |
-| The send with a key: `200` with the queued message, `GET /api/v1/contacts/{contact}/messages/{message}`, `client_reference`, `error.reason` and the errors of the rules | conversations v1.18.10 | In production since 21-10. |
-| `message.status_changed` and `device_id` in `message.received` | conversations v1.18.10 | In production; `message.status_changed` is `active`. |
-| The file by URL: `file_type`, `file_name`, their `422`s and the `415` | conversations v1.18.10 (`SendFileType`) | In production. |
-| Forms: `/api/v1/forms…`, `POST /api/v1/contacts/{contact}/message/form` and `whatsapp_form.completed` | conversations v1.18.10 | In production. The portal does not document them yet. |
-| `capabilities` and the new keys of the numbers | accounts v1.4.24 (`DeviceResource`, `DeviceCapabilities`) | In production. |
-| Connecting numbers: `POST /api/v1/devices`, `GET …/{device}/qr`, `external_reference`, `/api/v1/connect-links…`, `/connect/{token}`, `Idempotency-Key`, `device.deleted`, `device.health_changed` and the new keys of `device.connected` and `device.disconnected` | The contract of the sign-up by API of 22-10 (A1, A3) and its amendments v0.1 and v0.2 of 23-10; the QR every 5 seconds (accounts #1335) and `country`, read from accounts `main` `e61bb7633` | In production since 25-10, with the Meta sign-up off until the domain is registered with Meta. Missing from the portal's snapshot. |
-| `X-Request-Id` and the edge's errors (`route_not_found`, `origin_unreachable`, `edge_misconfigured`) | api-edge v0.3.0, platform-gate v0.8.0 | In production. |
+What `spec/pending-sandbox.json` still adds:
+
+| What | Why neither the spec nor the Node SDK's layer has it |
+|---|---|
+| Polls and events, `POST /api/v1/contacts/{contact}/message/poll` and `…/event` | Closed to every key by the gate: they are kept to answer its `403 route_not_available`, not a `404` |
+| `data.workspace_id` in every event (accounts v1.5.97, Q35) | The events of the spec do not carry it yet |
+| `null` in `allowed_connection_types` and `provision_us_number` of `POST /api/v1/connect-links` | A correction: accounts' rules depend on `type`, and Laravel's `prohibited` lets `null` through |
 
 ## Regenerating
 
 Everything generated comes from a single script:
 
 ```bash
-# With a new snapshot of the portal (`npm run datos` generates it in developers-portal):
-npm run generate -- --spec ../developers-portal/public/specs/funnelchat.json
+# With a new full spec of the portal (`npm run build` in developers-portal writes generated/specs/funnelchat-completa.json;
+# never the published public/specs/funnelchat.json, which carries only the visible operations). It is a build
+# artifact, so --origin says where it comes from (repository, branch, commit, path and the tag of each domain):
+npm run generate -- --spec ../developers-portal/generated/specs/funnelchat-completa.json --origin origin.json
 
 # With a new pending layer of the Node SDK:
 npm run generate -- --pending ../funnelchat-node/spec/pending.json
@@ -627,13 +738,15 @@ npm run generate
 npm run generate:check
 ```
 
+The event catalog (`spec/catalog.json`) is rendered from accounts' code with `scripts/transcribe-catalog.php` (PHP 8.2 or later, no Laravel needed); its header says how.
+
 What it does:
 
-1. With `--spec` or `--pending`, it copies the file to `spec/` and writes in `spec/procedencia.json` the repository, the branch, the commit, the date and the `sha256`.
+1. With `--spec` or `--pending`, it copies the file to `spec/` and writes in `spec/procedencia.json` the repository, the branch, the commit, the date and the `sha256` (from git, or from `--origin` for what git cannot say).
 2. It applies over the snapshot `spec/pending.json` and then `spec/pending-sandbox.json`, but **only what the snapshot lacks**. At the end it lists what the snapshot already carries, so you can delete it.
 3. It writes `generated/openapi.json`, the spec the sandbox validates and answers with.
 
-**The current snapshot** is the portal's of 15-10 (branch `feat/openapi-unificada` @ `0ef4abb`, merged since): 191 paths and 230 operations of conversations `9d723d52c`, communities `fab0bb10` and accounts `c234b6f8`. The detail is in `spec/procedencia.json`.
+**The current spec** is the portal's full unified spec of 04-11 (`main` @ `c90565e4`, `generated/specs/funnelchat-completa.json`): 203 paths, 248 operations and 29 events of accounts v1.5.97 (`558332bcf`), conversations v1.19.7 (`4e35ddb83`) and communities v2.35.5 (`2be913d4`). The detail is in `spec/procedencia.json`.
 
 ## Development
 
@@ -650,13 +763,14 @@ The tests verify the deliveries with unchanged copies of the Node SDK's `verify`
 
 ```
 spec/            the spec, its provenance, the two pending layers and the event catalog
-scripts/         generate.mjs, the only generator
+scripts/         generate.mjs, the only generator, and transcribe-catalog.php for the catalog
 generated/       the merged spec (not edited)
 src/openapi/     routes, validation and examples from the spec
-src/handlers/    the routes with state (contacts, messages, forms, webhooks) and the ones the gate closes
+src/handlers/    the routes with state (numbers, links, contacts, messages, forms, groups, webhooks) and the ones the gate closes
 src/forms/       the form templates
 src/messaging/   send rules, the file by URL, forced failures and message statuses
 src/webhooks/    signature, catalog, deliveries and retries
+src/state/       the in-memory state, the public shapes and the workspaces
 src/sandbox/     the /_sandbox routes and the panel
 test/            vitest
 ```

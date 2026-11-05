@@ -11,16 +11,33 @@
  *   `429` is retried, any other answer that is not `2xx` is final;
  * - a delivery that runs out of attempts counts one consecutive failure; at 5 the subscription is disabled
  *   (`too_many_failures`); a success resets the count;
- * - each attempt checks again that the subscription exists, is `active` and still wants the type.
+ * - each attempt checks again that the subscription exists, is `active` and still wants the type;
+ * - an event reaches only the subscriptions of its workspace, and `data.workspace_id` says which one (accounts
+ *   v1.5.97 `EventWorkspaceRouting`, Q35 of 04-11): the workspace the emitter declares when it is one of the account,
+ *   the default one otherwise. A subscription without a workspace counts as the default one's.
  */
 import type { SandboxApp } from '../app.js';
 import type { Delivery, Subscription } from '../state/store.js';
+import { routedWorkspace } from '../state/workspaces.js';
 import { isoSeconds, isRecord, randomEventId, truncate, uuid } from '../util.js';
 import { DELIVERY_HEADER, EVENT_HEADER, SIGNATURE_HEADER, USER_AGENT, nowSeconds, signature } from './signature.js';
 
 export interface EmitOptions {
   id?: string;
   occurredAt?: Date;
+  /**
+   * The workspace the event belongs to: the number's for `device.*`, the contact's or the group's for the rest.
+   * Missing, `null` or not a workspace of the account: the default one.
+   */
+  workspaceId?: number | null;
+}
+
+/**
+ * `data.workspace_id` = the routed workspace (accounts `EventWorkspaceRouting::stamp()`): the last key of `data`, or in
+ * its place if the emitter already put one there (the routed one wins).
+ */
+export function stampWorkspace(data: unknown, workspaceId: number): unknown {
+  return isRecord(data) ? { ...data, workspace_id: workspaceId } : data;
 }
 
 export interface Envelope {
@@ -94,16 +111,24 @@ export class Webhooks {
     };
   }
 
-  /** Emits one event to every active subscription that wants it. Returns the envelope and how many got it. */
+  /**
+   * Emits one event to every active subscription of its workspace that wants it. Returns the envelope and how many
+   * got it.
+   */
   emit(type: string, data: unknown, options: EmitOptions = {}): { envelope: Envelope; subscriptions: number } {
-    const envelope = this.envelope(type, data, options);
+    const { store } = this.app;
+    const workspaceId = routedWorkspace(store, options.workspaceId);
+    const defaultId = store.defaultWorkspace.id;
+    const envelope = this.envelope(type, stampWorkspace(data, workspaceId), options);
     const body = JSON.stringify(envelope);
     let count = 0;
-    for (const subscription of this.app.store.subscriptions.values()) {
+    for (const subscription of store.subscriptions.values()) {
+      if ((subscription.workspaceId ?? defaultId) !== workspaceId) continue;
       if (subscription.status !== 'active' || !subscription.events.includes(type) || !matchesFilter(subscription, data)) continue;
       count++;
       void this.attempt(subscription.id, envelope.id, type, body, 1);
     }
+    store.logEvent({ envelope, subscriptions: count });
     if (count === 0) this.app.logger.info(`event ${type} (${envelope.id}): no subscription asked for it`);
     return { envelope, subscriptions: count };
   }
@@ -201,9 +226,13 @@ export class Webhooks {
     }
   }
 
-  /** `POST /api/v1/webhooks/{id}/test`: one synchronous `webhook.test`, no retries, no counters touched. */
+  /**
+   * `POST /api/v1/webhooks/{id}/test`: one synchronous `webhook.test`, no retries, no counters touched. Its
+   * `data.workspace_id` is the subscription's workspace.
+   */
   async test(subscription: Subscription): Promise<Record<string, unknown>> {
-    const envelope = this.envelope('webhook.test', { subscription: subscription.id, sent_at: isoSeconds(new Date()) });
+    const workspaceId = routedWorkspace(this.app.store, subscription.workspaceId);
+    const envelope = this.envelope('webhook.test', stampWorkspace({ subscription: subscription.id, sent_at: isoSeconds(new Date()) }, workspaceId));
     const body = JSON.stringify(envelope);
     const result = await this.send(subscription, 'webhook.test', body);
     const succeeded = result.status !== null && result.status >= 200 && result.status < 300;

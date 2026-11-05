@@ -18,7 +18,8 @@ import type { SandboxApp } from '../app.js';
 import { ApiError } from '../http/errors.js';
 import { eventDevice } from '../state/resources.js';
 import type { ConnectLink, Connection, Device, HealthState } from '../state/store.js';
-import { isoSeconds } from '../util.js';
+import { sees, type WorkspaceScope } from '../state/workspaces.js';
+import { iso8601 } from '../util.js';
 
 /** Closed list of `device.disconnected` `reason` (contract A3). */
 export const DISCONNECT_REASONS = ['qr_logged_out', 'meta_account_not_registered', 'shadow_ban_protection', 'provider_error', 'unknown', 'disconnected_by_user'] as const;
@@ -92,11 +93,12 @@ export const invalidReferenceDevice = () => new ApiError(422, 'invalid_reference
 
 /**
  * `same_number_as`: QR can be added only to an official number in coexistence that has no QR yet. Returns the number
- * whose phone the new QR takes.
+ * whose phone the new QR takes. A number of another workspace is not a valid reference (accounts v1.5.97
+ * `ConnectLinkService::referenceVisible`).
  */
-export function checkSameNumber(app: SandboxApp, id: unknown): Device {
+export function checkSameNumber(app: SandboxApp, id: unknown, scope: WorkspaceScope): Device {
   const target = app.store.devices.get(Number(id));
-  if (!target) throw invalidReferenceDevice();
+  if (!target || !sees(scope, target.workspaceId)) throw invalidReferenceDevice();
   if (target.kind === 'qr') {
     throw new ApiError(422, 'method_already_present', 'Ese número ya tiene QR.', { device_id: target.id });
   }
@@ -110,6 +112,8 @@ export function checkSameNumber(app: SandboxApp, id: unknown): Device {
 
 export interface NewDevice {
   connection: Connection;
+  /** The workspace it lands in: the key's, or the link's. */
+  workspaceId: number | null;
   alias?: string | null;
   number?: string | null;
   externalReference?: string | null;
@@ -124,6 +128,7 @@ export function createDevice(app: SandboxApp, input: NewDevice): Device {
   const connected = input.connected ?? false;
   const device: Device = {
     id,
+    workspaceId: input.workspaceId,
     alias: input.alias ?? `Número ${id}`,
     number: input.number ?? null,
     provider: cloud ? 2 : 1,
@@ -174,14 +179,14 @@ export function connectDevice(app: SandboxApp, device: Device, options: { number
   device.connected = true;
   device.firstConnectedAt ??= at;
   if (device.kind === 'cloud' && (device.health === null || device.health === 'unknown')) device.health = 'available';
-  return app.webhooks.emit('device.connected', eventData(device, { connected_at: isoSeconds(at) }, connectLinkId), { occurredAt: at });
+  return app.webhooks.emit('device.connected', eventData(device, { connected_at: iso8601(at) }, connectLinkId), { occurredAt: at, workspaceId: device.workspaceId });
 }
 
 export function disconnectDevice(app: SandboxApp, device: Device, reason: DisconnectReason) {
   if (!device.connected) return null;
   const at = new Date();
   device.connected = false;
-  return app.webhooks.emit('device.disconnected', eventData(device, { disconnected_at: isoSeconds(at), reason }), { occurredAt: at });
+  return app.webhooks.emit('device.disconnected', eventData(device, { disconnected_at: iso8601(at), reason }), { occurredAt: at, workspaceId: device.workspaceId });
 }
 
 /** Emits `device.health_changed` only when the aggregated state changes. */
@@ -190,7 +195,10 @@ export function setHealth(app: SandboxApp, device: Device, state: HealthState) {
   if (previous === state) return null;
   device.health = state;
   const at = new Date();
-  return app.webhooks.emit('device.health_changed', eventData(device, { previous_state: previous, state, changed_at: isoSeconds(at) }), { occurredAt: at });
+  return app.webhooks.emit('device.health_changed', eventData(device, { previous_state: previous, state, changed_at: iso8601(at) }), {
+    occurredAt: at,
+    workspaceId: device.workspaceId,
+  });
 }
 
 /**
@@ -199,7 +207,7 @@ export function setHealth(app: SandboxApp, device: Device, state: HealthState) {
  */
 export function deleteDevice(app: SandboxApp, device: Device) {
   const at = new Date();
-  const event = app.webhooks.emit('device.deleted', eventData(device, { deleted_at: isoSeconds(at) }), { occurredAt: at });
+  const event = app.webhooks.emit('device.deleted', eventData(device, { deleted_at: iso8601(at) }), { occurredAt: at, workspaceId: device.workspaceId });
   app.store.devices.delete(device.id);
   for (const link of app.store.connectLinks.values()) {
     if (link.reconnect && link.deviceId === device.id && link.status === 'pending') {
@@ -325,7 +333,8 @@ export function completeLink(app: SandboxApp, link: ConnectLink, input: LinkOutc
     }
   }
 
-  const device = createDevice(app, { connection, externalReference: link.externalReference, fromPool, number });
+  // The number a link creates lands in the link's workspace (accounts v1.5.97 `stampLinkWorkspace`).
+  const device = createDevice(app, { connection, workspaceId: link.workspaceId, externalReference: link.externalReference, fromPool, number });
   link.deviceId = device.id;
   link.completedAt = new Date();
   connectDevice(app, device, { connectLinkId: link.id });
