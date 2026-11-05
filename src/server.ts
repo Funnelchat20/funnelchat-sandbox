@@ -30,7 +30,7 @@ import { exampleFor } from './openapi/example.js';
 import { matchRoute, requestBodySchema, spec, successResponse } from './openapi/spec.js';
 import { validateRequest } from './openapi/validate.js';
 import { handleSandbox } from './sandbox/routes.js';
-import { scopeOfKey } from './state/workspaces.js';
+import { permissionsOfKey, scopeOfKey } from './state/workspaces.js';
 import { truncate } from './util.js';
 import { VERSION } from './version.js';
 
@@ -203,6 +203,7 @@ export function createSandbox(options: CreateSandboxOptions = {}): Sandbox {
         origin: `http://${headers.host ?? `localhost:${config.port}`}`,
         pathname: url.pathname,
         workspace,
+        permissions: permissionsOfKey(app.store, key),
       };
       if (handler) return { result: await handler(ctx), operation: op.key, requestBody };
       // No state for this route: the example of its response schema.

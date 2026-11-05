@@ -19,6 +19,8 @@ export interface HandlerContext {
   pathname: string;
   /** The workspace of the key that calls: it only sees and creates there. */
   workspace: WorkspaceScope;
+  /** The permissions of the key (`null`: every one). The sandbox only checks the one importing a group needs. */
+  permissions: string[] | null;
 }
 
 export interface HandlerResult {

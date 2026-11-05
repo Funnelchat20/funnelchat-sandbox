@@ -25,7 +25,7 @@ import {
 import { FAILURE_REASONS, REJECTIONS, failureFor, parseForced } from '../messaging/rules.js';
 import { connectLinkResource, contactResource, deliveryResource, deviceResource, publicMessage } from '../state/resources.js';
 import type { ArmedFailure, Contact, Group, HealthState, TemplateStatus } from '../state/store.js';
-import { createWorkspace, mintKey, workspaceView } from '../state/workspaces.js';
+import { createWorkspace, mintKey, PERMISSION, workspaceView } from '../state/workspaces.js';
 import { digits, isRecord, iso8601, toE164 } from '../util.js';
 import { catalog, catalogEntry, emittedData } from '../webhooks/catalog.js';
 import { panelHtml } from './panel.js';
@@ -223,6 +223,8 @@ function participantEvent(app: SandboxApp, req: SandboxRequest, type: 'group_par
     if (type === 'group_participant.joined' && !current) group.participants.push({ phone: identity, name: name === undefined ? null : String(name), admin: false });
     if (type === 'group_participant.left' && current) group.participants.splice(index, 1);
     group.updatedAt = new Date();
+    // Only a group the account has (imported, followed) announces who joins and leaves (communities v2.35.7).
+    if (!group.imported) return { status: 202, body: { event: null, participants: group.participants.length, imported: false } };
     const data = participantData(group, { phone: identity, name: name === undefined ? (current?.name ?? null) : String(name) });
     return { status: 202, body: { event: emitted(app.webhooks.emit(type, data, { workspaceId: group.workspaceId })), participants: group.participants.length } };
   }
@@ -249,6 +251,7 @@ const groupView = (group: Group) => ({
   name: group.name,
   device_id: group.deviceId,
   workspace_id: group.workspaceId,
+  imported: group.imported,
   participants: group.participants.map((p) => ({ phone: p.phone, name: p.name, admin: p.admin })),
 });
 
@@ -321,7 +324,15 @@ const ROUTES: Route[] = [
       const b = obj(req.body);
       const id = b.workspace_id === undefined || b.workspace_id === null ? app.store.defaultWorkspace.id : Number(b.workspace_id);
       if (!app.store.workspaces.has(id)) throw fieldError('workspace_id', 'There is no such workspace in the sandbox. See GET /_sandbox/workspaces.');
-      return { status: 201, body: { key: mintKey(app.store, id), workspace_id: id } };
+      // Optional: the key's permissions, as the panel's checkboxes give them (every one without the list).
+      let permissions: string[] | null = null;
+      if (b.permissions !== undefined && b.permissions !== null) {
+        if (!Array.isArray(b.permissions) || b.permissions.some((p) => typeof p !== 'string' || !PERMISSION.test(p))) {
+          throw fieldError('permissions', 'permissions must be a list like ["communities:read", "communities:send"].');
+        }
+        permissions = [...new Set(b.permissions as string[])];
+      }
+      return { status: 201, body: { key: mintKey(app.store, id, undefined, permissions), workspace_id: id, permissions } };
     },
   },
   { method: 'POST', pattern: /^\/_sandbox\/inbound\/message$/, handle: inboundMessage },
@@ -391,7 +402,11 @@ const ROUTES: Route[] = [
             return { phone, name: typeof name === 'string' ? name : null };
           })
         : [];
-      return { status: 201, body: { group: groupView(createGroup(app, { name: b.name.trim(), device, participants })) } };
+      for (const field of ['imported', 'admin'] as const) {
+        if (b[field] !== undefined && typeof b[field] !== 'boolean') throw fieldError(field, `${field} must be true or false.`);
+      }
+      const group = createGroup(app, { name: b.name.trim(), device, participants, imported: b.imported as boolean | undefined, admin: b.admin as boolean | undefined });
+      return { status: 201, body: { group: groupView(group) } };
     },
   },
   { method: 'POST', pattern: /^\/_sandbox\/groups\/participant-joined$/, handle: (app, req) => participantEvent(app, req, 'group_participant.joined') },

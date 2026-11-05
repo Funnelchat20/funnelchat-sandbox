@@ -2,7 +2,7 @@
 
 A local server that imitates the Funnelchat public API and sends signed webhooks, with no real effects: nothing goes out to WhatsApp, nothing is charged, everything stays in memory. Build and test your integration without an account.
 
-It imitates production on 05-11: accounts v1.5.97, conversations v1.19.21, communities v2.35.5, platform-gate v0.9.1 and the API edge v0.3.0.
+It imitates production on 05-11: accounts v1.5.97, conversations v1.19.21, communities v2.35.7, platform-gate v0.9.1 and the API edge v0.3.0.
 
 ## Try it in 3 minutes, without an account
 
@@ -62,21 +62,25 @@ On an official number (`3`) this also opens the 24-hour window: free text only g
 
 ### Groups
 
-The groups of your numbers, with the shape of communities: `GET /api/v1/groups` (paginated, 25 per page, sorted by `created_at`; `name`, `deviceId`… filter) and `GET /api/v1/groups/{uid}`. The sandbox starts with one, `120363000000000000@g.us`, of the QR number `4`; `POST /_sandbox/groups` (`{"device_id": 5, "name": "Clientes", "participants": ["5491155550000"]}`) gives a connected QR number another one.
+Groups start from your number's live list: `GET /api/v1/devices/{device}/groups` reads the groups the number is in on WhatsApp (QR numbers), and `device_id` says which ones the account already has. The sandbox's QR number `4` is in two: `120363000000000000@g.us` («Grupo de ejemplo», already in the account) and `120363000000000001@g.us` («Clientes VIP», not yet).
 
 ```bash
-curl -s "$API/groups" -H "Authorization: Bearer $FUNNELCHAT_API_KEY"
-# {"data": [{"id": 7001, "uid": "120363000000000000@g.us", "name": "Grupo de ejemplo", "deviceId": 4, "participants_count": 2, …}], "links": {…}, "meta": {…}}
+curl -s "$API/devices/4/groups" -H "Authorization: Bearer $FUNNELCHAT_API_KEY"
+# {"data": [{"uid": "120363000000000000@g.us", "name": "Grupo de ejemplo", "device_id": 4, …}, {"uid": "120363000000000001@g.us", "name": "Clientes VIP", "device_id": "", …}], "meta": {…}}
 ```
 
-**Someone joins or leaves a group:** `group_participant.joined` and `group_participant.left`, with `group`, `campaign` (`null` without one) and `participant` (`identity`, the phone in digits). In the sandbox they are simulated:
+**Follow a group** to know who joins and leaves: `POST /api/v1/groups/{uid}/import` with `device_id` imports it to the account, as the panel does (`201`, or `200` if it already was there, with `is_admin` read from WhatsApp). From then on it is in `GET /api/v1/groups` and `GET /api/v1/groups/{uid}`, and announces `group_participant.joined` and `group_participant.left` (`group`, `campaign`, `null` without one, and `participant`, whose `identity` is the phone in digits). It needs the permission **Grupos y campañas → Administrar grupos** (`403 import_permission_required`), only QR numbers (`422 provider_unsupported`), and each number imports up to 5 groups per minute (`429 import_rate_limited`, with `Retry-After`).
 
 ```bash
+curl -s -X POST "$API/groups/120363000000000001@g.us/import" -H "Authorization: Bearer $FUNNELCHAT_API_KEY" \
+  -H 'Content-Type: application/json' -d '{"device_id": 4}'
+# 201 {"data": {"uid": "120363000000000001@g.us", "name": "Clientes VIP", "imported": true, "is_admin": true}}
 curl -s -X POST http://localhost:4010/_sandbox/groups/participant-joined -H 'Content-Type: application/json' \
-  -d '{"group_id": 7001, "participant": {"phone": "5491155550000", "name": "Ana"}}'
+  -d '{"uid": "120363000000000001@g.us", "participant": {"phone": "5491155550000", "name": "Ana"}}'
+# group_participant.joined (a group the account does not have announces nothing)
 ```
 
-**Sending a message to a group** is `POST /api/v1/groups/{uid}/messages`, a group action: it answers `202` with an `action_id`, and `GET /api/v1/groups/actions/{action}` says when it is `completed` (with `result.message.uid`, the message's id in WhatsApp), as does the event `group_action.completed`:
+**Writing to a group** is `POST /api/v1/groups/{uid}/messages`, a group action: it answers `202` with an `action_id`, and `GET /api/v1/groups/actions/{action}` says when it is `completed` (with `result.message.uid`, the message's id in WhatsApp), as does the event `group_action.completed`. A group the account does not have is imported first, with the same rules (and the number must be its admin):
 
 ```bash
 curl -s -X POST "$API/groups/120363000000000000@g.us/messages" -H "Authorization: Bearer $FUNNELCHAT_API_KEY" \
@@ -84,7 +88,7 @@ curl -s -X POST "$API/groups/120363000000000000@g.us/messages" -H "Authorization
 # 202 {"action_id": "…", "status": "queued"}
 ```
 
-`type` is `text` (with `text`), `image`, `video`, `audio` or `document` (with `media_url`, an `https` URL with an extension of the type; `caption` for `image` and `video`, `file_name` for `document`). The number must be a QR number that is an admin of the group: `404 device_not_found` or `group_not_found`, `422 device_not_connected`, `device_not_group_admin` or, for an official number, `provider_unsupported` (the sandbox account is not in the beta of official groups). To imitate communities' switch `API_GROUP_ACTIONS_ENABLED` off, start it with `--no-group-actions`: every key then gets `403 route_not_available`.
+`type` is `text` (with `text`), `image`, `video`, `audio` or `document` (with `media_url`, an `https` URL with an extension of the type; `caption` for `image` and `video`, `file_name` for `document`). The number must be a QR number that is an admin of the group: `404 device_not_found` or `group_not_found`, `422 device_not_connected`, `device_not_group_admin` or, for an official number, `provider_unsupported` (the sandbox account is not in the beta of official groups). Two imports of the same group at a time cannot happen in the sandbox; `X-Sandbox-Reject: import_in_progress` gives production's `409`. A key minted with `POST /_sandbox/keys` and `"permissions": ["communities:send"]` lacks the permission to import. To imitate communities' switch `API_GROUP_ACTIONS_ENABLED` off, start it with `--no-group-actions`: every key then gets `403 route_not_available`.
 
 ### Workspaces
 
@@ -124,7 +128,7 @@ npx funnelchat-sandbox
 ```
 
 ```
-funnelchat-sandbox 0.3.1 at http://127.0.0.1:4010
+funnelchat-sandbox 0.3.2 at http://127.0.0.1:4010
   API:    http://127.0.0.1:4010/api/v1/...   (Authorization: Bearer 1|fc_live_sandbox, or any well-formed key)
   panel:  http://127.0.0.1:4010/_sandbox
   example numbers: 3 (official, with the 24-hour window) and 4 (QR, no window); contact 2001; template 45
@@ -249,7 +253,8 @@ Every session starts with this:
 | Contact «Contacto de ejemplo» | `2001` | Phone `5491100000000`. |
 | Tag «Cliente» | `4001` | |
 | Template `bienvenida`, approved, of number 3 | `45` | One variable: «Hola {{1}}, gracias por escribirnos…». |
-| Group «Grupo de ejemplo» of number 4 | `7001`, `120363000000000000@g.us` | Number 4 is its admin; contact 2001, a participant. |
+| Group «Grupo de ejemplo» of number 4 | `7001`, `120363000000000000@g.us` | In the account. Number 4 is its admin; contact 2001, a participant. |
+| Group «Clientes VIP» of number 4 | `120363000000000001@g.us` | Only on WhatsApp, to follow (import). Number 4 is its admin. |
 | Workspace «Principal» | `1` | The default one: every key belongs to it unless it was minted for another. |
 
 `POST /_sandbox/reset` goes back to this and cancels everything that was scheduled.
@@ -592,7 +597,7 @@ These routes take no key: they belong to the sandbox, not to the API.
 | Route | What it simulates |
 |---|---|
 | `POST /_sandbox/inbound/message` | A contact writes to you: `{"phone": "5491100000000", "device_id": 3, "text": "Hola"}` (or `contact_id`; optional `name`, `type`, `file` and `occurred_at`). If the phone is new it creates the contact (`contact.created`); then it emits `message.received` and opens the 24-hour window of that number. |
-| `POST /_sandbox/groups`, `GET /_sandbox/groups` | A group of a connected QR number, its admin, in the number's workspace: `{"device_id": 5, "name": "Clientes", "participants": [{"phone": "5491155550000", "name": "Ana"}]}`. |
+| `POST /_sandbox/groups`, `GET /_sandbox/groups` | A group of a connected QR number, in the number's workspace: `{"device_id": 5, "name": "Clientes", "participants": [{"phone": "5491155550000", "name": "Ana"}]}`. In the account unless `"imported": false` (only on WhatsApp, to import); the number is its admin unless `"admin": false`. |
 | `POST /_sandbox/groups/participant-joined`, `…/participant-left` | Someone joins or leaves a group: `{"group_id": 7001, "participant": {"phone": "…", "name": "…"}}` (or `"uid"`; the example group without either). The group's participants change and the event goes to its workspace. A `group` the sandbox does not have (`{"group": {"uid": "…@g.us", "name": "…"}}`) goes out from the catalog's example. |
 | `POST /_sandbox/forms/complete` | The contact completes a sent form: emits `whatsapp_form.completed` (see [WhatsApp forms](#whatsapp-forms)). |
 | `POST /_sandbox/mac`, `GET /_sandbox/mac` | The account's MAC: `{"lockout": true, "active_contact_ids": [2001], "inactive_contact_ids": []}`. With `lockout`, sends to contacts that are not active answer `429 mac_lockout_24h`; an inactive contact always gets it. |
@@ -603,7 +608,7 @@ These routes take no key: they belong to the sandbox, not to the API.
 | `POST /_sandbox/templates/{id}/status` | Meta approves or rejects a template: `{"status": "REJECTED", "reason": "…"}` emits `template.status_changed`. |
 | `POST /_sandbox/events/{type}` | Any event of the catalog, with its example; what you send in `{"data": {…}}` overrides it, and `{"workspace_id": 2}` sends it to that workspace (the default one otherwise). `GET /_sandbox/events` lists them. `group.message_received` and `group.reaction_added` go out with the shape communities emits (`message.uid` and every key of the message), not with the example of the accounts catalog, which uses `message.id`. |
 | `POST /_sandbox/window` | Opens or closes the window by hand: `{"contact_id": 2001, "device_id": 3, "open": false}`. |
-| `POST /_sandbox/workspaces`, `GET /_sandbox/workspaces` | A [workspace](#workspaces) with a key that only sees it: `{"name": "Cliente B"}` answers `201 {workspace, key}`. `POST /_sandbox/keys` with `{"workspace_id": 2}` mints another key (of the default workspace without `workspace_id`). |
+| `POST /_sandbox/workspaces`, `GET /_sandbox/workspaces` | A [workspace](#workspaces) with a key that only sees it: `{"name": "Cliente B"}` answers `201 {workspace, key}`. `POST /_sandbox/keys` with `{"workspace_id": 2}` mints another key (of the default workspace without `workspace_id`); with `"permissions": [...]` it has only those (the sandbox checks just `communities:operate`, to import a group). |
 | `POST /_sandbox/reset` | Back to the initial state. |
 | `GET /_sandbox/state`, `/_sandbox/requests`, `/_sandbox/deliveries`, `/_sandbox/emitted` | The state, the last requests, the last deliveries with what your server answered, and every event emitted, delivered or not (with how many subscriptions got it). |
 
@@ -690,7 +695,7 @@ And at `http://localhost:4010/_sandbox` you see each request and each delivery w
 - **The validation messages** are Laravel's in Spanish, built from the schema: they may not match the API's word for word (decide by the HTTP status and by `error`, not by `message`). The real API's validation `422` is Laravel's, `{message, errors}`, without `error`; the sandbox adds `"error": "validation_failed"`.
 - **Webhook URLs** may be `http` and local, without the real API's protection against internal destinations (try `--require-https`). Do not expose the sandbox to the internet: the `/_sandbox` routes take no key and the sandbox `POST`s to any URL subscribed to it.
 - **The catalog** is rendered from the code of accounts v1.5.97 (`spec/catalog.json`, with `scripts/transcribe-catalog.php`), not read from a response: if accounts changes it, it has to be rendered again.
-- **Groups have state only for the list, one group and the send of a message** (the action is `completed` after the delays of `sent` and `delivered`; it never fails on its own). The other group actions, the campaigns and the rest of the groups' routes answer examples, and their events are fired from `/_sandbox`. There are no official groups (the account is not in their beta), no `too_many_pending_actions` and no rate limit of 30 sends per minute.
+- **Groups have state only for the number's live list, the list, one group, the import and the send of a message** (the action is `completed` after the delays of `sent` and `delivered`; it never fails on its own). The live list is never cached (production keeps it a minute for a key). The other group actions, the campaigns and the rest of the groups' routes answer examples, and their events are fired from `/_sandbox`. There are no official groups (the account is not in their beta), no `too_many_pending_actions` and no rate limit of 30 sends per minute.
 - **Workspaces confine** numbers, sign-up links, webhook subscriptions, contacts, conversations, messages, templates and groups. Tags, custom fields and forms are not confined in the sandbox. A contact belongs to one workspace, and the phone stays unique in the account: `POST /api/v1/contacts`, `update-or-create` and a send by phone with a phone of another workspace answer `404`.
 - **Forms do not talk to Meta:** `sync` and `publish` succeed unless the linter finds an error, and the linter is a short version of the real one (screens without a title, without an ending, without questions, with a connection to the server). The metrics (`…/metrics`) answer the example of their schema, and there are no dynamic forms.
 - **Files are not downloaded:** the type comes from the extension or from `file_type`. The «known» extensions (the ones that give `415` instead of `422 errors.file_type`) are the common ones; the API uses symfony/mime's full list.
@@ -702,7 +707,7 @@ And at `http://localhost:4010/_sandbox` you see each request and each delivery w
 
 ## Pending of the spec
 
-The spec (`spec/funnelchat.json`) is the portal's full unified spec of 05-11 (developers-portal `f5464516`, v0.6.2), made from accounts v1.5.97, conversations v1.19.21 and communities v2.35.5 (with the send to a group): every route an API key reaches, not only the ones the portal shows. What production has and that spec lacks is in two separate layers, which the next regeneration drops on its own once the spec carries it:
+The spec (`spec/funnelchat.json`) is the portal's full unified spec of 05-11 (developers-portal `99928866`, v0.6.3), made from accounts v1.5.97, conversations v1.19.21 and communities v2.35.7 (with the send to a group and the import): every route an API key reaches, not only the ones the portal shows. What production has and that spec lacks is in two separate layers, which the next regeneration drops on its own once the spec carries it:
 
 - `spec/pending.json`: the pending layer of the Node SDK, copied unchanged (`funnelchat-node` `feat/enviar-por-telefono` @ `a8f8350`). It brings what the spec lacks (the forms, `rotate-secret`, the accounts and communities events) and, guarded by JSON Pointer conditions, corrections where the spec says otherwise than production answers (the send answers, `devices/{device}/qr`, the template list, `PUT webhooks/{id}`, `GET groups/actions/{action}`, and `message.received`, `message.status_changed` and `whatsapp_form.completed`).
 - `spec/pending-sandbox.json`: what the sandbox adds, with its sources inside.
@@ -745,7 +750,7 @@ What it does:
 2. It applies over the snapshot `spec/pending.json` and then `spec/pending-sandbox.json`, but **only what the snapshot lacks**. At the end it lists what the snapshot already carries, so you can delete it.
 3. It writes `generated/openapi.json`, the spec the sandbox validates and answers with.
 
-**The current spec** is the portal's full unified spec of 05-11 (`main` @ `f5464516`, `generated/specs/funnelchat-completa.json`): 217 paths, 264 operations and 29 events of accounts v1.5.97 (`558332bcf`), conversations v1.19.21 (`f2937a71`) and communities v2.35.5 (`2be913d4`). The detail is in `spec/procedencia.json`.
+**The current spec** is the portal's full unified spec of 05-11 (`main` @ `99928866`, `generated/specs/funnelchat-completa.json`): 218 paths, 265 operations and 29 events of accounts v1.5.97 (`558332bcf`), conversations v1.19.21 (`f2937a71`) and communities v2.35.7 (`feat/grupos-sin-panel` @ `54643bbd`). The detail is in `spec/procedencia.json`.
 
 ## Development
 

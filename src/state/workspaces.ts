@@ -33,10 +33,16 @@ export function scopeOf(workspace: Workspace): WorkspaceScope {
 
 /** The workspace of a key: the one it was minted for, or the default one. */
 export function scopeOfKey(store: Store, key: string): WorkspaceScope {
-  const id = store.keys.get(key);
+  const id = store.keys.get(key)?.workspaceId;
   const workspace = id === undefined ? undefined : store.workspaces.get(id);
   return scopeOf(workspace ?? store.defaultWorkspace);
 }
+
+/** The permissions of a key (`null`: every one, as any key the sandbox did not mint with a list). */
+export const permissionsOfKey = (store: Store, key: string): string[] | null => store.keys.get(key)?.permissions ?? null;
+
+/** The literal permissions of a key (platform-gate): `area:level`. */
+export const PERMISSION = /^(accounts|conversations|communities|webhooks):(read|write|send|operate)$/;
 
 /** The default workspace's scope: what the `/_sandbox` routes (no key) act as when they create something. */
 export const defaultScope = (store: Store): WorkspaceScope => scopeOf(store.defaultWorkspace);
@@ -51,9 +57,9 @@ export function routedWorkspace(store: Store, declared: number | null | undefine
 }
 
 /** A new sandbox key for a workspace: `<id>|fc_live_<40 letters and digits>`, the shape of a real one. */
-export function mintKey(store: Store, workspaceId: number, fixed?: string): string {
+export function mintKey(store: Store, workspaceId: number, fixed?: string, permissions: string[] | null = null): string {
   const key = fixed ?? `${store.ids.apiKey.next()}|fc_live_${randomAlnum(40)}`;
-  store.keys.set(key, workspaceId);
+  store.keys.set(key, { workspaceId, permissions });
   return key;
 }
 
@@ -69,6 +75,6 @@ export function workspaceView(store: Store, workspace: Workspace): Record<string
     id: workspace.id,
     name: workspace.name,
     is_default: workspace.isDefault,
-    keys: [...store.keys.entries()].filter(([, id]) => id === workspace.id).map(([key]) => key),
+    keys: [...store.keys.entries()].filter(([, k]) => k.workspaceId === workspace.id).map(([key]) => key),
   };
 }

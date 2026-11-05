@@ -1,7 +1,12 @@
 /**
- * Groups (communities domain), as communities v2.35.5 answers them to an API key: the list and one group with state,
+ * Groups (communities domain), as communities v2.35.7 answers them to an API key: the list and one group with state,
  * and the send of a message to a group, a group action that answers `202` with an `action_id` and is followed with
  * `GET /groups/actions/{action}`.
+ *
+ * Groups without the panel (v2.35.7): `GET /devices/{device}/groups` is the number's live list on WhatsApp (in the
+ * sandbox, its groups whether the account has them or not); `POST /groups/{group}/import` follows one of them (imports
+ * it to the account, so `group_participant.joined` / `.left` start), and a send to a group the account does not have
+ * imports it first. Only QR numbers; 5 imports per number per minute; importing needs `communities:operate`.
  *
  * The group actions are behind communities' kill switch (`API_GROUP_ACTIONS_ENABLED`), on in production since the
  * user confirmed it on 04-11. The sandbox starts the same way (`groupActions: true`); `--no-group-actions` imitates
@@ -89,11 +94,27 @@ export function groupResource(app: SandboxApp, group: Group, scope: WorkspaceSco
   };
 }
 
-/** The group a key reaches by its `uid`, or `undefined`. */
+/** The uid of a group with or without `@g.us`, as communities accepts it: always with it here. */
+const withSuffix = (uid: unknown): string => {
+  const text = String(uid);
+  return text.endsWith('@g.us') ? text : `${text}@g.us`;
+};
+
+/** A group of the account (imported) by its uid, in any workspace. */
+const accountGroup = (app: SandboxApp, uid: unknown): Group | undefined =>
+  [...app.store.groups.values()].find((g) => g.imported && g.uid === withSuffix(uid));
+
+/** The group a key reaches by its `uid`: in the account and in its workspace. */
 export function groupOf(app: SandboxApp, uid: unknown, scope: WorkspaceScope): Group | undefined {
-  for (const group of app.store.groups.values()) if (group.uid === String(uid) && sees(scope, group.workspaceId)) return group;
-  return undefined;
+  const group = accountGroup(app, uid);
+  return group && sees(scope, group.workspaceId) ? group : undefined;
 }
+
+/** The groups a number is in on WhatsApp, imported or not: what the provider lists. */
+const groupsOnWhatsApp = (app: SandboxApp, device: Device): Group[] =>
+  device.number === null ? [] : [...app.store.groups.values()].filter((g) => g.participants.some((p) => p.phone === device.number));
+
+const isAdminOf = (device: Device, group: Group): boolean => group.participants.some((p) => p.admin && p.phone === device.number);
 
 /** The fixed Spanish texts of communities `BoundKeyListings` for a key's list: `{message, errors}`, without `error`. */
 function checkListQuery(q: Record<string, unknown>): void {
@@ -111,7 +132,70 @@ function checkListQuery(q: Record<string, unknown>): void {
   if (first) throw new RawApiError(422, { message: first[0], errors });
 }
 
-const groupError = (status: number, code: string, message: string, extra: Record<string, unknown> = {}) => new ApiError(status, code, message, extra);
+const groupError = (status: number, code: string, message: string, extra: Record<string, unknown> = {}, headers: Record<string, string> = {}) =>
+  new ApiError(status, code, message, extra, headers);
+const groupNotFound = () => groupError(404, 'group_not_found', 'No encontramos ese grupo en tu cuenta.');
+const deviceNotConnected = () => groupError(422, 'device_not_connected', 'El número está desconectado. Reconectalo e intentá de nuevo.');
+
+/** communities `ApiGroupActionTargetResolver::findDevice()` (and `resolveImportDevice()`, which also wants it connected). */
+function importDevice(ctx: HandlerContext, deviceId: unknown, connected: boolean): Device {
+  const device = ctx.app.store.devices.get(Number(deviceId));
+  if (!device || !sees(ctx.workspace, device.workspaceId)) throw groupError(404, 'device_not_found', 'No encontramos ese número en tu cuenta.');
+  if (connected && (!device.connected || device.number === null)) throw deviceNotConnected();
+  return device;
+}
+
+const IMPORTS_PER_MINUTE = 5;
+const GROUP_UID = /^[0-9]{10,25}(-[0-9]+)?(@g\.us)?$/;
+
+/**
+ * communities v2.35.7 `ApiGroupImporter`, in its order: the permission (`communities:operate`), the shape of the uid,
+ * a QR number; a group already in the account answers as it is (one of another workspace, `group_not_found`); a new
+ * one counts in the 5 per number per minute, is read from WhatsApp (`group_not_found` if the number is not in it) and
+ * lands in the key's workspace. For a send, the number must be its admin. Two imports at a time cannot happen in the
+ * sandbox: `X-Sandbox-Reject: import_in_progress` gives the `409` of the second.
+ */
+function importGroup(ctx: HandlerContext, device: Device, uid: string, forSend: boolean): { group: Group; imported: boolean; isAdmin: boolean } {
+  const { app } = ctx;
+  if (ctx.permissions !== null && !ctx.permissions.includes('communities:operate')) {
+    throw groupError(403, 'import_permission_required', 'Ese grupo no está en tu cuenta. Para importarlo, la API key necesita el permiso «Grupos y campañas → Administrar grupos».');
+  }
+  if (uid.endsWith('@newsletter')) throw groupError(422, 'unsupported_group_type', 'Esta operación solo funciona con grupos comunes: no admite comunidades, grupos de avisos ni canales.');
+  if (!GROUP_UID.test(uid)) throw groupNotFound();
+  if (device.kind === 'cloud') {
+    throw groupError(422, 'provider_unsupported', 'Importar grupos solo está disponible con números QR: con un número oficial no se puede leer la lista de grupos.', { provider: 'official' });
+  }
+  const existing = accountGroup(app, uid);
+  if (existing) {
+    if (!sees(ctx.workspace, existing.workspaceId)) throw groupNotFound();
+    return { group: existing, imported: false, isAdmin: isAdminOf(device, existing) };
+  }
+  const now = Date.now();
+  const recent = (app.store.groupImports.get(device.id) ?? []).filter((at) => now - at < 60_000);
+  if (recent.length >= IMPORTS_PER_MINUTE) {
+    const retryAfter = Math.max(1, Math.ceil((60_000 - (now - (recent[0] as number))) / 1000));
+    throw groupError(
+      429,
+      'import_rate_limited',
+      `Este número ya importó ${IMPORTS_PER_MINUTE} grupos en el último minuto. Esperá ${retryAfter} segundos e intentá de nuevo.`,
+      { retry_after: retryAfter },
+      { 'Retry-After': String(retryAfter) },
+    );
+  }
+  app.store.groupImports.set(device.id, [...recent, now]);
+  if (ctx.headers['x-sandbox-reject'] === 'import_in_progress') {
+    throw groupError(409, 'import_in_progress', 'Ese grupo se está importando en otro pedido. Intentá de nuevo en unos segundos.');
+  }
+  const live = groupsOnWhatsApp(app, device).find((g) => g.uid === withSuffix(uid));
+  if (!live) throw groupNotFound();
+  const isAdmin = isAdminOf(device, live);
+  if (forSend && !isAdmin) throw groupError(422, 'device_not_group_admin', 'El número no es administrador de este grupo, por eso no puede ejecutar la operación.');
+  live.imported = true;
+  live.deviceId = device.id;
+  live.workspaceId = ctx.workspace.id;
+  live.updatedAt = new Date();
+  return { group: live, imported: true, isAdmin };
+}
 
 const MEDIA_EXTENSIONS: Record<string, string[]> = {
   image: ['jpg', 'jpeg', 'png'],
@@ -169,11 +253,14 @@ function summarize(errors: Record<string, string[]>): string {
  */
 function resolveTarget(ctx: HandlerContext, deviceId: unknown, uid: unknown): { device: Device; group: Group } {
   const { app } = ctx;
-  const device = app.store.devices.get(Number(deviceId));
-  if (!device || !sees(ctx.workspace, device.workspaceId)) throw groupError(404, 'device_not_found', 'No encontramos ese número en tu cuenta.');
-  const group = groupOf(app, uid, ctx.workspace);
-  if (!group) throw groupError(404, 'group_not_found', 'No encontramos ese grupo en tu cuenta.');
-  if (!device.connected || device.number === null) throw groupError(422, 'device_not_connected', 'El número está desconectado. Reconectalo e intentá de nuevo.');
+  const device = importDevice(ctx, deviceId, false);
+  const inAccount = accountGroup(app, uid);
+  // A group the account does not have is imported first, with a QR number (communities v2.35.7); one of another
+  // workspace, and any with an official number, is `group_not_found`.
+  const importIt = !inAccount && device.kind === 'qr';
+  if (!importIt && (!inAccount || !sees(ctx.workspace, inAccount.workspaceId))) throw groupNotFound();
+  if (!device.connected || device.number === null) throw deviceNotConnected();
+  const group = importIt ? importGroup(ctx, device, String(uid), true).group : (inAccount as Group);
   if (device.kind === 'cloud') {
     throw groupError(422, 'provider_unsupported', 'Esta operación no está disponible para números del proveedor official en tu cuenta: requiere la beta `cloud-api-groups`.', {
       provider: 'official',
@@ -257,7 +344,7 @@ export const groupHandlers: HandlerTable = {
     const value = (g: Group): string | number =>
       key === 'name' ? g.name.toLowerCase() : key === 'id' ? g.id : key === 'updated_at' ? g.updatedAt.getTime() : g.createdAt.getTime();
     const list = [...ctx.app.store.groups.values()]
-      .filter((g) => sees(ctx.workspace, g.workspaceId))
+      .filter((g) => g.imported && sees(ctx.workspace, g.workspaceId))
       .filter((g) => !name || g.name.toLowerCase().includes(name))
       // Every group of the sandbox is a common group (`type` 1), enabled (`status` 0) and without a campaign.
       .filter(() => q.type === undefined || String(q.type) === '1')
@@ -303,6 +390,32 @@ export const groupHandlers: HandlerTable = {
     return ok({ action_id: action.uuid, status: 'queued' }, 202);
   },
 
+  // Follow a group: import it to the account. `201` imported now, `200` already in the account; `is_admin` from WhatsApp.
+  'POST /api/v1/groups/{group}/import': (ctx) => {
+    const device = importDevice(ctx, body(ctx).device_id, true);
+    const result = importGroup(ctx, device, String(ctx.path.group), false);
+    return ok({ data: { uid: result.group.uid, name: result.group.name, imported: result.imported, is_admin: result.isAdmin } }, result.imported ? 201 : 200);
+  },
+
+  // The number's groups on WhatsApp, live (`GroupMinResource`): `device_id` only for one the account already has.
+  'GET /api/v1/devices/{device}/groups': (ctx) => {
+    const device = ctx.app.store.devices.get(Number(ctx.path.device));
+    if (!device || !sees(ctx.workspace, device.workspaceId)) throw new RawApiError(404, { error: 'Device not found' });
+    if (!device.connected) throw new RawApiError(400, { error: 'An error has occurred' });
+    const name = ctx.query.name ? String(ctx.query.name).toLowerCase() : null;
+    const items = (device.kind === 'qr' ? groupsOnWhatsApp(ctx.app, device) : [])
+      .filter((g) => !name || g.name.toLowerCase().includes(name))
+      .map((g) => {
+        const own = g.imported && sees(ctx.workspace, g.workspaceId) ? ctx.app.store.devices.get(g.deviceId) : undefined;
+        const deviceId = g.imported && sees(ctx.workspace, g.workspaceId) ? (own && sees(ctx.workspace, own.workspaceId) ? own.id : null) : '';
+        return { uid: g.uid, name: g.name, description: g.description, device_id: deviceId, alias: '', number: '', communityUid: '' };
+      });
+    const page = Math.max(1, Number(ctx.query.page ?? 1));
+    const perPage = Math.max(1, Number(ctx.query.pageSize ?? 250));
+    const data = items.slice((page - 1) * perPage, page * perPage);
+    return ok({ data, meta: { current_page: page, last_page: Math.max(1, Math.ceil(items.length / perPage)), per_page: perPage, total: items.length } });
+  },
+
   'GET /api/v1/groups/actions/{action}': (ctx) => {
     const action = ctx.app.store.groupActions.get(String(ctx.path.action));
     if (!action || action.workspaceId !== ctx.workspace.id) throw groupError(404, 'action_not_found', 'No encontramos esa acción en tu cuenta.');
@@ -314,9 +427,16 @@ export interface NewGroup {
   name: string;
   device: Device;
   participants?: { phone: string; name: string | null }[];
+  /** `false`: only on WhatsApp, for the number to import (follow). */
+  imported?: boolean;
+  /** `false`: the number is only a participant. */
+  admin?: boolean;
 }
 
-/** `POST /_sandbox/groups`: a group the number is the admin of, in the number's workspace (the sync of communities). */
+/**
+ * `POST /_sandbox/groups`: a group of the number on WhatsApp, in the number's workspace; in the account too unless
+ * `imported: false` (then it waits in the number's live list to be imported).
+ */
 export function createGroup(app: SandboxApp, input: NewGroup): Group {
   const now = new Date();
   const id = app.store.ids.group.next();
@@ -327,8 +447,9 @@ export function createGroup(app: SandboxApp, input: NewGroup): Group {
     description: '',
     deviceId: input.device.id,
     workspaceId: input.device.workspaceId,
+    imported: input.imported ?? true,
     participants: [
-      { phone: input.device.number as string, name: null, admin: true },
+      { phone: input.device.number as string, name: null, admin: input.admin ?? true },
       ...(input.participants ?? []).filter((p) => p.phone !== input.device.number).map((p) => ({ ...p, admin: false })),
     ],
     link: `https://chat.whatsapp.com/Sandbox${randomAlnum(20)}`,
