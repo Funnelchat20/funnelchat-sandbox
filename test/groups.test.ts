@@ -134,6 +134,34 @@ describe('participants', () => {
   });
 });
 
+describe('following a group (communities v2.35.7)', () => {
+  it('the live list shows what is not imported; import follows it, and a send imports first', async () => {
+    const api = await startSandbox();
+    const live = await api.call('GET', '/api/v1/devices/4/groups');
+    expect(live.body.data.map((g: { uid: string; device_id: unknown }) => [g.uid, g.device_id])).toEqual([
+      [UID, 4],
+      ['120363000000000001@g.us', ''],
+    ]);
+    const vip = '120363000000000001@g.us';
+    const followed = await api.call('POST', `/api/v1/groups/${encodeURIComponent(vip)}/import`, { device_id: 4 });
+    expect(followed).toMatchObject({ status: 201, body: { data: { uid: vip, name: 'Clientes VIP', imported: true, is_admin: true } } });
+    expect((await api.call('POST', `/api/v1/groups/${encodeURIComponent(vip)}/import`, { device_id: 4 })).status).toBe(200);
+    expect(await api.call('POST', `/api/v1/groups/${encodeURIComponent(UID)}/import`, { device_id: 3 })).toMatchObject({ status: 422, body: { error: 'provider_unsupported' } });
+
+    // A send to a group the account does not have imports it first; the number must be its admin.
+    const other = await api.call('POST', '/_sandbox/groups', { device_id: 4, name: 'Solo participante', imported: false, admin: false });
+    const sent = await api.call('POST', `/api/v1/groups/${encodeURIComponent(other.body.group.uid)}/messages`, { device_id: 4, type: 'text', text: 'Hola' });
+    expect(sent).toMatchObject({ status: 422, body: { error: 'device_not_group_admin' } });
+    const keyed = await api.call('POST', '/_sandbox/keys', { permissions: ['communities:send'] });
+    const fresh = await api.call('POST', '/_sandbox/groups', { device_id: 4, name: 'Nuevo', imported: false });
+    expect(
+      await api.call('POST', `/api/v1/groups/${encodeURIComponent(fresh.body.group.uid)}/messages`, { device_id: 4, type: 'text', text: 'x' }, { Authorization: `Bearer ${keyed.body.key}` }),
+    ).toMatchObject({ status: 403, body: { error: 'import_permission_required' } });
+    expect((await api.call('POST', `/api/v1/groups/${encodeURIComponent(fresh.body.group.uid)}/messages`, { device_id: 4, type: 'text', text: 'x' })).status).toBe(202);
+    expect((await api.call('GET', '/api/v1/groups')).body.meta.total).toBe(3);
+  });
+});
+
 describe('groups and workspaces', () => {
   it('a key only sees the groups of its workspace, and their events go to its subscriptions', async () => {
     const api = await startSandbox();

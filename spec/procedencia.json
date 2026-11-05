@@ -2,26 +2,26 @@
   "description": "Where each file of spec/ came from. Written by `npm run generate -- --spec <file>` or `-- --pending <file>`; do not edit it by hand. spec/pending-sandbox.json belongs to this repo: its sources are inside it.",
   "snapshot": {
     "file": "spec/funnelchat.json",
-    "sha256": "8228ea7369daed0655b779ca6af381355a6c1cc13dd702ed6e9c322779bafe94",
-    "bytes": 1214988,
+    "sha256": "0ffaad2b25733d28b2cc07dde8152400c3c68974b3515e71e116ce599312b0fa",
+    "bytes": 1222005,
     "source": {
       "repository": "git@github.com:Funnelchat20/developers-portal.git",
       "path": "generated/specs/funnelchat-completa.json",
       "branch": "main",
-      "commit": "f5464516",
+      "commit": "99928866",
       "commit_date": null,
       "file_tracked_in_git": false,
       "tracked_files_clean": null,
-      "file_modified_at": "2026-11-05T16:59:01.577Z",
-      "note": "Built by `npm run build` of developers-portal at the merge of PR #37, deployed as v0.6.2 on 05-11. Not the published /specs/ file, which carries only the visible operations. communities' snapshot was taken with the group actions on."
+      "file_modified_at": "2026-11-05T19:41:33.011Z",
+      "note": "Built by `npm run build` of developers-portal at the merge of PR #39, deployed as v0.6.3 on 05-11. Not the published /specs/ file, which carries only the visible operations. communities from feat/grupos-sin-panel 54643bbd (= v2.35.7 app code)."
     },
-    "imported_at": "2026-11-05T17:01:38.054Z",
+    "imported_at": "2026-11-05T19:44:20.193Z",
     "spec": {
       "openapi": "3.1.0",
       "title": "Funnelchat API",
       "version": "v0",
-      "paths": 217,
-      "operations": 264,
+      "paths": 218,
+      "operations": 265,
       "webhooks": 29,
       "domains": [
         {
@@ -33,8 +33,8 @@
         },
         {
           "domain": "communities",
-          "tag": "v2.35.5",
-          "sha": "2be913d4",
+          "tag": "v2.35.7",
+          "sha": "54643bbd",
           "branch": null,
           "snapshot_at": null
         },

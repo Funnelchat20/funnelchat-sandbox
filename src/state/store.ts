@@ -177,6 +177,11 @@ export interface Group {
   description: string;
   /** The number that is in the group (a QR number: the sandbox account has no official groups). */
   deviceId: number;
+  /**
+   * In the account (communities `groups`): listed by `GET /groups` and announcing who joins and leaves. `false`: a
+   * group of the number on WhatsApp only, seen by `GET /devices/{device}/groups` until it is imported.
+   */
+  imported: boolean;
   /** The workspace the group is in; `null` counts as the default one. */
   workspaceId: number | null;
   participants: GroupParticipant[];
@@ -360,8 +365,13 @@ class Sequence {
 
 export class Store {
   workspaces = new Map<number, Workspace>();
-  /** The sandbox keys minted for a workspace (`POST /_sandbox/workspaces`, `/_sandbox/keys`): any other key is the default one's. */
-  keys = new Map<string, number>();
+  /**
+   * The sandbox keys minted for a workspace (`POST /_sandbox/workspaces`, `/_sandbox/keys`), with their permissions
+   * (`null`: every one). Any other key is the default workspace's, with every permission.
+   */
+  keys = new Map<string, { workspaceId: number; permissions: string[] | null }>();
+  /** When each number imported a group in the last minute: communities' 5 per minute. */
+  groupImports = new Map<number, number[]>();
   devices = new Map<number, Device>();
   contacts = new Map<number, Contact>();
   messages = new Map<number, Message>();
@@ -542,6 +552,25 @@ export function seed(store: Store, now = new Date()): void {
       { phone: '5491100000000', name: 'Contacto de ejemplo', admin: false },
     ],
     link: 'https://chat.whatsapp.com/SandboxEjemplo0000000000',
+    imported: true,
+    createdAt: now,
+    updatedAt: now,
+  });
+  // A group number 4 is the admin of on WhatsApp but the account has not imported (followed) yet.
+  const liveId = store.ids.group.next();
+  store.groups.set(liveId, {
+    id: liveId,
+    uid: '120363000000000001@g.us',
+    name: 'Clientes VIP',
+    description: '',
+    deviceId: 4,
+    workspaceId,
+    participants: [
+      { phone: '5491100000002', name: null, admin: true },
+      { phone: '5491100000000', name: 'Contacto de ejemplo', admin: false },
+    ],
+    link: 'https://chat.whatsapp.com/SandboxEjemplo0000000001',
+    imported: false,
     createdAt: now,
     updatedAt: now,
   });
