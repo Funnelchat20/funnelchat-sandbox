@@ -12,17 +12,16 @@
       "while": "In `while` and `x-fc-replace-while`, a key is a property of the operation (or of the event's `post`), or, when it starts with `/`, a JSON Pointer into it (RFC 6901): the entry applies only while that exact place still holds that value."
     },
     "sources": {
-      "accounts-webhooks": "accounts v1.4.24 (300cc843, in production on 22-10): back/routes/api/webhooks.php:87-111, back/config/platform-gate.php:244-299 (routes open to keys and the Notifications (webhooks) permissions), Http/Requests/*WebhookSubscriptionRequest.php, Http/Resources/WebhookSubscription*Resource.php, Services/WebhookPermissionRules.php and Catalogs/Areas/*Events.php. Read again in the releases in production on 04-11-2026 (accounts v1.5.97 558332bcf, conversations v1.19.7 4e35ddb83, communities v2.35.5 2be913d4): same routes, bodies and resources in accounts v1.5.97; since then a subscription belongs to the workspace of the key that creates it, and the cap of 50 counts per workspace (Webhook/Http/Controllers/WebhookSubscriptionController.php, `inActiveWorkspace()`). `PUT webhooks/{id}` answers the subscription (Webhook/Http/Controllers/WebhookSubscriptionController.php:228, WebhookSubscriptionResource), which the full unified spec of developers-portal c90565e4 (generated/specs/funnelchat-completa.json) types as `{type: object}`.",
-      "accounts-devices": "accounts v1.4.24 (300cc843, in production on 22-10): back/app/Modules/Device/Http/Resources/DeviceResource.php:65-123 and back/app/Modules/Device/Support/DeviceCapabilities.php:82-194. Read again in the releases in production on 04-11-2026 (accounts v1.5.97 558332bcf, conversations v1.19.7 4e35ddb83, communities v2.35.5 2be913d4): unchanged in accounts v1.5.97.",
-      "conversations-send": "conversations v1.19.7 (4e35ddb83, in production on 04-11-2026): every single send of a key (text, send-message, template, form) answers `200 {message}` with the message it registered, never `null` (back/app/Modules/Message/Support/AcceptedSendAnswer.php:91 and Support/ApiKeySendResponse.php:40-43; notes and the Nova channel the same). the full unified spec of developers-portal c90565e4 (generated/specs/funnelchat-completa.json) documents it as nullable: conversations' docs extension (Shared/PublicApi/Docs/ApiKeySendResponsesOperationExtension.php:54 and :317-320, `nullableMessage`) kept the `null` of the read-back the first version had (f2467e639).",
-      "conversations-status": "conversations v1.19.7 (4e35ddb83, in production on 04-11-2026): data of message.status_changed (back/app/Modules/Webhook/Payloads/MessageStatusChangedPayload.php:161-189). the full unified spec of developers-portal c90565e4 (generated/specs/funnelchat-completa.json) types it from one example only (`schema: {type: object}`): `status` as any string and `client_reference` never null.",
-      "conversations-forms": "conversations v1.18.10 (a580a3d0, in production on 22-10): WhatsApp forms (back/routes/api/whatsapp-forms.php, WhatsappForm/Http/Controllers/WhatsappFormController.php, WhatsappFormSendController.php, Http/Resources/WhatsappFormResource.php, Webhook/Payloads/WhatsappFormCompletedPayload.php:118-136). Read again in the releases in production on 04-11-2026 (accounts v1.5.97 558332bcf, conversations v1.19.7 4e35ddb83, communities v2.35.5 2be913d4): the payload is byte-identical in conversations v1.19.7; the send route also checks that the contact is of the key's workspace. The full unified spec of developers-portal c90565e4 types whatsapp_form.completed from one example only: every answer a string and no field null.",
+      "accounts-webhooks": "accounts v1.4.24 (300cc843, in production on 22-10): back/routes/api/webhooks.php:87-111, back/config/platform-gate.php:244-299 (routes open to keys and the Notifications (webhooks) permissions), Http/Requests/*WebhookSubscriptionRequest.php, Http/Resources/WebhookSubscription*Resource.php, Services/WebhookPermissionRules.php and Catalogs/Areas/*Events.php. Read again in the releases in production on 04-11-2026 (accounts v1.5.97 558332bcf, conversations v1.19.7 4e35ddb83, communities v2.35.5 2be913d4): same routes, bodies and resources in accounts v1.5.97; since then a subscription belongs to the workspace of the key that creates it, and the cap of 50 counts per workspace (Webhook/Http/Controllers/WebhookSubscriptionController.php, `inActiveWorkspace()`). `PUT webhooks/{id}` answers the subscription (Webhook/Http/Controllers/WebhookSubscriptionController.php:228, WebhookSubscriptionResource), which the full unified spec of developers-portal (generated/specs/funnelchat-completa.json, c90565e4 and f5464516) types as `{type: object}`.",
+      "conversations-send": "conversations v1.19.21 (f2937a713, in production on 05-11-2026; read first in v1.19.7 4e35ddb83): every single send of a key (text, send-message, template, form) answers `200 {message}` with the message it registered, never `null` (back/app/Modules/Message/Support/AcceptedSendAnswer.php:91 and Support/ApiKeySendResponse.php:40-43; notes and the Nova channel the same). the full unified spec of developers-portal (generated/specs/funnelchat-completa.json, c90565e4 and f5464516) documents it as nullable: conversations' docs extension (Shared/PublicApi/Docs/ApiKeySendResponsesOperationExtension.php:54 and :317-320, `nullableMessage`) kept the `null` of the read-back the first version had (f2467e639).",
+      "conversations-status": "conversations v1.19.21 (f2937a713, in production on 05-11-2026; read first in v1.19.7 4e35ddb83): data of message.status_changed (back/app/Modules/Webhook/Payloads/MessageStatusChangedPayload.php:161-189). the full unified spec of developers-portal (generated/specs/funnelchat-completa.json, c90565e4 and f5464516) types it from one example only (`schema: {type: object}`): `status` as any string and `client_reference` never null.",
+      "conversations-forms": "conversations v1.18.10 (a580a3d0, in production on 22-10): WhatsApp forms (back/routes/api/whatsapp-forms.php, WhatsappForm/Http/Controllers/WhatsappFormController.php, WhatsappFormSendController.php, Http/Resources/WhatsappFormResource.php, Webhook/Payloads/WhatsappFormCompletedPayload.php:118-136). Read again in the releases in production on 04-11-2026 (accounts v1.5.97 558332bcf, conversations v1.19.7 4e35ddb83, communities v2.35.5 2be913d4): the payload is byte-identical in conversations v1.19.7; the send route also checks that the contact is of the key's workspace. The full unified spec of developers-portal (c90565e4 and f5464516) types whatsapp_form.completed from one example only: every answer a string and no field null.",
       "communities-events": "communities v2.34.52 (6f32f0b4, in production on 22-10): data of the group events (back/app/Modules/Shared/Support/PlatformEvents/PlatformEventCatalog.php:250-309 and Services/*EventPublisher.php), relayed by the unified catalog of accounts v1.4.24 (300cc843). Read again in the releases in production on 04-11-2026 (accounts v1.5.97 558332bcf, conversations v1.19.7 4e35ddb83, communities v2.35.5 2be913d4): group_participant.joined and .left as communities v2.35.5 records them (Shared/Services/GroupWebhookService.php:217-269, `campaign` null for a group without a campaign; Shared/Support/PlatformEvents/PlatformEventParticipant.php) and group_action.completed as the catalog of accounts v1.5.97 relays it (Webhook/Catalogs/Areas/CommunitiesEvents.php:218).",
       "accounts-number-signup": "accounts v1.5.97 (558332bcf, in production on 04-11-2026): back/app/Modules/Device/Http/Requests/StoreDeviceRequest.php, StoreConnectLinkRequest.php, Http/Resources/ConnectLinkResource.php, Http/Resources/DeviceResource.php (`connection` and `external_reference`), Http/Controllers/DeviceProvisioningController.php and config/services.php `connect_links` (the QR every 5 seconds, 10 minutes to scan it from the page, and `meta_enabled`, false by default in production: the official sign-up by link answers `503 meta_connect_disabled` there). The device.* events: Webhook/Services/DeviceWebhookEmitter.php:355-552 (the same `device` block in all of them, `connect_link_id` and `reason`) and Webhook/Catalogs/Areas/AccountsEvents.php:27-81 (all seven active). First read in accounts origin/main dc2907b44 on 25-10 (contract 1022-alta-de-numeros v0.2, first in v1.4.38). Not in the published spec yet: its OpenAPI will replace these entries.",
-      "communities-group-send": "communities v2.35.5 (2be913d4, in production on 04-11-2026): back/app/Modules/GroupManagement/routes.php:351-387, Controllers/Api/V2/ApiGroupActionController.php:48 (show) and :128 (sendMessage), Requests/ApiGroupActions/SendGroupMessageRequest.php, Resources/ApiGroupActionAcceptedResource.php, Resources/ApiGroupActionResource.php, Services/ApiGroupActions/ApiGroupActionTargetResolver.php and OfficialActionPreconditions.php (the rejections), Shared/Catalog/ApiRouteCatalog.php:116 and :417 (open to keys, **Groups and campaigns → Send**). Both routes go through communities' switch `API_GROUP_ACTIONS_ENABLED` (Shared/Support/ApiGroupActionsSwitch.php, off by default in the code), which is on in communities-api production: confirmed by the user on 04-11-2026 (the value lives in the Vapor environment, not in a repository).",
-      "conversations-received": "conversations v1.19.7 (4e35ddb83, in production on 04-11-2026): data of message.received (back/app/Modules/Webhook/Payloads/MessageReceivedPayload.php:130-193: `text` and `media` null when absent, phones as `+` and digits or null, `device_id` last). the full unified spec of developers-portal c90565e4 (generated/specs/funnelchat-completa.json) types it from one example: `text` and the phones never null, `media` unknown.",
-      "conversations-templates": "conversations v1.19.7 (4e35ddb83, in production on 04-11-2026): `GET templates` answers a page of TemplateResource (back/app/Modules/Message/Http/Controllers/MessageTemplateController.php:191-193, with `additional()` for the quality counts); the full unified spec of developers-portal c90565e4 (generated/specs/funnelchat-completa.json) types its items as `{type: object}`.",
-      "accounts-qr": "accounts v1.5.97 (558332bcf, in production on 04-11-2026): `GET devices/{device}/qr` answers `{data: {connected, qr_code, expires_in}}` (back/app/Modules/Device/Http/Controllers/DeviceProvisioningController.php:128-146, its `@body`); the full unified spec of developers-portal c90565e4 (generated/specs/funnelchat-completa.json) infers a union of that body, the inner object in three forms and a bare string."
+      "conversations-received": "conversations v1.19.21 (f2937a713, in production on 05-11-2026; read first in v1.19.7 4e35ddb83): data of message.received (back/app/Modules/Webhook/Payloads/MessageReceivedPayload.php:130-193: `text` and `media` null when absent, phones as `+` and digits or null, `device_id` last). the full unified spec of developers-portal (generated/specs/funnelchat-completa.json, c90565e4 and f5464516) types it from one example: `text` and the phones never null, `media` unknown.",
+      "conversations-templates": "conversations v1.19.21 (f2937a713, in production on 05-11-2026; read first in v1.19.7 4e35ddb83): `GET templates` answers a page of TemplateResource (back/app/Modules/Message/Http/Controllers/MessageTemplateController.php:194-196, with `additional()` for the quality counts); the full unified spec of developers-portal (generated/specs/funnelchat-completa.json, c90565e4 and f5464516) types its items as `{type: object}`.",
+      "accounts-qr": "accounts v1.5.97 (558332bcf, in production on 04-11-2026): `GET devices/{device}/qr` answers `{data: {connected, qr_code, expires_in}}` (back/app/Modules/Device/Http/Controllers/DeviceProvisioningController.php:128-146, its `@body`); the full unified spec of developers-portal (generated/specs/funnelchat-completa.json, c90565e4 and f5464516) infers a union of that body, the inner object in three forms and a bare string.",
+      "communities-group-action": "communities v2.35.5 (2be913d4, in production): `GET groups/actions/{action}` answers `{data: <one action>}` (back/app/Modules/GroupManagement/Controllers/Api/V2/ApiGroupActionController.php:48-62 and Resources/ApiGroupActionResource.php). The full unified spec of developers-portal f5464516 types `data` as an array."
     }
   },
   "components": {
@@ -154,28 +153,6 @@
         },
         "required": ["id", "name", "number", "connection", "external_reference"]
       },
-      "PendingGroupMessageCreate": {
-        "type": "object",
-        "description": "A text or one file, sent to the group right away. Polls, events, stickers, contacts and locations are not accepted.",
-        "properties": {
-          "device_id": { "type": "integer", "description": "The number of your account that sends it. A QR number must be admin of the group; an official number, the one the group belongs to." },
-          "type": { "type": "string", "enum": ["text", "image", "video", "audio", "document"] },
-          "text": { "type": "string", "minLength": 1, "maxLength": 4096, "description": "Only with `type: text`, and required there." },
-          "media_url": { "type": "string", "maxLength": 255, "description": "A public `https` URL that ends in an extension of the type. Required with a file; not with `type: text`." },
-          "caption": { "type": ["string", "null"], "maxLength": 1024, "description": "Image or video only." },
-          "file_name": { "type": ["string", "null"], "maxLength": 255, "description": "Document only." }
-        },
-        "required": ["device_id", "type"]
-      },
-      "PendingGroupActionAccepted": {
-        "type": "object",
-        "description": "The action is queued. Follow it with `GET /api/v1/groups/actions/{action}` or with the events `group_action.completed` and `group_action.failed`.",
-        "properties": {
-          "action_id": { "type": "string", "format": "uuid" },
-          "status": { "type": "string", "enum": ["queued"] }
-        },
-        "required": ["action_id", "status"]
-      },
       "PendingGroupParticipantResult": {
         "type": "object",
         "properties": {
@@ -185,6 +162,18 @@
           "reason": { "type": ["string", "null"] }
         },
         "required": ["identity", "identity_type", "status", "reason"]
+      },
+      "PendingDeviceQr": {
+        "type": "object",
+        "properties": {
+          "connected": { "type": "boolean" },
+          "qr_code": { "type": ["string", "null"], "description": "A PNG image as a data URI, or `null` when the number is already connected." },
+          "expires_in": {
+            "type": "integer",
+            "description": "Seconds after which to ask for it again: 5 with a QR, 3 while the session starts, 0 once connected. WhatsApp changes the code every few seconds and an old one no longer links: show the latest one and have it scanned right away; do not store or forward a QR."
+          }
+        },
+        "required": ["connected", "qr_code", "expires_in"]
       },
       "PendingGroupAction": {
         "type": "object",
@@ -242,18 +231,6 @@
           "failed_at": { "type": ["string", "null"], "format": "date-time" }
         },
         "required": ["action_id", "type", "status", "device_id", "group", "result", "reason", "created_at", "started_at", "completed_at", "failed_at"]
-      },
-      "PendingDeviceQr": {
-        "type": "object",
-        "properties": {
-          "connected": { "type": "boolean" },
-          "qr_code": { "type": ["string", "null"], "description": "A PNG image as a data URI, or `null` when the number is already connected." },
-          "expires_in": {
-            "type": "integer",
-            "description": "Seconds after which to ask for it again: 5 with a QR, 3 while the session starts, 0 once connected. WhatsApp changes the code every few seconds and an old one no longer links: show the latest one and have it scanned right away; do not store or forward a QR."
-          }
-        },
-        "required": ["connected", "qr_code", "expires_in"]
       }
     }
   },
@@ -1174,80 +1151,6 @@
           }
         }
       }
-    },
-    "/api/v1/groups/{group}/messages": {
-      "post": {
-        "operationId": "pendingGroups.sendMessage",
-        "summary": "Send a message to a group",
-        "tags": ["GroupAction"],
-        "x-fc-domain": "communities",
-        "x-fc-permission": "communities:send",
-        "x-fc-pending": "communities-group-send",
-        "description": "Sends a text or one file to the group now, from one of your numbers. Asynchronous: it answers `202` with `action_id`; the result arrives in `GET /api/v1/groups/actions/{action}` (`result.message.uid` is the id of the message in WhatsApp) and in the events `group_action.completed` and `group_action.failed`. A QR number goes out at the pace of the scheduled messages; an official number checks the 24-hour window and its quality first. It needs **Groups and campaigns → Send**. Rejections: `404 device_not_found`, `404 group_not_found`, `422 unsupported_group_type`, `422 device_not_connected`, `422 device_not_group_admin` (a QR number that is not admin), `422 device_not_group_number` (an official group of another number), `422 provider_unsupported`, `422 window_closed`, `422 number_restricted`, `422 unsupported_type` and `429 too_many_pending_actions`.",
-        "parameters": [
-          {
-            "name": "group",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string" },
-            "description": "The WhatsApp uid of the group (`…@g.us`), the `uid` of `GET /api/v1/groups`."
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": { "$ref": "#/components/schemas/PendingGroupMessageCreate" }
-            }
-          }
-        },
-        "responses": {
-          "202": {
-            "description": "Queued.",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/PendingGroupActionAccepted" }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/groups/actions/{action}": {
-      "get": {
-        "operationId": "pendingGroups.retrieveAction",
-        "summary": "A group action",
-        "tags": ["GroupAction"],
-        "x-fc-domain": "communities",
-        "x-fc-permission": "communities:read",
-        "x-fc-pending": "communities-group-send",
-        "description": "Where an action is (`queued`, `running`, `completed` or `failed`) and its `result`. An action of another key's workspace, or that does not exist, is `404 action_not_found`.",
-        "parameters": [
-          {
-            "name": "action",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" },
-            "description": "The `action_id` the action returned."
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": { "$ref": "#/components/schemas/PendingGroupAction" }
-                  },
-                  "required": ["data"]
-                }
-              }
-            }
-          }
-        }
-      }
     }
   },
   "operationPatches": [],
@@ -1468,6 +1371,33 @@
           "content": {
             "application/json": {
               "schema": { "$ref": "#/components/schemas/WebhookSubscriptionResource" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "get",
+      "path": "/api/v1/groups/actions/{action}",
+      "while": {
+        "/responses/200/content/application~1json/schema/properties/data": {
+          "type": "array",
+          "items": {}
+        }
+      },
+      "x-fc-pending": "communities-group-action",
+      "responses": {
+        "200": {
+          "description": "The action.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "data": { "$ref": "#/components/schemas/PendingGroupAction" }
+                },
+                "required": ["data"]
+              }
             }
           }
         }

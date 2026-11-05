@@ -2,7 +2,7 @@
 
 A local server that imitates the Funnelchat public API and sends signed webhooks, with no real effects: nothing goes out to WhatsApp, nothing is charged, everything stays in memory. Build and test your integration without an account.
 
-It imitates production on 04-11: accounts v1.5.97, conversations v1.19.7, communities v2.35.5, platform-gate v0.9.1 and the API edge v0.3.0.
+It imitates production on 05-11: accounts v1.5.97, conversations v1.19.21, communities v2.35.5, platform-gate v0.9.1 and the API edge v0.3.0.
 
 ## Try it in 3 minutes, without an account
 
@@ -31,22 +31,19 @@ curl -s -X POST http://localhost:4010/_sandbox/devices/5/connect
 # device.connected: number 5 is connected
 ```
 
-**2. Send a message.** Create the contact first, then send it a text through number 5:
+**2. Send a message.** One call, by phone, through number 5: if the phone is not a contact yet, it becomes one.
 
 ```bash
-curl -s -X POST $API/contacts -H "Authorization: Bearer $FUNNELCHAT_API_KEY" \
-  -H 'Content-Type: application/json' -d '{"name": "Ana", "phone": "5491155550000"}'
-# {"id": 2002, "phone": "5491155550000", …}
-curl -s -X POST $API/contacts/2002/message -H "Authorization: Bearer $FUNNELCHAT_API_KEY" \
+curl -s -X POST $API/message/send-message -H "Authorization: Bearer $FUNNELCHAT_API_KEY" \
   -H 'Content-Type: application/json' \
-  -d '{"device_id": 5, "contact_id": 2002, "phone": "5491155550000", "text": "Hola, Ana", "client_reference": "pedido-8841"}'
-# {"message": {"id": 9001, "status": "queued", "client_reference": "pedido-8841", …}}
+  -d '{"device_id": 5, "phone": "5491155550000", "text": "Hola, Ana", "client_reference": "pedido-8841"}'
+# {"message": {"id": 9001, "contact_id": 2002, "status": "queued", "client_reference": "pedido-8841", …}}
 ```
 
 **3. Know when it was read.** Within six seconds the message goes `sent` → `delivered` → `read`. Watch it at [http://localhost:4010/_sandbox](http://localhost:4010/_sandbox), under **Events** (every `message.status_changed`, delivered or not), or read the message:
 
 ```bash
-curl -s $API/contacts/2002/messages/9001 -H "Authorization: Bearer $FUNNELCHAT_API_KEY"
+curl -s $API/contacts/2002/messages/9001 -H "Authorization: Bearer $FUNNELCHAT_API_KEY"   # 2002: the contact_id of the answer
 # {"id": 9001, "status": "read", …}
 ```
 
@@ -127,7 +124,7 @@ npx funnelchat-sandbox
 ```
 
 ```
-funnelchat-sandbox 0.3.0 at http://127.0.0.1:4010
+funnelchat-sandbox 0.3.1 at http://127.0.0.1:4010
   API:    http://127.0.0.1:4010/api/v1/...   (Authorization: Bearer 1|fc_live_sandbox, or any well-formed key)
   panel:  http://127.0.0.1:4010/_sandbox
   example numbers: 3 (official, with the 24-hour window) and 4 (QR, no window); contact 2001; template 45
@@ -297,6 +294,8 @@ The official number (`3`) has no groups (the sandbox account is not in the offic
 The complete spec the sandbox uses is at `GET /_sandbox/openapi.json`.
 
 ## Sending a message
+
+**By phone, without `contact_id`** (conversations v1.19.21): `POST /api/v1/message/send-message` and `POST /api/v1/devices/{device}/templates/{template}/send-template` take `phone` instead of `contact_id`. The contact of that phone is found, or created in the key's workspace (with the `422`s of `update-or-create` for a phone that is not one), and the answer's `message.contact_id` says which. The contact stays created even if a rule (the window, the brakes, the MAC, a disconnected number) then stops the send. A phone of a contact of another workspace answers `404` and creates nothing. `whatsapp_id` (Meta's BSUID, `US.13491208655302741918`) works instead of `phone` only with an official number; with a QR number, together with `phone` or without the shape of a BSUID, it is a `422` on `whatsapp_id`. With `contact_id`, a `phone` or `whatsapp_id` in the body must be that contact's: `422 recipient_mismatch`, on `send-message` too.
 
 ```bash
 curl -s http://localhost:4010/api/v1/contacts/2001/message \
@@ -692,7 +691,7 @@ And at `http://localhost:4010/_sandbox` you see each request and each delivery w
 - **Webhook URLs** may be `http` and local, without the real API's protection against internal destinations (try `--require-https`). Do not expose the sandbox to the internet: the `/_sandbox` routes take no key and the sandbox `POST`s to any URL subscribed to it.
 - **The catalog** is rendered from the code of accounts v1.5.97 (`spec/catalog.json`, with `scripts/transcribe-catalog.php`), not read from a response: if accounts changes it, it has to be rendered again.
 - **Groups have state only for the list, one group and the send of a message** (the action is `completed` after the delays of `sent` and `delivered`; it never fails on its own). The other group actions, the campaigns and the rest of the groups' routes answer examples, and their events are fired from `/_sandbox`. There are no official groups (the account is not in their beta), no `too_many_pending_actions` and no rate limit of 30 sends per minute.
-- **Workspaces confine** numbers, sign-up links, webhook subscriptions, contacts, conversations, messages, templates and groups. Tags, custom fields and forms are not confined in the sandbox. A contact belongs to one workspace, and the phone stays unique in the account: `POST /api/v1/contacts` with a phone of another workspace gives back that contact (`200`), as conversations v1.19.7 does.
+- **Workspaces confine** numbers, sign-up links, webhook subscriptions, contacts, conversations, messages, templates and groups. Tags, custom fields and forms are not confined in the sandbox. A contact belongs to one workspace, and the phone stays unique in the account: `POST /api/v1/contacts`, `update-or-create` and a send by phone with a phone of another workspace answer `404`.
 - **Forms do not talk to Meta:** `sync` and `publish` succeed unless the linter finds an error, and the linter is a short version of the real one (screens without a title, without an ending, without questions, with a connection to the server). The metrics (`…/metrics`) answer the example of their schema, and there are no dynamic forms.
 - **Files are not downloaded:** the type comes from the extension or from `file_type`. The «known» extensions (the ones that give `415` instead of `422 errors.file_type`) are the common ones; the API uses symfony/mime's full list.
 - **Connecting numbers** follows a contract, not production: no real QR, no Meta Embedded Signup and no 15-minute hold of a pool number. The page has no `POST /connect/{token}/qr` (the button connects at once) and no `POST /connect/{token}/offer` (the pool number is given when the link completes). A QR link that fails does not create (and delete) a number, links do not die when a key is revoked, the per-minute limit counts only the calls that pass the schema, and `409 operation_in_progress` only appears if two calls with the same `Idempotency-Key` overlap. The errors that depend on the plan, the payment or the provider (`connect_not_allowed`, `number_suspended_by_plan`, `payment_required`, `device_inactive`, `provider_error`…) are documented but never answered.
@@ -703,9 +702,9 @@ And at `http://localhost:4010/_sandbox` you see each request and each delivery w
 
 ## Pending of the spec
 
-The spec (`spec/funnelchat.json`) is the portal's full unified spec of 04-11 (developers-portal `c90565e4`, v0.6.0), made from accounts v1.5.97, conversations v1.19.7 and communities v2.35.5: every route an API key reaches, not only the ones the portal shows. What production has and that spec lacks is in two separate layers, which the next regeneration drops on its own once the spec carries it:
+The spec (`spec/funnelchat.json`) is the portal's full unified spec of 05-11 (developers-portal `f5464516`, v0.6.2), made from accounts v1.5.97, conversations v1.19.21 and communities v2.35.5 (with the send to a group): every route an API key reaches, not only the ones the portal shows. What production has and that spec lacks is in two separate layers, which the next regeneration drops on its own once the spec carries it:
 
-- `spec/pending.json`: the pending layer of the Node SDK, copied unchanged (`funnelchat-node` `feat/primer-uso` @ `8469a5c`). It brings what the spec lacks (the forms, the send to a group, `rotate-secret`, the accounts and communities events) and, guarded by JSON Pointer conditions, corrections where the spec says otherwise than production answers (the send answers, `devices/{device}/qr`, the template list, `PUT webhooks/{id}`, and `message.received`, `message.status_changed` and `whatsapp_form.completed`).
+- `spec/pending.json`: the pending layer of the Node SDK, copied unchanged (`funnelchat-node` `feat/enviar-por-telefono` @ `a8f8350`). It brings what the spec lacks (the forms, `rotate-secret`, the accounts and communities events) and, guarded by JSON Pointer conditions, corrections where the spec says otherwise than production answers (the send answers, `devices/{device}/qr`, the template list, `PUT webhooks/{id}`, `GET groups/actions/{action}`, and `message.received`, `message.status_changed` and `whatsapp_form.completed`).
 - `spec/pending-sandbox.json`: what the sandbox adds, with its sources inside.
 
 Besides, `spec/catalog.json` is the event catalog of accounts v1.5.97, with its provenance.
@@ -746,7 +745,7 @@ What it does:
 2. It applies over the snapshot `spec/pending.json` and then `spec/pending-sandbox.json`, but **only what the snapshot lacks**. At the end it lists what the snapshot already carries, so you can delete it.
 3. It writes `generated/openapi.json`, the spec the sandbox validates and answers with.
 
-**The current spec** is the portal's full unified spec of 04-11 (`main` @ `c90565e4`, `generated/specs/funnelchat-completa.json`): 203 paths, 248 operations and 29 events of accounts v1.5.97 (`558332bcf`), conversations v1.19.7 (`4e35ddb83`) and communities v2.35.5 (`2be913d4`). The detail is in `spec/procedencia.json`.
+**The current spec** is the portal's full unified spec of 05-11 (`main` @ `f5464516`, `generated/specs/funnelchat-completa.json`): 217 paths, 264 operations and 29 events of accounts v1.5.97 (`558332bcf`), conversations v1.19.21 (`f2937a71`) and communities v2.35.5 (`2be913d4`). The detail is in `spec/procedencia.json`.
 
 ## Development
 
