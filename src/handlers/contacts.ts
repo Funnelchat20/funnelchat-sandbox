@@ -89,6 +89,39 @@ export function createContact(app: SandboxApp, input: NewContact): Contact {
   return contact;
 }
 
+const BSUID = /^[A-Za-z]{2}\.(?:[A-Za-z0-9]+\.)*[A-Za-z0-9]{1,128}$/;
+
+/** `ContactService::isBsuid`: Meta's business-scoped user id, like `US.13491208655302741918`. */
+export const isBsuid = (value: string): boolean => BSUID.test(value);
+
+const invalidPhone = (message: string, error: string) => new RawApiError(422, { message, errors: { phone: [error] } });
+
+/**
+ * conversations v1.19.21 `FindOrCreateSendRecipientAction` (send by phone, without `contact_id`): the contact of that
+ * phone (or `whatsapp_id`) in the account, or a new one in the key's workspace, with the `422`s of `update-or-create`.
+ * One of another workspace answers `404` and nothing is created. The phone is kept in digits (the API also rewrites a
+ * few national prefixes, which the sandbox does not).
+ */
+export function sendRecipient(ctx: HandlerContext, b: Record<string, unknown>): Contact {
+  const { app } = ctx;
+  const inScope = (contact: Contact): Contact => {
+    if (!sees(ctx.workspace, contact.workspaceId)) throw outsideWorkspace();
+    return contact;
+  };
+  if (b.phone !== undefined && b.phone !== null) {
+    const phone = digits(b.phone);
+    if (phone === '') throw invalidPhone('El número de teléfono proporcionado no es válido.', 'El número de teléfono es inválido.');
+    if (phone.length < 7 || phone.length > 15 || !/[1-9]/.test(phone)) {
+      throw invalidPhone('La longitud del número de teléfono no es válida.', 'El número de teléfono debe tener una longitud válida.');
+    }
+    const existing = app.store.findContactByPhone(phone);
+    return existing ? inScope(existing) : createContact(app, { workspaceId: ctx.workspace.id, phone });
+  }
+  const whatsappId = String(b.whatsapp_id);
+  const existing = [...app.store.contacts.values()].sort((x, y) => x.id - y.id).find((c) => c.whatsappId === whatsappId);
+  return existing ? inScope(existing) : createContact(app, { workspaceId: ctx.workspace.id, whatsappId });
+}
+
 function sortContacts(list: Contact[], orderBy: unknown, direction: unknown): Contact[] {
   const key = typeof orderBy === 'string' ? orderBy : 'id';
   const desc = direction === undefined ? key === 'id' || key.endsWith('_at') : direction === 'desc';
@@ -224,7 +257,7 @@ export const contactHandlers: HandlerTable = {
   },
 
   // `ContactService::firstOrCreate`: `201` with the new contact, or `200` with the one the account already has with that
-  // phone (or `whatsapp_id`), even if it is in another workspace (conversations v1.19.7 does not check it there).
+  // phone (or `whatsapp_id`); one of another workspace answers 404, like `update-or-create` (conversations v1.19.21).
   'POST /api/v1/contacts': (ctx) => {
     const b = body(ctx);
     if (!b.phone && !b.whatsapp_id) throw fieldError('phone', 'El campo phone es obligatorio cuando whatsapp_id no está presente.');
@@ -237,6 +270,7 @@ export const contactHandlers: HandlerTable = {
     const existing = phone
       ? ctx.app.store.findContactByPhone(phone)
       : [...ctx.app.store.contacts.values()].find((c) => c.whatsappId !== null && c.whatsappId === String(b.whatsapp_id));
+    if (existing && !sees(ctx.workspace, existing.workspaceId)) throw outsideWorkspace();
     if (existing) return ok(contactResource(ctx.app.store, existing));
     const contact = createContact(ctx.app, { workspaceId: ctx.workspace.id, name: b.name, email: b.email, phone: b.phone, whatsappId: b.whatsapp_id, image: b.image, deviceId: b.deviceId });
     return ok(contactResource(ctx.app.store, contact), 201);

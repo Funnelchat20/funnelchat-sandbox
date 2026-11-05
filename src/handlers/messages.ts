@@ -11,7 +11,7 @@
  */
 import type { SandboxApp } from '../app.js';
 import { body, listContext, noContent, ok, type HandlerContext, type HandlerResult, type HandlerTable } from '../http/context.js';
-import { ApiError, fieldError, notFound, objectNotFound, RawApiError } from '../http/errors.js';
+import { ApiError, fieldError, notFound, objectNotFound, RawApiError, validationFailed } from '../http/errors.js';
 import { cursorPaginate, paginate } from '../http/paginate.js';
 import { resolveFile, type UnsupportedStyle } from '../messaging/files.js';
 import { createMessage, scheduleLifecycle } from '../messaging/lifecycle.js';
@@ -29,7 +29,7 @@ import {
 import { historyMessage, publicMessage, templateResource } from '../state/resources.js';
 import type { Contact, Device, Message, Template } from '../state/store.js';
 import { sees } from '../state/workspaces.js';
-import { getContact, outsideWorkspace } from './contacts.js';
+import { getContact, isBsuid, outsideWorkspace, sendRecipient } from './contacts.js';
 
 export function getDevice(app: SandboxApp, id: unknown, field = 'device_id'): Device {
   const device = app.store.devices.get(Number(id));
@@ -124,17 +124,42 @@ function note(ctx: HandlerContext, contact: Contact, device: Device, text: unkno
   return ok({ message: publicMessage(message) });
 }
 
+const present = (value: unknown): boolean => value !== undefined && value !== null;
+
+/** Send by phone (conversations v1.19.21): no `contact_id`, the recipient is `phone` or `whatsapp_id`. */
+const byIdentity = (b: Record<string, unknown>): boolean => !present(b.contact_id);
+
+/**
+ * `SendRecipientByIdentity::assertUsable()`: without `contact_id`, `whatsapp_id` (Meta's BSUID) only with an official
+ * number, never together with `phone`, and with the shape of a BSUID.
+ */
+function assertUsable(b: Record<string, unknown>, device: Device): void {
+  if (!present(b.whatsapp_id) || !byIdentity(b)) return;
+  if (device.kind !== 'cloud') {
+    throw fieldError('whatsapp_id', 'whatsapp_id (el BSUID de Meta) solo se puede usar con un número oficial de WhatsApp (API Cloud). Con un número conectado por QR, indica el destinatario en phone.');
+  }
+  if (present(b.phone)) throw fieldError('whatsapp_id', 'Sin contact_id, indica el destinatario con phone o con whatsapp_id, no con los dos.');
+  if (!isBsuid(String(b.whatsapp_id))) {
+    throw fieldError('whatsapp_id', 'whatsapp_id tiene que ser el BSUID que envía Meta, por ejemplo US.13491208655302741918. Para enviar a un número de teléfono, usa phone.');
+  }
+}
+
 /**
  * Text, a file (by URL, with `file_type` / `file_name`) or a menu (`options`) to one contact. `style` is the route:
- * `conversation` (`contacts/{contact}/message`, which checks the body's recipient) or `direct` (`send-message`).
+ * `conversation` (`contacts/{contact}/message`) or `direct` (`send-message`). `contact` is `null` on a `send-message`
+ * by phone: after the checks of the number and the file, the contact of that phone is found or created in the key's
+ * workspace. With `contact_id`, the body's `phone` / `whatsapp_id` must be that contact (`recipient_mismatch`).
  */
-function sendToContact(ctx: HandlerContext, contact: Contact, style: UnsupportedStyle): HandlerResult {
+function sendToContact(ctx: HandlerContext, given: Contact | null, style: UnsupportedStyle): HandlerResult {
   const b = body(ctx);
   const reference = clientReference(b);
   const options = Array.isArray(b.options) ? b.options : null;
   if (b.note === true && options) throw new RawApiError(422, { error: 'A note cannot carry interactive options.' });
+  if (given === null) assertUsable(b, getDevice(ctx.app, b.device_id));
   const file = resolveFile(b, style);
   const device = getDevice(ctx.app, b.device_id);
+  if (given === null && !sees(ctx.workspace, device.workspaceId)) throw outsideWorkspace();
+  const contact = given ?? sendRecipient(ctx, b);
   if (b.note === true) return note(ctx, contact, device, b.text, reference);
   const text = typeof b.text === 'string' && b.text !== '' ? b.text : null;
   if (!text && !file) throw fieldError('text', 'El campo text es obligatorio cuando file no está presente.');
@@ -144,9 +169,9 @@ function sendToContact(ctx: HandlerContext, contact: Contact, style: Unsupported
     contact,
     profile: 'free_form',
     items: [{ type, text, file: file?.file ?? null, hash: contentHash('message', text, file?.file ?? null, options) }],
-    // `recipient_mismatch` only exists on the routes with the recipient in the body (`ApiRecipientBinding`).
-    phone: style === 'conversation' ? b.phone : undefined,
-    whatsappId: style === 'conversation' ? b.whatsapp_id : undefined,
+    // `recipient_mismatch` (`ApiRecipientBinding`): a contact found by the body's phone is it by construction.
+    phone: given === null ? undefined : b.phone,
+    whatsappId: given === null ? undefined : b.whatsapp_id,
     clientReference: reference,
     mac: true,
   });
@@ -180,22 +205,38 @@ function getTemplate(ctx: HandlerContext, id: unknown): Template {
 function sendTemplate(ctx: HandlerContext): HandlerResult {
   const b = body(ctx);
   const reference = clientReference(b);
+  // A key names the recipient by `contact_id`, or by `phone` (or `whatsapp_id`) alone (conversations v1.19.21).
+  if (!present(b.phone) && !present(b.whatsapp_id)) {
+    throw validationFailed({
+      ...(present(b.contact_id) ? {} : { contact_id: ['El campo contact_id es obligatorio cuando ninguno de phone / whatsapp_id está presente.'] }),
+      phone: ['El campo phone es obligatorio cuando whatsapp_id no está presente.'],
+    });
+  }
   // `template_not_found` goes before everything else (`MessageTemplateController`).
   // A number of another workspace answers 404 before anything else (`MessageTemplateController`, v1.19.7).
   const own = ctx.app.store.devices.get(Number(ctx.path.device));
   if (own && !sees(ctx.workspace, own.workspaceId)) throw outsideWorkspace();
-  const template = ctx.app.store.templates.get(Number(ctx.path.template_id ?? ctx.path.template));
+  const found = ctx.app.store.templates.get(Number(ctx.path.template_id ?? ctx.path.template));
+  // One of another workspace is the same `template_not_found` (v1.19.21).
+  const template = found && sees(ctx.workspace, found.workspaceId) ? found : undefined;
   if (!template) throw new ApiError(404, 'template_not_found', 'No se envió: la plantilla no existe en tu cuenta. Revisa el identificador de la plantilla.');
   const device = ctx.app.store.devices.get(Number(ctx.path.device));
   // A number outside the account is refused by `ApiKeySendAcceptor`.
   if (!device) throw rejection('device_unavailable');
   if (template.deviceId !== device.id) throw new RawApiError(422, { error: 'La plantilla no pertenece al número actual', error_code: 'template_waba_mismatch' });
   if (template.status !== 'APPROVED') throw fieldError('template', `La plantilla está ${template.status}: solo se envían plantillas aprobadas.`);
-  const contact = ctx.app.store.contacts.get(Number(b.contact_id));
-  if (!contact) throw new RawApiError(404, { error: 'Contact not found' });
+  assertUsable(b, device);
+  const identity = byIdentity(b);
+  const contactId = identity ? sendRecipient(ctx, b).id : Number(b.contact_id);
+  const contact = ctx.app.store.contacts.get(contactId);
+  // A contact of another workspace answers like one of another account (v1.19.21).
+  if (!contact || !sees(ctx.workspace, contact.workspaceId)) throw new RawApiError(404, { error: 'Contact not found' });
   if (!device.connected) throw rejection('device_unavailable');
   const variables = (b.template_variables as { body?: unknown } | undefined)?.body;
-  const check = checkSend(ctx.app, { device, contact, profile: 'template', phone: b.phone, contentHashes: [] });
+  // A contact found by the body's phone or whatsapp_id is it by construction: nothing to confirm.
+  const phone = identity ? undefined : b.phone;
+  const whatsappId = identity ? undefined : b.whatsapp_id;
+  const check = checkSend(ctx.app, { device, contact, profile: 'template', phone, whatsappId, contentHashes: [] });
   if (check?.code === 'recipient_mismatch') throw check;
   const text = renderTemplate(template, variables);
   const [message] = send(ctx, {
@@ -203,7 +244,8 @@ function sendTemplate(ctx: HandlerContext): HandlerResult {
     contact,
     profile: 'template',
     items: [{ type: 'template', text, file: template.file, templateId: template.id, hash: contentHash('template', template.id, variables) }],
-    phone: b.phone,
+    phone,
+    whatsappId,
     clientReference: reference,
     mac: false,
   });
@@ -213,11 +255,18 @@ function sendTemplate(ctx: HandlerContext): HandlerResult {
 export const messageHandlers: HandlerTable = {
   'POST /api/v1/contacts/{contact}/message': (ctx) => sendToContact(ctx, getContact(ctx.app, ctx.path.contact, ctx.workspace), 'conversation'),
 
+  // With `contact_id`, or by `phone` / `whatsapp_id` alone: the contact is found or created (conversations v1.19.21).
   'POST /api/v1/message/send-message': (ctx) => {
     const b = body(ctx);
-    const contact = ctx.app.store.contacts.get(Number(b.contact_id));
-    // `MessageController`: its own bodies, `{status: "error", error}`; a contact of another workspace, the same 404.
-    if (!contact || !sees(ctx.workspace, contact.workspaceId)) throw new RawApiError(404, { status: 'error', error: 'Contacto no encontrado.' });
+    if (byIdentity(b) && !present(b.phone) && !present(b.whatsapp_id)) {
+      throw fieldError('contact_id', 'El campo contact_id es obligatorio cuando ninguno de phone / whatsapp_id está presente.');
+    }
+    let contact: Contact | null = null;
+    if (!byIdentity(b)) {
+      contact = ctx.app.store.contacts.get(Number(b.contact_id)) ?? null;
+      // `MessageController`: its own bodies, `{status: "error", error}`; a contact of another workspace, the same 404.
+      if (!contact || !sees(ctx.workspace, contact.workspaceId)) throw new RawApiError(404, { status: 'error', error: 'Contacto no encontrado.' });
+    }
     if (!ctx.app.store.devices.has(Number(b.device_id))) throw new RawApiError(403, { status: 'error', error: 'No autorizado' });
     return sendToContact(ctx, contact, 'direct');
   },

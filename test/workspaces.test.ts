@@ -153,6 +153,25 @@ describe('contacts, conversations and messages of another workspace', () => {
   });
 });
 
+describe('sending by phone, without contact_id (conversations v1.19.21)', () => {
+  it('finds or creates the contact in the key\'s workspace; another workspace\'s phone is 404; whatsapp_id only on an official number', async () => {
+    const api = await startSandbox();
+    const sent = await api.call('POST', '/api/v1/message/send-message', { device_id: 4, phone: '+54 9 11 5555-0100', text: 'Hola' });
+    expect(sent.status).toBe(200);
+    const contactId = sent.body.message.contact_id as number;
+    expect((await api.call('GET', `/api/v1/contacts/${contactId}`)).body.phone).toBe('5491155550100');
+    // The same phone again is the same contact.
+    expect((await api.call('POST', '/api/v1/message/send-message', { device_id: 4, phone: '5491155550100', text: 'Otra vez' })).body.message.contact_id).toBe(contactId);
+    const template = await api.call('POST', '/api/v1/devices/3/templates/45/send-template', { phone: '5491155550100', template_variables: { body: ['Ana'] } });
+    expect(template.body.message.contact_id).toBe(contactId);
+
+    const b = await secondWorkspace(api);
+    expect(await b.as('POST', '/api/v1/message/send-message', { device_id: 4, phone: '5491155550100', text: 'x' })).toMatchObject({ status: 404 });
+    expect((await api.call('POST', '/api/v1/message/send-message', { device_id: 4, whatsapp_id: 'US.13491208655302741918', text: 'x' })).body.errors.whatsapp_id).toBeDefined();
+    expect((await api.call('POST', '/api/v1/message/send-message', { device_id: 4, contact_id: 2001, phone: '5491155550100', text: 'x' })).body.error).toBe('recipient_mismatch');
+  });
+});
+
 describe('events fired from /_sandbox', () => {
   it('go to the default workspace, or to the one named in the body', async () => {
     const api = await startSandbox();
