@@ -69,6 +69,13 @@ describe('sending with an API key', () => {
     expect(receiver.received).toHaveLength(0);
   });
 
+  it('brings the templates of an official number from Meta: 202 completed; a QR number 422; an unknown one 404', async () => {
+    const api = await startSandbox();
+    expect(await api.call('POST', '/api/v1/devices/3/templates')).toMatchObject({ status: 202, body: { status: 'completed' } });
+    expect(await api.call('POST', '/api/v1/devices/4/templates')).toMatchObject({ status: 422, body: { error: 'number_not_connected_to_meta' } });
+    expect(await api.call('POST', '/api/v1/devices/99/templates')).toMatchObject({ status: 404, body: { message: 'Objeto no encontrado.' } });
+  });
+
   it('send-message and send-template answer {message} too; a template needs no window', async () => {
     const { api, receiver } = await setup();
     const direct = await api.call('POST', '/api/v1/message/send-message', { device_id: 4, contact_id: 2001, text: 'Directo' });

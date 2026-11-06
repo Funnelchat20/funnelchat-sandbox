@@ -2,7 +2,7 @@
 
 A local server that imitates the Funnelchat public API and sends signed webhooks, with no real effects: nothing goes out to WhatsApp, nothing is charged, everything stays in memory. Build and test your integration without an account.
 
-It imitates production on 05-11: accounts v1.5.97, conversations v1.19.21, communities v2.35.7, platform-gate v0.9.1 and the API edge v0.3.0.
+It imitates production on 06-11: accounts v1.5.97, conversations v1.19.37, communities v2.35.7, platform-gate v0.9.1 and the API edge v0.3.0.
 
 ## Try it in 3 minutes, without an account
 
@@ -128,7 +128,7 @@ npx funnelchat-sandbox
 ```
 
 ```
-funnelchat-sandbox 0.3.2 at http://127.0.0.1:4010
+funnelchat-sandbox 0.3.3 at http://127.0.0.1:4010
   API:    http://127.0.0.1:4010/api/v1/...   (Authorization: Bearer 1|fc_live_sandbox, or any well-formed key)
   panel:  http://127.0.0.1:4010/_sandbox
   example numbers: 3 (official, with the 24-hour window) and 4 (QR, no window); contact 2001; template 45
@@ -327,6 +327,7 @@ curl -s http://localhost:4010/api/v1/contacts/2001/message \
 
 - **Queued is not sent.** Then, at 1, 3 and 6 seconds (configurable), the message moves to `sent`, `delivered` and `read`, and every change arrives through `message.status_changed` with the same `message_id`, `previous_status` (`null` on the first one) and your `client_reference`. `queued` never appears in the event.
 - The current status is read with `GET /api/v1/contacts/{contact}/messages/{message}` (the same object) and in the history `GET /api/v1/contacts/{contactId}/messages`.
+- **A template created in Meta that does not appear in `GET /api/v1/templates`:** bring it with `POST /api/v1/devices/{device}/templates` (official numbers only, conversations v1.19.37) and list again. In the sandbox nothing goes to Meta: an official number answers `202 {"status": "completed"}`, a QR one `422 number_not_connected_to_meta`, and a number that is not of the key's workspace `404`.
 - The same goes for `POST /api/v1/message/send-message` (`{message}`), templates (`POST /api/v1/devices/{device}/templates/{template}/send-template`, `{message}`), forms (`POST /api/v1/contacts/{contact}/message/form`, `{message}`), cards (`{messages: [...]}`, one per card) and the forward (one item per destination, with its `message`, or `status: "blocked"` and `message: null`).
 - `client_reference` is optional: 1 to 64 visible ASCII characters, no spaces. If it does not fit, `422 errors.client_reference`.
 - A note (`"note": true`) is stored with `status: null` and is not sent.
@@ -707,7 +708,7 @@ And at `http://localhost:4010/_sandbox` you see each request and each delivery w
 
 ## Pending of the spec
 
-The spec (`spec/funnelchat.json`) is the portal's full unified spec of 05-11 (developers-portal `99928866`, v0.6.3), made from accounts v1.5.97, conversations v1.19.21 and communities v2.35.7 (with the send to a group and the import): every route an API key reaches, not only the ones the portal shows. What production has and that spec lacks is in two separate layers, which the next regeneration drops on its own once the spec carries it:
+The spec (`spec/funnelchat.json`) is the portal's full unified spec of 06-11 (developers-portal `feat/plantillas-de-meta` @ `51c0aeb`, v0.6.7), made from accounts v1.5.97, conversations v1.19.37 and communities v2.35.7 (with the send to a group and the import): every route an API key reaches, not only the ones the portal shows. What production has and that spec lacks is in two separate layers, which the next regeneration drops on its own once the spec carries it:
 
 - `spec/pending.json`: the pending layer of the Node SDK, copied unchanged (`funnelchat-node` `feat/enviar-por-telefono` @ `a8f8350`). It brings what the spec lacks (the forms, `rotate-secret`, the accounts and communities events) and, guarded by JSON Pointer conditions, corrections where the spec says otherwise than production answers (the send answers, `devices/{device}/qr`, the template list, `PUT webhooks/{id}`, `GET groups/actions/{action}`, and `message.received`, `message.status_changed` and `whatsapp_form.completed`).
 - `spec/pending-sandbox.json`: what the sandbox adds, with its sources inside.
@@ -750,7 +751,7 @@ What it does:
 2. It applies over the snapshot `spec/pending.json` and then `spec/pending-sandbox.json`, but **only what the snapshot lacks**. At the end it lists what the snapshot already carries, so you can delete it.
 3. It writes `generated/openapi.json`, the spec the sandbox validates and answers with.
 
-**The current spec** is the portal's full unified spec of 05-11 (`main` @ `99928866`, `generated/specs/funnelchat-completa.json`): 218 paths, 265 operations and 29 events of accounts v1.5.97 (`558332bcf`), conversations v1.19.21 (`f2937a71`) and communities v2.35.7 (`feat/grupos-sin-panel` @ `54643bbd`). The detail is in `spec/procedencia.json`.
+**The current spec** is the portal's full unified spec of 06-11 (`feat/plantillas-de-meta` @ `51c0aeb`, `generated/specs/funnelchat-completa.json`): 219 paths, 266 operations and 29 events of accounts v1.5.97, conversations v1.19.37 (`a4d0136be`) and communities v2.35.7. The detail is in `spec/procedencia.json`.
 
 ## Development
 
