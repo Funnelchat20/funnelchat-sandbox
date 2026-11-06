@@ -2,46 +2,46 @@
   "description": "Where each file of spec/ came from. Written by `npm run generate -- --spec <file>` or `-- --pending <file>`; do not edit it by hand. spec/pending-sandbox.json belongs to this repo: its sources are inside it.",
   "snapshot": {
     "file": "spec/funnelchat.json",
-    "sha256": "0ffaad2b25733d28b2cc07dde8152400c3c68974b3515e71e116ce599312b0fa",
-    "bytes": 1222005,
+    "sha256": "38ae497ab7e6089b31b589e1f93c2289524348d581796eba109568885642813c",
+    "bytes": 1228756,
     "source": {
       "repository": "git@github.com:Funnelchat20/developers-portal.git",
       "path": "generated/specs/funnelchat-completa.json",
-      "branch": "main",
-      "commit": "99928866",
+      "branch": "feat/plantillas-de-meta",
+      "commit": "51c0aeb",
       "commit_date": null,
       "file_tracked_in_git": false,
       "tracked_files_clean": null,
-      "file_modified_at": "2026-11-05T19:41:33.011Z",
-      "note": "Built by `npm run build` of developers-portal at the merge of PR #39, deployed as v0.6.3 on 05-11. Not the published /specs/ file, which carries only the visible operations. communities from feat/grupos-sin-panel 54643bbd (= v2.35.7 app code)."
+      "file_modified_at": "2026-11-06T12:43:27.931Z",
+      "note": "Built by `npm run build` of developers-portal feat/plantillas-de-meta (v0.6.7, not published yet) on 06-11. Not the published /specs/ file, which carries only the visible operations."
     },
-    "imported_at": "2026-11-05T19:44:20.193Z",
+    "imported_at": "2026-11-06T12:46:17.581Z",
     "spec": {
       "openapi": "3.1.0",
       "title": "Funnelchat API",
       "version": "v0",
-      "paths": 218,
-      "operations": 265,
+      "paths": 219,
+      "operations": 266,
       "webhooks": 29,
       "domains": [
         {
           "domain": "conversations",
-          "tag": "v1.19.21",
-          "sha": "f2937a71",
+          "tag": "v1.19.37",
+          "sha": "a4d0136be",
           "branch": null,
           "snapshot_at": null
         },
         {
           "domain": "communities",
-          "tag": "v2.35.7",
-          "sha": "54643bbd",
+          "tag": null,
+          "sha": null,
           "branch": null,
           "snapshot_at": null
         },
         {
           "domain": "accounts",
-          "tag": "v1.5.97",
-          "sha": "558332bcf",
+          "tag": null,
+          "sha": null,
           "branch": null,
           "snapshot_at": null
         }

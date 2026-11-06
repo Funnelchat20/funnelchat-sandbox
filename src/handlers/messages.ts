@@ -451,6 +451,22 @@ export const messageHandlers: HandlerTable = {
     return ok({ data: (template.buttons ?? []).filter((b) => b.type === 'QUICK_REPLY').map((b) => ({ text: b.text ?? '' })) });
   },
 
+  // Bring the templates the number has in Meta (conversations v1.19.37 `MessageTemplateController::sync`). Nothing goes
+  // to Meta: an official number answers that it finished (its templates are already the sandbox's), a QR one that it
+  // has none, and a number outside the account or the key's workspace, conversations' 404.
+  'POST /api/v1/devices/{device}/templates': (ctx) => {
+    const device = ctx.app.store.devices.get(Number(ctx.path.device));
+    if (!device || !sees(ctx.workspace, device.workspaceId)) throw objectNotFound();
+    if (device.kind !== 'cloud') {
+      throw new ApiError(
+        422,
+        'number_not_connected_to_meta',
+        'Este número no tiene plantillas de Meta que sincronizar: está conectado por QR o no tiene una cuenta de WhatsApp Business o credenciales válidas en Meta.',
+      );
+    }
+    return { status: 202, body: { status: 'completed' } };
+  },
+
   'DELETE /api/v1/devices/{device}/templates/{template}': (ctx) => {
     const template = getTemplate(ctx, ctx.path.template);
     if (template.deviceId !== Number(ctx.path.device)) throw notFound('La plantilla no es de este número.');
