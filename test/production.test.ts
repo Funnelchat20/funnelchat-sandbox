@@ -1,7 +1,7 @@
 /**
  * What production answers since 21-10 (accounts v1.4.24, conversations v1.18.10, communities v2.34.52, api-edge
  * v0.3.0): X-Request-Id, the edge's errors, the file by URL, the MAC, the bodies of each route, the numbers'
- * capabilities and the polls and events the gate closes.
+ * capabilities, and the polls and events, which the gate closes and the published spec does not carry.
  */
 import { describe, expect, it } from 'vitest';
 import { startReceiver, startSandbox, subscribe } from './helpers.js';
@@ -215,12 +215,12 @@ describe('numbers and groups', () => {
     expect(await api.call('GET', '/api/v1/devices/99')).toMatchObject({ status: 404, body: { message: 'Object not found' } });
   });
 
-  it('polls and events answer 403 route_not_available', async () => {
+  it('polls and events are not in the published spec: 404 route_not_found', async () => {
     const api = await startSandbox();
     for (const path of ['/api/v1/contacts/2001/message/poll', '/api/v1/contacts/2001/message/event']) {
       const res = await api.call('POST', path, {});
-      expect(res.status, path).toBe(403);
-      expect(res.body.error).toBe('route_not_available');
+      expect(res.status, path).toBe(404);
+      expect(res.body.error).toBe('route_not_found');
     }
   });
 

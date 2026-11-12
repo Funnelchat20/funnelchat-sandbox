@@ -1,8 +1,8 @@
 /**
  * The minimal panel at `/_sandbox`: the numbers (with a button that scans the QR of one waiting for it), every event
- * the sandbox emitted (delivered or not, so the statuses of a message show without a receiver), the last requests,
- * the webhook deliveries with their answer, and a form to simulate an incoming message. One self-contained page (no
- * external resources); it polls the `/_sandbox` JSON routes every two seconds.
+ * the sandbox emitted (delivered or not, so the statuses of a message show without a receiver), the last requests
+ * (the ones answered shape only, marked), the webhook deliveries with their answer, and a form to simulate an incoming
+ * message. One self-contained page (no external resources); it polls the `/_sandbox` JSON routes every two seconds.
  */
 export function panelHtml(): string {
   return `<!doctype html>
@@ -38,6 +38,8 @@ export function panelHtml(): string {
   pre { white-space: pre-wrap; word-break: break-word; background: var(--bg); padding: 8px; border-radius: 6px; max-height: 260px; overflow: auto; }
   .s2 { color: var(--ok); } .s4, .s5, .sx { color: var(--bad); } .s3 { color: var(--warn); }
   .muted { color: var(--muted); }
+  .shape { font-size: 11px; padding: 0 6px; border: 1px solid var(--warn); border-radius: 10px; color: var(--warn); }
+  section > p { margin: 0 0 8px; font-size: 12px; }
   #result { margin-top: 8px; }
 </style>
 </head>
@@ -65,7 +67,7 @@ export function panelHtml(): string {
   </div>
   <section><h2>Events</h2><ul id="events"><li class="muted">No events yet.</li></ul></section>
   <div class="column">
-    <section><h2>Last requests</h2><ul id="requests"><li class="muted">No requests yet.</li></ul></section>
+    <section><h2>Last requests</h2><p class="muted" id="operations"></p><ul id="requests"><li class="muted">No requests yet.</li></ul></section>
     <section><h2>Webhook deliveries</h2><ul id="deliveries"><li class="muted">No deliveries yet.</li></ul></section>
   </div>
 </main>
@@ -93,7 +95,7 @@ async function refresh() {
     const evList = document.getElementById('events'); remember(evList);
     evList.innerHTML = ev.data.length ? ev.data.map((e) => '<li><details data-key="e' + esc(e.id) + '"' + (open.has('e' + e.id) ? ' open' : '') + '><summary><code>' + esc(e.type) + '</code><b>' + esc(e.data && e.data.status ? e.data.status : '') + '</b><span class="muted">' + (e.data && e.data.message_id ? 'message ' + e.data.message_id + ' · ' : '') + esc(e.occurred_at.slice(11, 19)) + ' · ' + (e.subscriptions === 1 ? '1 subscription' : e.subscriptions + ' subscriptions') + '</span></summary><pre>' + pretty(e) + '</pre></details></li>').join('') : '<li class="muted">No events yet.</li>';
     const reqList = document.getElementById('requests'); remember(reqList);
-    reqList.innerHTML = req.data.length ? req.data.map((r) => '<li><details data-key="r' + r.id + '"' + (open.has('r' + r.id) ? ' open' : '') + '><summary><b class="' + cls(r.status) + '">' + r.status + '</b><code>' + esc(r.method) + ' ' + esc(r.path) + '</code><span class="muted">' + r.durationMs + ' ms · ' + esc(r.at.slice(11, 19)) + '</span></summary>' + (r.requestBody !== null && r.requestBody !== undefined ? '<p class="muted">Request</p><pre>' + pretty(r.requestBody) + '</pre>' : '') + '<p class="muted">Response · X-Request-Id <code>' + esc(r.requestId) + '</code></p><pre>' + pretty(r.responseBody) + '</pre></details></li>').join('') : '<li class="muted">No requests yet.</li>';
+    reqList.innerHTML = req.data.length ? req.data.map((r) => '<li><details data-key="r' + r.id + '"' + (open.has('r' + r.id) ? ' open' : '') + '><summary><b class="' + cls(r.status) + '">' + r.status + '</b><code>' + esc(r.method) + ' ' + esc(r.path) + '</code>' + (r.simulated === 'shape-only' ? '<span class="shape" title="No handler: the status and shape of the spec, nothing stored or emitted">shape only</span>' : '') + '<span class="muted">' + r.durationMs + ' ms · ' + esc(r.at.slice(11, 19)) + '</span></summary>' + (r.requestBody !== null && r.requestBody !== undefined ? '<p class="muted">Request</p><pre>' + pretty(r.requestBody) + '</pre>' : '') + '<p class="muted">Response · X-Request-Id <code>' + esc(r.requestId) + '</code></p><pre>' + pretty(r.responseBody) + '</pre></details></li>').join('') : '<li class="muted">No requests yet.</li>';
     const delList = document.getElementById('deliveries'); remember(delList);
     delList.innerHTML = del.data.length ? del.data.map((d) => '<li><details data-key="d' + d.id + '"' + (open.has('d' + d.id) ? ' open' : '') + '><summary><b class="' + cls(d.response_status) + '">' + esc(d.response_status ?? d.error) + '</b><code>' + esc(d.event_type) + '</code><span class="muted">attempt ' + d.attempt + ' · ' + esc(d.url) + (d.next_attempt_at ? ' · retry ' + esc(d.next_attempt_at.slice(11, 19)) : '') + '</span></summary><p class="muted">Signed body</p><pre>' + pretty(d.request_body) + '</pre><p class="muted">What your server answered</p><pre>' + esc(d.response_body ?? d.error) + '</pre></details></li>').join('') : '<li class="muted">No deliveries yet.</li>';
     document.getElementById('summary').textContent = st.counts.contacts + ' contacts · ' + st.counts.messages + ' messages · ' + st.counts.subscriptions + ' subscriptions';
@@ -117,6 +119,9 @@ document.getElementById('numbers').addEventListener('click', async (ev) => {
   document.getElementById('result').innerHTML = res.ok ? 'Number ' + id + ' connected as +' + esc(json.device.number) + ' · device.connected' : '<span class="s4">' + esc(json.message) + '</span>';
   refresh();
 });
+fetch('/_sandbox/operations').then((r) => r.json()).then((ops) => {
+  document.getElementById('operations').innerHTML = ops.meta.stateful + ' operations with state · <span class="shape">shape only</span> ' + ops.meta.shape_only + ': the status and shape of the spec, nothing stored or emitted · <a href="/_sandbox/operations">which ones</a>';
+}).catch(() => {});
 document.getElementById('reset').addEventListener('click', async () => { await fetch('/_sandbox/reset', { method: 'POST' }); document.getElementById('result').textContent = 'State reset.'; refresh(); });
 refresh();
 setInterval(refresh, 2000);

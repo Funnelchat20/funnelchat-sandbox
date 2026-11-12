@@ -1,7 +1,10 @@
 /**
- * The API key, the routes, the validation against the spec and the send rules, with the errors of the real API.
+ * The API key, the routes, the validation against the spec, the routes answered shape only and the send rules, with
+ * the errors of the real API.
  */
 import { describe, expect, it } from 'vitest';
+import { matchRoute, successResponse } from '../src/openapi/spec.js';
+import { conforms } from '../src/openapi/validate.js';
 import { startSandbox } from './helpers.js';
 
 describe('the API key', () => {
@@ -46,12 +49,51 @@ describe('routes', () => {
     expect((await api.call('GET', '/api/v1/webhooks/not-a-uuid')).status).toBe(404);
   });
 
-  it('a route without state answers the example of its response schema', async () => {
+});
+
+describe('the routes without a handler: shape only', () => {
+  const schemaOf = (method: string, path: string) => successResponse(matchRoute(method, path).match!.op.operation).schema!;
+
+  it('a read answers the status and a body that fit its spec, always the same, marked shape-only', async () => {
     const api = await startSandbox();
-    const res = await api.call('GET', '/api/v1/broadcasts');
-    expect(res.status).toBe(200);
-    expect(Object.keys(res.body)).toEqual(['data', 'links', 'meta']);
+    const first = await api.call('GET', '/api/v1/kanban-settings');
+    expect(first.status).toBe(200);
+    expect(first.headers.get('x-sandbox-simulated')).toBe('shape-only');
+    expect(conforms(schemaOf('GET', '/api/v1/kanban-settings'), first.body)).toBe(true);
+    expect((await api.call('GET', '/api/v1/kanban-settings')).body).toEqual(first.body);
     expect((await api.call('DELETE', '/api/v1/contacts/2001/notes/1')).status).toBe(204);
+    // A route with a handler is not marked.
+    expect((await api.call('GET', '/api/v1/devices')).headers.get('x-sandbox-simulated')).toBeNull();
+    const listed = (await api.call('GET', '/_sandbox/operations')).body.data;
+    expect(listed.find((o: any) => o.method === 'GET' && o.path === '/api/v1/kanban-settings')).toMatchObject({ simulated: 'shape-only', status: 200, body_fits_schema: true });
+  });
+
+  it('a write answers its schema and changes nothing: creating a board does not keep it, and nothing is emitted', async () => {
+    const api = await startSandbox();
+    const before = (await api.call('GET', '/_sandbox/state')).body;
+    const list = (await api.call('GET', '/api/v1/kanban-settings')).body;
+    const created = await api.call('POST', '/api/v1/kanban-settings', { name: 'Ventas', mode: 'stages' });
+    expect(created.status).toBe(201);
+    expect(created.headers.get('x-sandbox-simulated')).toBe('shape-only');
+    expect(conforms(schemaOf('POST', '/api/v1/kanban-settings'), created.body)).toBe(true);
+    expect((await api.call('GET', '/api/v1/kanban-settings')).body).toEqual(list);
+    const after = (await api.call('GET', '/_sandbox/state')).body;
+    expect({ ...after, counts: { ...after.counts, requests: 0 } }).toEqual({ ...before, counts: { ...before.counts, requests: 0 } });
+    expect((await api.call('GET', '/_sandbox/emitted')).body.data).toEqual([]);
+    const logged = (await api.call('GET', '/_sandbox/requests')).body.data;
+    expect(logged.find((r: any) => r.method === 'POST').simulated).toBe('shape-only');
+  });
+
+  it('an invalid request answers the usual 422, unmarked', async () => {
+    const api = await startSandbox();
+    const res = await api.call('POST', '/api/v1/kanban-settings', { mode: 'otro' });
+    expect(res.status).toBe(422);
+    expect(res.headers.get('x-sandbox-simulated')).toBeNull();
+    expect(res.body).toEqual({
+      error: 'validation_failed',
+      message: 'El campo name es obligatorio. (y 1 error más)',
+      errors: { name: ['El campo name es obligatorio.'], mode: ['El valor seleccionado en mode no es válido.'] },
+    });
   });
 });
 

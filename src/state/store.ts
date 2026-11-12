@@ -324,6 +324,8 @@ export interface RequestLogEntry {
   status: number;
   durationMs: number;
   operation: string | null;
+  /** `shape-only` when the route has no handler and the answer was the spec's shape: nothing was stored or emitted. */
+  simulated: 'shape-only' | null;
   requestBody: unknown;
   responseBody: unknown;
 }

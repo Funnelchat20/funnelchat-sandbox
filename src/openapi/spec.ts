@@ -137,13 +137,19 @@ export function requestBodySchema(op: Operation): Schema | undefined {
   return content?.['application/json']?.schema ?? Object.values(content ?? {})[0]?.schema;
 }
 
-/** The first 2xx response: its status and its JSON schema (if any). */
+/**
+ * The first 2xx response: its status, its JSON schema (if any) and its example (`example`, or the first of `examples`),
+ * `undefined` when it has none.
+ */
 export function successResponse(op: Operation): { status: number; schema: Schema | undefined; example: unknown } {
   const entries = Object.entries(op.responses ?? {})
     .filter(([status]) => /^2\d\d$/.test(status))
     .sort(([a], [b]) => Number(a) - Number(b));
   const [status, raw] = entries[0] ?? ['200', undefined];
-  const response = deref<{ content?: Record<string, { schema?: Schema; example?: unknown }> }>(raw);
+  const response = deref<{ content?: Record<string, { schema?: Schema; example?: unknown; examples?: Record<string, unknown> }> }>(raw);
   const json = response?.content?.['application/json'];
-  return { status: Number(status), schema: json?.schema, example: json?.example };
+  const named = Object.values(json?.examples ?? {})
+    .map((entry) => deref<{ value?: unknown }>(entry)?.value)
+    .find((value) => value !== undefined);
+  return { status: Number(status), schema: json?.schema, example: json && 'example' in json ? json.example : named };
 }

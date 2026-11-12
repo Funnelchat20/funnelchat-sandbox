@@ -1,9 +1,9 @@
 {
   "x-fc-pending": {
-    "title": "Pending of the spec: what the sandbox adds",
-    "description": "What the sandbox imitates and neither the portal's spec (spec/funnelchat.json, the full unified spec of developers-portal `c90565e4`, 04-11: accounts v1.5.97, conversations v1.19.7, communities v2.35.5) nor the pending layer of the Node SDK (spec/pending.json, which now brings the forms, the send to a group and the accounts and communities events) carry: polls and events (closed to keys by the gate, out of the spec), `data.workspace_id` in every event, and `null` in the conditionally prohibited fields of `POST /connect-links`. scripts/generate.mjs applies it after spec/pending.json and only while neither has it: when they do, it says which entries can be deleted.",
+    "title": "Pending of the spec: what the sandbox corrects",
+    "description": "What the sandbox corrects in the shapes of the portal's spec (spec/funnelchat.json, the one the developer portal publishes) and that the pending layer of the Node SDK (spec/pending.json) does not: `data.workspace_id` in every event, and `null` in the conditionally prohibited fields of `POST /connect-links`. Like every layer, it only corrects shapes: it never adds an operation or an event the published spec does not carry (the tools offer only what the portal publishes; the user's decision of 11-11). scripts/generate.mjs applies it after spec/pending.json and only while the spec lacks it: when it has it, it says which entries can be deleted.",
     "rules": {
-      "paths": "Una operación (método + ruta) se agrega solo si la instantánea no la tiene.",
+      "paths": "Ninguna: una capa no suma operaciones que la especificación publicada no trae (scripts/generate.mjs las rechaza y avisa).",
       "responsePatches": "Un parche reemplaza respuestas de una operación de la instantánea solo mientras esa operación cumple la condición de `while`.",
       "webhookPatches": "Un parche fija propiedades de `data` de un evento (esquema y ejemplo) mientras el evento cumple `while`, o mientras su `data` no trae `whileMissing`.",
       "components.schemas": "Los esquemas de esta capa empiezan con `PendingSandbox` para no chocar con los de la instantánea ni con los de spec/pending.json.",
@@ -11,112 +11,14 @@
       "parameterPatches": "Un parche suma parámetros a una operación de la instantánea, solo los que todavía no tiene (por nombre y lugar)."
     },
     "sources": {
-      "accounts-workspaces": "accounts v1.5.97 (`558332bcf`, en producción desde el 04-11, workspaces-api-keys; platform-gate v0.9.1): cada API key es de un workspace y solo ve y crea ahí; un evento llega solo a las suscripciones de su workspace y todo aviso público lleva `data.workspace_id` = el workspace al que se ruteó (Q35, `EventWorkspaceRouting::stamp()`: la última clave de `data`). Los ejemplos del catálogo de accounts usan 37 (`WebhookEventCatalog::EXAMPLE_WORKSPACE_ID`). conversations v1.19.7 y communities v2.35.5 confinan sus rutas igual.",
-      "conversations-gate-closed": "conversations v1.19.7: `POST contacts/{contact}/message/poll` y `…/event` existen, pero salieron de `config/platform-gate.php`: toda clave recibe 403 route_not_available del portero (platform-gate `RouteNotAvailable`), antes de validar nada. La especificación unificada del portal no las trae porque no se ofrecen a las claves; el sandbox las mantiene para responder ese 403 y no un 404.",
-      "accounts-prohibited-null": "accounts v1.5.97 `StoreConnectLinkRequest`: las reglas cambian según `type` (`prohibited` con `qr` para `allowed_connection_types` y `provision_us_number`), y `prohibited` de Laravel deja pasar `null`, `\"\"` y `[]`. El esquema que publica Scramble no expresa la condición y los declara sin `null`: el sandbox los acepta con `null`, como accounts, y aplica las reglas por `type` en el handler."
+      "accounts-workspaces": "accounts v1.5.97, en producción desde el 04-11 (platform-gate v0.9.1): cada API key es de un workspace y solo ve y crea ahí; un evento llega solo a las suscripciones de su workspace y todo aviso público lleva `data.workspace_id` = el workspace al que se ruteó, como última clave de `data`. Los ejemplos del catálogo de accounts usan 37. conversations v1.19.7 y communities v2.35.5 confinan sus rutas igual.",
+      "accounts-prohibited-null": "accounts v1.5.97, en producción desde el 04-11: las reglas de crear un enlace de alta cambian según `type` (`prohibited` con `qr` para `allowed_connection_types` y `provision_us_number`), y `prohibited` de Laravel deja pasar `null`, `\"\"` y `[]`. El esquema publicado no expresa la condición y los declara sin `null`: el sandbox los acepta con `null`, como accounts, y aplica las reglas por `type` en el handler."
     }
   },
   "components": {
     "schemas": {}
   },
-  "paths": {
-    "/api/v1/contacts/{contact}/message/poll": {
-      "post": {
-        "operationId": "pendingSandboxGate.poll",
-        "summary": "Send a poll (closed to API keys)",
-        "description": "It exists in conversations but no API key enables it: every key gets the gate's `403 route_not_available`, before any validation.\n\n**Pending of the spec**: out of the portal's spec because keys cannot use it.",
-        "tags": [
-          "InteractiveMessage"
-        ],
-        "x-fc-domain": "conversations",
-        "x-fc-permission": "conversations:send",
-        "x-fc-pending": "conversations-gate-closed",
-        "parameters": [
-          {
-            "name": "contact",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "403": {
-            "description": "route_not_available: no key enables this route.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                      "const": "route_not_available"
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "message"
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/contacts/{contact}/message/event": {
-      "post": {
-        "operationId": "pendingSandboxGate.event",
-        "summary": "Send an event invitation (closed to API keys)",
-        "description": "It exists in conversations but no API key enables it: every key gets the gate's `403 route_not_available`, before any validation.\n\n**Pending of the spec**: out of the portal's spec because keys cannot use it.",
-        "tags": [
-          "InteractiveMessage"
-        ],
-        "x-fc-domain": "conversations",
-        "x-fc-permission": "conversations:send",
-        "x-fc-pending": "conversations-gate-closed",
-        "parameters": [
-          {
-            "name": "contact",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "403": {
-            "description": "route_not_available: no key enables this route.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                      "const": "route_not_available"
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "message"
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  },
+  "paths": {},
   "responsePatches": [],
   "webhookPatches": [
     {

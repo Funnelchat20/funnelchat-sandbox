@@ -227,6 +227,14 @@ function mergeErrors(...all: FieldErrors[]): FieldErrors {
   return out;
 }
 
+/**
+ * Whether a value fits a schema as JSON Schema reads it, without Laravel's reading of a request (`required` refusing
+ * `null`, `""` and `[]`): the check for the bodies the sandbox answers.
+ */
+export function conforms(schema: Schema, value: unknown): boolean {
+  return compile(schema)(value);
+}
+
 /** Validates a value against a schema; returns the field errors (empty when valid). */
 export function validateValue(schema: Schema, value: unknown, prefix = ''): FieldErrors {
   const fn = compile(schema);
