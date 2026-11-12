@@ -14,10 +14,12 @@
  *      (repository, branch, commit, sha256).
  *   2. Merge, in this order, over a copy of the snapshot:
  *        - spec/pending.json          the "pending of the spec" layer of the Node SDK, unchanged;
- *        - spec/pending-sandbox.json  what the sandbox imitates on top of it (send response with the queued
- *                                     message, message lookup, extra event fields, the sign-up of numbers).
- *      Every pending entry is applied only while the snapshot lacks it; the report lists the entries a new
- *      snapshot made obsolete so they can be deleted.
+ *        - spec/pending-sandbox.json  what the sandbox corrects on top of it (extra event fields, `null` in the
+ *                                     conditional fields of the sign-up links).
+ *      A layer only corrects shapes: the snapshot is the spec the portal publishes, and the tools offer only what it
+ *      publishes, so an operation or an event a layer would add is refused and listed. Every other pending entry is
+ *      applied only while the snapshot lacks it; the report lists the entries a new snapshot made obsolete so they
+ *      can be deleted.
  *   3. Write generated/openapi.json: the merged spec the server validates and answers with. It is
  *      deterministic (no dates), so --check works in CI.
  *
@@ -217,6 +219,8 @@ function requestSchema(merged, op) {
  *     `while` or while its `data` lacks `whileMissing`. `type: "*"` patches every event.
  */
 function mergeLayer(merged, layer, layerName, report) {
+  // `paths` and `webhooks` entries only stand for what the snapshot already has (obsolete, or a correction of an
+  // event with `x-fc-replace-while`): one the snapshot lacks is not published, and is refused.
   const tag = (label) => `${label} [${layerName}]`;
 
   for (const [name, schema] of Object.entries(layer.components?.schemas ?? {})) {
@@ -230,13 +234,8 @@ function mergeLayer(merged, layer, layerName, report) {
     for (const method of HTTP_METHODS) {
       if (!item[method]) continue;
       const label = tag(`${method.toUpperCase()} ${path}`);
-      if (merged.paths[path]?.[method]) {
-        report.superseded.push(label);
-        continue;
-      }
-      merged.paths[path] ??= {};
-      merged.paths[path][method] = item[method];
-      report.applied.push(label);
+      if (merged.paths[path]?.[method]) report.superseded.push(label);
+      else report.refused.push(label);
     }
   }
 
@@ -340,14 +339,16 @@ function mergeLayer(merged, layer, layerName, report) {
   for (const [type, item] of Object.entries(layer.webhooks ?? {})) {
     const currentKey = snapshotTypes.get(type);
     const label = tag(`webhook ${type}`);
-    if (currentKey) {
-      const replaceWhile = item.post?.['x-fc-replace-while'];
-      if (!replaceWhile || !matches(merged.webhooks[currentKey].post, replaceWhile)) {
-        report.superseded.push(label);
-        continue;
-      }
-      delete merged.webhooks[currentKey];
+    if (!currentKey) {
+      report.refused.push(label);
+      continue;
     }
+    const replaceWhile = item.post?.['x-fc-replace-while'];
+    if (!replaceWhile || !matches(merged.webhooks[currentKey].post, replaceWhile)) {
+      report.superseded.push(label);
+      continue;
+    }
+    delete merged.webhooks[currentKey];
     merged.webhooks[type] = item;
     snapshotTypes.set(type, type);
     report.applied.push(label);
@@ -397,7 +398,7 @@ function merge(spec, layers) {
   merged.components.schemas ??= {};
   merged.paths ??= {};
   merged.webhooks ??= {};
-  const report = { applied: [], superseded: [], missing: [] };
+  const report = { applied: [], superseded: [], missing: [], refused: [] };
   for (const [name, layer] of layers) mergeLayer(merged, layer, name, report);
   return { merged, report };
 }
@@ -443,6 +444,10 @@ function main() {
   if (report.superseded.length) {
     console.log(`the snapshot already has ${report.superseded.length} pending entries; they can be deleted:`);
     for (const label of report.superseded) console.log(`  - ${label}`);
+  }
+  if (report.refused.length) {
+    console.warn(`warning: ${report.refused.length} pending entries add an operation or an event the published spec does not carry; not applied (delete them):`);
+    for (const label of report.refused) console.warn(`  - ${label}`);
   }
   if (report.missing.length) {
     console.warn(`warning: ${report.missing.length} patches did not find their operation or their event:`);

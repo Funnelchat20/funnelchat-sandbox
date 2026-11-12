@@ -24,14 +24,14 @@ describe('subscriptions', () => {
     expect(JSON.stringify((await api.call('GET', '/_sandbox/requests')).body)).not.toContain(created.body.secret);
   });
 
-  it('update keeps the secret; rotate gives a new one; delete answers 204', async () => {
+  it('update keeps the secret; rotate-secret is not published; delete answers 204', async () => {
     const api = await startSandbox();
     const receiver = await startReceiver();
     const sub = await subscribe(api, receiver.url, ['message.received']);
     const updated = await api.call('PUT', `/api/v1/webhooks/${sub.id}`, { url: receiver.url, events: ['message.received', 'contact.created'], status: 'paused' });
     expect(updated.body).toMatchObject({ status: 'paused', events: ['message.received', 'contact.created'] });
-    const rotated = await api.call('POST', `/api/v1/webhooks/${sub.id}/rotate-secret`);
-    expect(rotated.body.secret).not.toBe(sub.secret);
+    // The secret is rotated from the panel: the published spec does not carry the route.
+    expect((await api.call('POST', `/api/v1/webhooks/${sub.id}/rotate-secret`)).body.error).toBe('route_not_found');
     expect((await api.call('DELETE', `/api/v1/webhooks/${sub.id}`)).status).toBe(204);
     // accounts answers `{message}` without `error`.
     expect((await api.call('GET', `/api/v1/webhooks/${sub.id}`)).body).toEqual({ message: 'Suscripción de webhook no encontrada.' });

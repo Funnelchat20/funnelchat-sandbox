@@ -2,45 +2,48 @@
   "description": "Where each file of spec/ came from. Written by `npm run generate -- --spec <file>` or `-- --pending <file>`; do not edit it by hand. spec/pending-sandbox.json belongs to this repo: its sources are inside it.",
   "snapshot": {
     "file": "spec/funnelchat.json",
-    "sha256": "38ae497ab7e6089b31b589e1f93c2289524348d581796eba109568885642813c",
-    "bytes": 1228756,
+    "sha256": "a7b480743848dabccbea2a1f2314263ca070316eeed97aab4a6f09f171c80e5a",
+    "bytes": 738025,
     "source": {
-      "repository": "git@github.com:Funnelchat20/developers-portal.git",
-      "path": "generated/specs/funnelchat-completa.json",
-      "branch": "feat/plantillas-de-meta",
-      "commit": "51c0aeb",
+      "repository": null,
+      "path": null,
+      "branch": null,
+      "commit": null,
       "commit_date": null,
-      "file_tracked_in_git": false,
+      "file_tracked_in_git": null,
       "tracked_files_clean": null,
-      "file_modified_at": "2026-11-06T12:43:27.931Z",
-      "note": "Built by `npm run build` of developers-portal feat/plantillas-de-meta (v0.6.7, not published yet) on 06-11. Not the published /specs/ file, which carries only the visible operations."
+      "file_modified_at": "2026-11-12T00:48:33.018Z",
+      "url": "https://developers-portal.funnelchat.app/specs/funnelchat.json",
+      "portal_version": "v0.6.13",
+      "fetched_at": "2026-11-12T00:48:33Z",
+      "note": "The spec the developer portal publishes, v0.6.13: only the operations and events the portal shows. The sha256 is the one of the file served at the URL on 2026-11-12."
     },
-    "imported_at": "2026-11-06T12:46:17.581Z",
+    "imported_at": "2026-11-12T03:02:14.197Z",
     "spec": {
       "openapi": "3.1.0",
       "title": "Funnelchat API",
       "version": "v0",
-      "paths": 219,
-      "operations": 266,
-      "webhooks": 29,
+      "paths": 209,
+      "operations": 253,
+      "webhooks": 57,
       "domains": [
         {
           "domain": "conversations",
-          "tag": "v1.19.37",
-          "sha": "a4d0136be",
+          "tag": "v1.19.91",
+          "sha": null,
           "branch": null,
           "snapshot_at": null
         },
         {
           "domain": "communities",
-          "tag": null,
+          "tag": "v2.35.28",
           "sha": null,
           "branch": null,
           "snapshot_at": null
         },
         {
           "domain": "accounts",
-          "tag": null,
+          "tag": "v1.6.41",
           "sha": null,
           "branch": null,
           "snapshot_at": null
@@ -50,19 +53,19 @@
   },
   "pending": {
     "file": "spec/pending.json",
-    "sha256": "051680bd82944c0e248d20d1499d89e61a231c6ba3ef6a5d864cf18a97aae1ad",
-    "bytes": 112110,
+    "sha256": "39662e350155b12b96099a495993f3d243e9098e575a65c914432f224b1c002e",
+    "bytes": 67589,
     "source": {
       "repository": "git@github.com:Funnelchat20/funnelchat-node.git",
       "path": "spec/pending.json",
-      "branch": "feat/enviar-por-telefono",
-      "commit": "a8f83509d4a40d6116a9c0487bf0aee639948273",
-      "commit_date": "2026-11-05T14:02:36-03:00",
+      "branch": "feat/todas-las-funciones",
+      "commit": "bde867919d1da0fc9412bad7e67688c3cd2e6a9b",
+      "commit_date": "2026-11-12T00:01:44-03:00",
       "file_tracked_in_git": true,
       "tracked_files_clean": true,
-      "file_modified_at": "2026-11-05T17:01:15.771Z"
+      "file_modified_at": "2026-11-12T02:30:56.483Z"
     },
-    "imported_at": "2026-11-05T17:03:20.911Z",
+    "imported_at": "2026-11-12T03:23:57.222Z",
     "note": "The pending layer of the Node SDK, unchanged. What belongs to the sandbox goes in spec/pending-sandbox.json."
   }
 }

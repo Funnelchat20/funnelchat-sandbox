@@ -115,6 +115,7 @@ What it imitates, beyond the first use:
 - Webhooks signed with the portal's exact algorithm, with its retries, and the event catalog of production.
 - The WhatsApp rules the API applies: the 24-hour window on official numbers, the per-number pace, the spam brakes and the MAC lockout.
 - `X-Request-Id` on every response, like the API.
+- Every other operation of the spec, **shape only**: validated like the rest, it answers the spec's success status with a body that fits the response schema, keeps nothing and emits nothing, and says so in `X-Sandbox-Simulated: shape-only`. See [With state or shape only](#with-state-or-shape-only).
 
 What it does not imitate is in [What it does not imitate](#what-it-does-not-imitate).
 
@@ -128,7 +129,7 @@ npx funnelchat-sandbox
 ```
 
 ```
-funnelchat-sandbox 0.3.3 at http://127.0.0.1:4010
+funnelchat-sandbox 0.4.0 at http://127.0.0.1:4010
   API:    http://127.0.0.1:4010/api/v1/...   (Authorization: Bearer 1|fc_live_sandbox, or any well-formed key)
   panel:  http://127.0.0.1:4010/_sandbox
   example numbers: 3 (official, with the 24-hour window) and 4 (QR, no window); contact 2001; template 45
@@ -273,13 +274,9 @@ Every session starts with this:
 
 The official number (`3`) has no groups (the sandbox account is not in the official groups beta); the QR one (`4`) does, and has no templates. `health` is `null` on the QR number.
 
-**Polls and events** (`/message/poll`, `/message/event`) are closed to API keys in production: with any key they answer `403 route_not_available`, as they do here.
+**Polls and events** (`/message/poll`, `/message/event`) are closed to API keys in production (`403 route_not_available`) and the published spec does not carry them, so here they are not routes: `404 route_not_found`.
 
-```json
-{ "error": "route_not_available", "message": "Esta ruta no está disponible para API keys en el piloto. No es un permiso que falte: ninguna key la habilita." }
-```
-
-**Everything else** in the spec (broadcasts, flows, kanban, the rest of groups, campaigns, alerts…) answers an example built from the response schema: the spec's operations carry no examples of their own. The key, the route, the query and the body are still validated.
+**Everything else** in the spec (broadcasts, flows, kanban boards, contact notes, the rest of groups, campaigns, alerts, the account…) answers **shape only**: see [With state or shape only](#with-state-or-shape-only).
 
 **Validation** follows the spec and reads values like Laravel (`"5"` works as an integer, `"1"` as a boolean). A validation error is a `422` with Laravel's messages per field; a route that does not exist, `404 route_not_found`:
 
@@ -297,6 +294,35 @@ The official number (`3`) has no groups (the sandbox account is not in the offic
 **What does not exist in the account** answers like each domain: in conversations (contacts, messages, tags, fields, forms) `404 {"message": "Objeto no encontrado."}`, without `error`; in accounts (numbers) `404 {"message": "Object not found"}`; in communities (a group by its uid) Laravel's `404 {"message": "No query results for model [App\\Modules\\Shared\\Models\\Group] <uid>"}`. **What is in another workspace** answers `404` too: `{"message": ""}` in conversations, `{"message": "Not Found"}` for a number, the same `404` as one that does not exist for links, subscriptions and groups.
 
 The complete spec the sandbox uses is at `GET /_sandbox/openapi.json`.
+
+### With state or shape only
+
+The sandbox answers every operation of that spec, in one of two ways:
+
+- **With state**, the first use: numbers and sign-up links, contacts with their tags and fields, conversations and messages, groups (the live list, the list, one group, the import and the send), WhatsApp forms, mark as read and «typing…», and webhook subscriptions. What you create stays (in memory) and the events go out, signed.
+- **Shape only**, everything else. The request is validated like any other (the key, the route, the path, the query and the body, with the same `401`, `404` and `422`), and the answer is the success status the spec gives (`200`, `201`, `202` or `204`) with a body that fits its response schema: the spec's example of the response when it has one that fits, otherwise one built from the schema. It is the same on every call to that operation, whatever you send. Nothing is stored and no event goes out: creating a board answers `201` with a board, and the list of boards does not have it.
+
+A shape-only answer carries `X-Sandbox-Simulated: shape-only`; the body stays as the schema says. Nothing else carries that header.
+
+```bash
+curl -si -X POST http://localhost:4010/api/v1/kanban-settings -H "Authorization: Bearer $FUNNELCHAT_API_KEY" \
+  -H 'Content-Type: application/json' -d '{"name": "Ventas", "mode": "stages"}'
+# HTTP/1.1 201 Created
+# X-Sandbox-Simulated: shape-only
+# {"id": 1, "user_id": 1, "name": "Ejemplo", "mode": "ejemplo", …}
+```
+
+**To see which is which**, `GET /_sandbox/operations` lists every operation of the spec with `simulated`: `stateful`, `shape-only`, or `closed` (with `--no-group-actions`, the send to a group and its action, which answer `403 route_not_available`). A shape-only one also says its `status`, where its body comes from (`body_from`: `example`, `schema` or `none`) and whether it fits the schema (`body_fits_schema`). The list comes from the spec and the sandbox's handlers, so it follows the spec when it is regenerated.
+
+```bash
+curl -s http://localhost:4010/_sandbox/operations | jq '.meta'
+# {"total": 253, "stateful": 88, "shape_only": 165, "closed": 0}
+curl -s http://localhost:4010/_sandbox/operations | jq -r '.data[] | select(.simulated == "shape-only") | "\(.method) \(.path)"'
+```
+
+The panel (`/_sandbox`) counts them and marks each shape-only call of **Last requests** as **shape only**; `GET /_sandbox/requests` says `"simulated": "shape-only"` on those.
+
+**How the body is built** when the spec has no example (the current one has none): for each schema, its `example`, `const`, `default` or first `enum` value when it fits; otherwise a plausible value of its type within the schema's limits (date, email, URL and UUID formats, lengths, bounds, number of items, `pattern`). `anyOf` and `oneOf` take the first branch whose value fits, and a list of the same schema it is inside of (a folder's folders, an action's sub-actions) stays empty. If a body ever did not fit (a schema asking for something the builder cannot make), the console says which operation, once, and `body_fits_schema` is `false`.
 
 ## Sending a message
 
@@ -554,7 +580,6 @@ You subscribe with the same routes the SDKs and the n8n trigger use (the unified
 | `GET /api/v1/webhooks`, `GET /api/v1/webhooks/{id}` | Lists or shows them, without the secret. |
 | `PUT /api/v1/webhooks/{id}` | Changes `url`, `events`, `description`, `filters` and, optionally, `status` (`active` or `paused`). The secret does not change. |
 | `DELETE /api/v1/webhooks/{id}` | Deletes it (`204`). |
-| `POST /api/v1/webhooks/{id}/rotate-secret` | A new secret; the previous one stops working. |
 | `POST /api/v1/webhooks/{id}/test` | Sends a signed `webhook.test` now and answers `{succeeded, response_status, error, duration_ms, delivery_id}`. |
 | `GET /api/v1/webhooks/{id}/deliveries` | The history: one record per attempt, newest first. |
 | `GET /api/v1/webhooks/events` | The catalog of accounts in production: 59 types (54 `active`), with `area`, `status`, `is_critical`, `label`, `description` and `example`. |
@@ -611,11 +636,12 @@ These routes take no key: they belong to the sandbox, not to the API.
 | `POST /_sandbox/window` | Opens or closes the window by hand: `{"contact_id": 2001, "device_id": 3, "open": false}`. |
 | `POST /_sandbox/workspaces`, `GET /_sandbox/workspaces` | A [workspace](#workspaces) with a key that only sees it: `{"name": "Cliente B"}` answers `201 {workspace, key}`. `POST /_sandbox/keys` with `{"workspace_id": 2}` mints another key (of the default workspace without `workspace_id`); with `"permissions": [...]` it has only those (the sandbox checks just `communities:operate`, to import a group). |
 | `POST /_sandbox/reset` | Back to the initial state. |
-| `GET /_sandbox/state`, `/_sandbox/requests`, `/_sandbox/deliveries`, `/_sandbox/emitted` | The state, the last requests, the last deliveries with what your server answered, and every event emitted, delivered or not (with how many subscriptions got it). |
+| `GET /_sandbox/state`, `/_sandbox/requests`, `/_sandbox/deliveries`, `/_sandbox/emitted` | The state, the last requests (`simulated: "shape-only"` on the ones answered [shape only](#with-state-or-shape-only)), the last deliveries with what your server answered, and every event emitted, delivered or not (with how many subscriptions got it). |
+| `GET /_sandbox/operations` | Every operation of the spec and how the sandbox answers it: `stateful`, `shape-only` or `closed`. See [With state or shape only](#with-state-or-shape-only). |
 
 Besides, as in the API: creating a contact emits `contact.created`, closing a conversation (`active_conversation: false`) emits `conversation.closed`, assigning it emits `conversation.assigned`, and a template created through the API goes from `PENDING` to `APPROVED` after 5 seconds with `template.status_changed`.
 
-**The panel** is at `http://localhost:4010/_sandbox`: the numbers (with **Scan the QR** for one waiting for it), every event emitted, the last requests, the webhook deliveries with your server's answer, and a form to send an incoming message.
+**The panel** is at `http://localhost:4010/_sandbox`: the numbers (with **Scan the QR** for one waiting for it), every event emitted, the last requests (the ones answered shape only, marked **shape only**), the webhook deliveries with your server's answer, and a form to send an incoming message.
 
 ## End to end
 
@@ -689,37 +715,36 @@ And at `http://localhost:4010/_sandbox` you see each request and each delivery w
 ## What it does not imitate
 
 - **It sends nothing to WhatsApp** and charges nothing: the `sent`, `delivered` and `read` statuses are made up by the sandbox, with the delays you configure. In the real API, a message still `queued` after an hour reads as `status: null`; in the sandbox it always moves on.
-- **One account and every permission:** any well-formed key gets in, is never revoked and there is no `403 permission_denied`. Workspaces are created and their keys minted through `/_sandbox`, never deleted, and a number does not move between workspaces. API keys are not created here, and subscriptions are not filtered by the key's areas (the real API answers `422` on `events` if the key lacks the event's `{area}:read`). The only `403 route_not_available` is the one of the routes no key enables.
+- **One account and every permission:** any well-formed key gets in, is never revoked and there is no `403 permission_denied`. Workspaces are created and their keys minted through `/_sandbox`, never deleted, and a number does not move between workspaces. API keys are not created here, and subscriptions are not filtered by the key's areas (the real API answers `422` on `events` if the key lacks the event's `{area}:read`). The only `403 route_not_available` is the send to a group with `--no-group-actions`.
 - **There are no daily call caps** (`429 daily_cap_exceeded`), no `503 gate_unavailable` and no balance: to test those cases, force the failure. Of the MAC there is the lockout (`429 mac_lockout_24h`); `429 mac_limit_reached` is only forced, and the real API also stores in the history an error row for every send stopped by the MAC, which the sandbox does not.
 - **The state is memory only:** it is lost when the process stops or with `POST /_sandbox/reset`. So your receiver does not lose the secret, put the subscription in the configuration file.
-- **The routes without state** answer an example built from the schema, always the same, even if it does not match your data.
+- **The shape-only routes** answer the shape of the spec, always the same: it does not match your data, a write keeps nothing and no event goes out. See [With state or shape only](#with-state-or-shape-only).
 - **The validation messages** are Laravel's in Spanish, built from the schema: they may not match the API's word for word (decide by the HTTP status and by `error`, not by `message`). The real API's validation `422` is Laravel's, `{message, errors}`, without `error`; the sandbox adds `"error": "validation_failed"`.
 - **Webhook URLs** may be `http` and local, without the real API's protection against internal destinations (try `--require-https`). Do not expose the sandbox to the internet: the `/_sandbox` routes take no key and the sandbox `POST`s to any URL subscribed to it.
 - **The catalog** is rendered from the code of accounts v1.5.97 (`spec/catalog.json`, with `scripts/transcribe-catalog.php`), not read from a response: if accounts changes it, it has to be rendered again.
-- **Groups have state only for the number's live list, the list, one group, the import and the send of a message** (the action is `completed` after the delays of `sent` and `delivered`; it never fails on its own). The live list is never cached (production keeps it a minute for a key). The other group actions, the campaigns and the rest of the groups' routes answer examples, and their events are fired from `/_sandbox`. There are no official groups (the account is not in their beta), no `too_many_pending_actions` and no rate limit of 30 sends per minute.
+- **Groups have state only for the number's live list, the list, one group, the import and the send of a message** (the action is `completed` after the delays of `sent` and `delivered`; it never fails on its own). The live list is never cached (production keeps it a minute for a key). The other group actions, the campaigns and the rest of the groups' routes answer shape only, and their events are fired from `/_sandbox`. There are no official groups (the account is not in their beta), no `too_many_pending_actions` and no rate limit of 30 sends per minute.
 - **Workspaces confine** numbers, sign-up links, webhook subscriptions, contacts, conversations, messages, templates and groups. Tags, custom fields and forms are not confined in the sandbox. A contact belongs to one workspace, and the phone stays unique in the account: `POST /api/v1/contacts`, `update-or-create` and a send by phone with a phone of another workspace answer `404`.
-- **Forms do not talk to Meta:** `sync` and `publish` succeed unless the linter finds an error, and the linter is a short version of the real one (screens without a title, without an ending, without questions, with a connection to the server). The metrics (`…/metrics`) answer the example of their schema, and there are no dynamic forms.
+- **Forms do not talk to Meta:** `sync` and `publish` succeed unless the linter finds an error, and the linter is a short version of the real one (screens without a title, without an ending, without questions, with a connection to the server). The metrics (`…/metrics`) answer shape only, and there are no dynamic forms.
 - **Files are not downloaded:** the type comes from the extension or from `file_type`. The «known» extensions (the ones that give `415` instead of `422 errors.file_type`) are the common ones; the API uses symfony/mime's full list.
 - **Connecting numbers** follows a contract, not production: no real QR, no Meta Embedded Signup and no 15-minute hold of a pool number. The page has no `POST /connect/{token}/qr` (the button connects at once) and no `POST /connect/{token}/offer` (the pool number is given when the link completes). A QR link that fails does not create (and delete) a number, links do not die when a key is revoked, the per-minute limit counts only the calls that pass the schema, and `409 operation_in_progress` only appears if two calls with the same `Idempotency-Key` overlap. The errors that depend on the plan, the payment or the provider (`connect_not_allowed`, `number_suspended_by_plan`, `payment_required`, `device_inactive`, `provider_error`…) are documented but never answered.
-- **Template metrics and the WhatsApp Business accounts** (`GET /api/v1/templates/{template}/metrics`, `GET /api/v1/me/whatsapp-business-accounts…`) answer the example of their schema, not data of the sandbox. **Mark as read and «typing…»** have no per-second ceilings (`429 rate_limited`) and never fail at WhatsApp (`502 provider_error`).
-- **`POST /api/v1/webhooks/{id}/rotate-secret` works with a key here**, as it always did in the sandbox; production keeps it out of the keys' routes (the secret is rotated from the panel), so a key gets `403 route_not_available` there.
+- **Template metrics and the WhatsApp Business accounts** (`GET /api/v1/templates/{template}/metrics`, `GET /api/v1/me/whatsapp-business-accounts…`) answer shape only, not data of the sandbox. **Mark as read and «typing…»** have no per-second ceilings (`429 rate_limited`) and never fail at WhatsApp (`502 provider_error`).
+- **The secret of a subscription is rotated from the panel:** `POST /api/v1/webhooks/{id}/rotate-secret` is not in the published spec, so here it is `404 route_not_found` (a key gets `403 route_not_available` in production).
 - **Forms** are served here, but the API edge does not route `forms` yet: through the public URL they answer `404 route_not_found`.
 - **The pace and the brakes** use the numbers of conversations in production (`config/send_guards.php`, `config/antiblock.php`); the official number paired with a QR one in coexistence (15 per second, shared) is not there.
 
 ## Pending of the spec
 
-The spec (`spec/funnelchat.json`) is the portal's full unified spec of 06-11 (developers-portal `feat/plantillas-de-meta` @ `51c0aeb`, v0.6.7), made from accounts v1.5.97, conversations v1.19.37 and communities v2.35.7 (with the send to a group and the import): every route an API key reaches, not only the ones the portal shows. What production has and that spec lacks is in two separate layers, which the next regeneration drops on its own once the spec carries it:
+The spec (`spec/funnelchat.json`) is the one the portal publishes, v0.6.13 (https://developers-portal.funnelchat.app/specs/funnelchat.json, 11-11), made from accounts v1.6.41, conversations v1.19.91 and communities v2.35.28: only the operations and events the portal shows. **The sandbox offers only that:** a layer corrects shapes where the spec says otherwise than production answers, but never adds an operation or an event (the generator refuses it and says so). The corrections are in two layers, which the next regeneration drops on its own once the spec carries them:
 
-- `spec/pending.json`: the pending layer of the Node SDK, copied unchanged (`funnelchat-node` `feat/enviar-por-telefono` @ `a8f8350`). It brings what the spec lacks (the forms, `rotate-secret`, the accounts and communities events) and, guarded by JSON Pointer conditions, corrections where the spec says otherwise than production answers (the send answers, `devices/{device}/qr`, the template list, `PUT webhooks/{id}`, `GET groups/actions/{action}`, and `message.received`, `message.status_changed` and `whatsapp_form.completed`).
-- `spec/pending-sandbox.json`: what the sandbox adds, with its sources inside.
+- `spec/pending.json`: the pending layer of the Node SDK, copied unchanged (`funnelchat-node` `feat/todas-las-funciones` @ `bde8679`). Guarded by JSON Pointer conditions: the send answers, `devices/{device}/qr`, the template list, `PUT webhooks/{id}`, `GET groups/actions/{action}`, and the shapes of the number, group, billing and message events.
+- `spec/pending-sandbox.json`: what the sandbox corrects on top of it, with its sources inside.
 
 Besides, `spec/catalog.json` is the event catalog of accounts v1.5.97, with its provenance.
 
-What `spec/pending-sandbox.json` still adds:
+What `spec/pending-sandbox.json` still corrects:
 
 | What | Why neither the spec nor the Node SDK's layer has it |
 |---|---|
-| Polls and events, `POST /api/v1/contacts/{contact}/message/poll` and `…/event` | Closed to every key by the gate: they are kept to answer its `403 route_not_available`, not a `404` |
 | `data.workspace_id` in every event (accounts v1.5.97, Q35) | The events of the spec do not carry it yet |
 | `null` in `allowed_connection_types` and `provision_us_number` of `POST /api/v1/connect-links` | A correction: accounts' rules depend on `type`, and Laravel's `prohibited` lets `null` through |
 
@@ -728,13 +753,15 @@ What `spec/pending-sandbox.json` still adds:
 Everything generated comes from a single script:
 
 ```bash
-# With a new full spec of the portal (`npm run build` in developers-portal writes generated/specs/funnelchat-completa.json;
-# never the published public/specs/funnelchat.json, which carries only the visible operations). It is a build
-# artifact, so --origin says where it comes from (repository, branch, commit, path and the tag of each domain):
-npm run generate -- --spec ../developers-portal/generated/specs/funnelchat-completa.json --origin origin.json
+# With a new spec of the portal: always the one it publishes, only the operations and events the portal shows (the
+# tools are generated only from what the portal publishes). Download it, and say with --origin which version of the
+# portal it is, for example {"url": "https://developers-portal.funnelchat.app/specs/funnelchat.json",
+# "portal_version": "v0.6.13", "domains": [{"domain": "accounts", "tag": "v1.6.41"}, …]}:
+curl -sO https://developers-portal.funnelchat.app/specs/funnelchat.json
+npm run generate -- --spec funnelchat.json --origin <that JSON>
 
-# With a new pending layer of the Node SDK:
-npm run generate -- --pending ../funnelchat-node/spec/pending.json
+# With a new pending layer of the Node SDK (its spec/pending.json):
+npm run generate -- --pending <the SDK's spec/pending.json>
 
 # With what is already in spec/ (for example, after touching spec/pending-sandbox.json):
 npm run generate
@@ -748,10 +775,12 @@ The event catalog (`spec/catalog.json`) is rendered from accounts' code with `sc
 What it does:
 
 1. With `--spec` or `--pending`, it copies the file to `spec/` and writes in `spec/procedencia.json` the repository, the branch, the commit, the date and the `sha256` (from git, or from `--origin` for what git cannot say).
-2. It applies over the snapshot `spec/pending.json` and then `spec/pending-sandbox.json`, but **only what the snapshot lacks**. At the end it lists what the snapshot already carries, so you can delete it.
+2. It applies over the snapshot `spec/pending.json` and then `spec/pending-sandbox.json`, but **only what the snapshot lacks**, and never an operation or an event the snapshot does not carry: it refuses those and lists them. At the end it lists what the snapshot already carries, so you can delete it.
 3. It writes `generated/openapi.json`, the spec the sandbox validates and answers with.
 
-**The current spec** is the portal's full unified spec of 06-11 (`feat/plantillas-de-meta` @ `51c0aeb`, `generated/specs/funnelchat-completa.json`): 219 paths, 266 operations and 29 events of accounts v1.5.97, conversations v1.19.37 (`a4d0136be`) and communities v2.35.7. The detail is in `spec/procedencia.json`.
+**A handler whose operation is not in the spec is not reached:** the route answers `404 route_not_found`, like a route the API does not have. After a regeneration, `GET /_sandbox/operations` says what has state and what answers [shape only](#with-state-or-shape-only).
+
+**The current spec** is the one the portal publishes, v0.6.13, at https://developers-portal.funnelchat.app/specs/funnelchat.json (sha256 `a7b480743848dabccbea2a1f2314263ca070316eeed97aab4a6f09f171c80e5a`, as served on 12-11): 209 paths, 253 operations and 57 events (56 types) of accounts v1.6.41, conversations v1.19.91 and communities v2.35.28, in 30 groups: 1 of «Primer uso», 9 of «Funciones de WhatsApp» and 20 of «Funciones de Funnelchat». The detail is in `spec/procedencia.json`.
 
 ## Development
 
@@ -770,8 +799,8 @@ The tests verify the deliveries with unchanged copies of the Node SDK's `verify`
 spec/            the spec, its provenance, the two pending layers and the event catalog
 scripts/         generate.mjs, the only generator, and transcribe-catalog.php for the catalog
 generated/       the merged spec (not edited)
-src/openapi/     routes, validation and examples from the spec
-src/handlers/    the routes with state (numbers, links, contacts, messages, forms, groups, webhooks) and the ones the gate closes
+src/openapi/     routes, validation and the shape-only answers, from the spec
+src/handlers/    the routes with state (numbers, links, contacts, messages, forms, groups, webhooks); index.ts is the table
 src/forms/       the form templates
 src/messaging/   send rules, the file by URL, forced failures and message statuses
 src/webhooks/    signature, catalog, deliveries and retries

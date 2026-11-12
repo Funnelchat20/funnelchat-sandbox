@@ -4,30 +4,24 @@
  * (no key).
  *
  * For an API request: route of the spec (or `404 route_not_found`) → API key (`401 unauthenticated`) → validation of
- * path, query and body (`404` / `422 validation_failed`) → the stateful handler, or the example of the response
- * schema for the routes without state.
+ * path, query and body (`404` / `422 validation_failed`) → the stateful handler, or, for the routes without one, the
+ * answer of the spec, shape only (`openapi/shape.ts`): its success status and a body that fits its schema, marked
+ * `X-Sandbox-Simulated: shape-only`, with nothing stored or emitted.
  */
 import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { SandboxApp, type Logger } from './app.js';
 import { defaultConfig, mergeConfig, type ConfigInput, type SandboxConfig } from './config.js';
-import { connectLinkHandlers } from './handlers/connect-links.js';
-import { contactHandlers } from './handlers/contacts.js';
-import { deviceHandlers } from './handlers/devices.js';
-import { formHandlers } from './handlers/forms.js';
-import { GATE_CLOSED, gateHandlers } from './handlers/gate.js';
-import { GROUP_ACTION_ROUTES, groupHandlers } from './handlers/groups.js';
-import { messageHandlers } from './handlers/messages.js';
-import { readTypingHandlers } from './handlers/read-typing.js';
-import { SUBSCRIPTION_BODY_ROUTES, subscriptionBodyErrors, webhookHandlers } from './handlers/webhooks.js';
-import type { HandlerResult, HandlerTable } from './http/context.js';
+import { handlers, simulationOf } from './handlers/index.js';
+import { SUBSCRIPTION_BODY_ROUTES, subscriptionBodyErrors } from './handlers/webhooks.js';
+import type { HandlerResult } from './http/context.js';
 import { takeEdgeFailure } from './http/edge.js';
 import { ApiError, edgeError, invalidRequest, methodNotAllowed, notFound, routeNotAvailable, routeNotFound, unauthenticated, validationFailed } from './http/errors.js';
 import { parseQuery } from './http/query.js';
 import { handleConnectPage, isConnectPath } from './numbers/page.js';
-import { exampleFor } from './openapi/example.js';
-import { matchRoute, requestBodySchema, spec, successResponse } from './openapi/spec.js';
+import { SHAPE_ONLY, shapeOnlyAnswer, SIMULATED_HEADER } from './openapi/shape.js';
+import { matchRoute, requestBodySchema, spec } from './openapi/spec.js';
 import { validateRequest } from './openapi/validate.js';
 import { handleSandbox } from './sandbox/routes.js';
 import { permissionsOfKey, scopeOfKey } from './state/workspaces.js';
@@ -44,18 +38,6 @@ const API_KEY = /^Bearer\s+(\d+\|fc_live_[A-Za-z0-9]+)$/;
  * Laravel's: `StoreDeviceRequest`, `StoreConnectLinkRequest` and the list of links.
  */
 const INVALID_REQUEST_ROUTES = new Set(['POST /api/v1/devices', 'GET /api/v1/connect-links', 'POST /api/v1/connect-links']);
-
-const handlers: HandlerTable = {
-  ...contactHandlers,
-  ...messageHandlers,
-  ...readTypingHandlers,
-  ...deviceHandlers,
-  ...connectLinkHandlers,
-  ...formHandlers,
-  ...groupHandlers,
-  ...gateHandlers,
-  ...webhookHandlers,
-};
 
 class BodyError extends ApiError {}
 
@@ -93,6 +75,8 @@ function lowerHeaders(req: IncomingMessage): Record<string, string | undefined> 
  * in the header, never in the body; one the client sends is ignored.
  */
 export const REQUEST_ID_HEADER = 'X-Request-Id';
+
+export { SIMULATED_HEADER };
 
 function send(res: ServerResponse, requestId: string, result: { status: number; body?: unknown; headers?: Record<string, string> }): void {
   const headers: Record<string, string> = { 'X-Funnelchat-Sandbox': VERSION, ...result.headers, [REQUEST_ID_HEADER]: requestId };
@@ -141,6 +125,8 @@ export interface CreateSandboxOptions {
 export function createSandbox(options: CreateSandboxOptions = {}): Sandbox {
   const config = mergeConfig(defaultConfig(), (options.config ?? {}) as ConfigInput);
   const app = new SandboxApp(config, options.logger);
+  /** The routes whose shape-only answer does not fit its schema, already warned about. */
+  const misfits = new Set<string>();
 
   async function handleApi(req: IncomingMessage, url: URL, headers: Record<string, string | undefined>): Promise<{ result: HandlerResult; operation: string | null; requestBody: unknown }> {
     const method = (req.method ?? 'GET').toUpperCase();
@@ -180,7 +166,7 @@ export function createSandbox(options: CreateSandboxOptions = {}): Sandbox {
       // A route no key enables: the gate answers before the domain validates anything. The group actions are on, like
       // production (communities' kill switch); `--no-group-actions` closes them as the switch off does.
       const route = `${op.method.toUpperCase()} ${op.path}`;
-      if (GATE_CLOSED.has(route) || (!config.groupActions && GROUP_ACTION_ROUTES.has(route))) throw routeNotAvailable();
+      if (simulationOf(route, config.groupActions) === 'closed') throw routeNotAvailable();
       requestBody = parseBody(await readBody(req), headers['content-type']);
       const validation = validateRequest(op.operation, match.params, parseQuery(url.searchParams), requestBody, requestBodySchema(op.operation));
       if (!validation.ok) {
@@ -192,7 +178,7 @@ export function createSandbox(options: CreateSandboxOptions = {}): Sandbox {
         const errors = { ...validation.errors, ...own };
         throw invalid ? invalidRequest(errors) : validationFailed(errors);
       }
-      const handler = handlers[`${op.method.toUpperCase()} ${op.path}`];
+      const handler = Object.hasOwn(handlers, route) ? handlers[route] : undefined;
       const ctx = {
         app,
         op,
@@ -206,10 +192,13 @@ export function createSandbox(options: CreateSandboxOptions = {}): Sandbox {
         permissions: permissionsOfKey(app.store, key),
       };
       if (handler) return { result: await handler(ctx), operation: op.key, requestBody };
-      // No state for this route: the example of its response schema.
-      const success = successResponse(op.operation);
-      const example = success.example ?? (success.schema ? exampleFor(success.schema) : undefined);
-      return { result: { status: success.status, body: success.status === 204 ? undefined : example }, operation: op.key, requestBody };
+      // No handler: the answer of the spec, shape only. Nothing is stored and nothing is emitted.
+      const answer = shapeOnlyAnswer(op);
+      if (!answer.fits && !misfits.has(route)) {
+        misfits.add(route);
+        app.logger.warn(`the shape-only answer of ${route} does not fit its response schema: a gap of the sandbox's example builder`);
+      }
+      return { result: { status: answer.status, body: answer.body, headers: { [SIMULATED_HEADER]: SHAPE_ONLY } }, operation: op.key, requestBody };
     } catch (error) {
       return { result: errorResult(error), operation: op.key, requestBody };
     }
@@ -285,6 +274,7 @@ export function createSandbox(options: CreateSandboxOptions = {}): Sandbox {
       status: result.status,
       durationMs,
       operation,
+      simulated: result.headers?.[SIMULATED_HEADER] === SHAPE_ONLY ? SHAPE_ONLY : null,
       requestBody: loggable(requestBody),
       responseBody: loggable(result.body),
     });

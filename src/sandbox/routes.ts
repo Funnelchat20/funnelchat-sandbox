@@ -8,8 +8,11 @@ import { ApiError, EDGE_ERRORS, fieldError, notFound, validationFailed } from '.
 import { createContact, eventContact } from '../handlers/contacts.js';
 import { completeForm } from '../handlers/forms.js';
 import { createGroup, participantData } from '../handlers/groups.js';
+import { simulationOf } from '../handlers/index.js';
 import { setTemplateStatus } from '../handlers/messages.js';
 import { createMessage, transition } from '../messaging/lifecycle.js';
+import { shapeOnlyAnswer } from '../openapi/shape.js';
+import { HTTP_METHODS, operations } from '../openapi/spec.js';
 import {
   connectDevice,
   disconnectDevice,
@@ -255,9 +258,30 @@ const groupView = (group: Group) => ({
   participants: group.participants.map((p) => ({ phone: p.phone, name: p.name, admin: p.admin })),
 });
 
+/**
+ * `GET /_sandbox/operations`: every operation of the spec and how the sandbox answers it (`stateful`, `closed` or
+ * `shape-only`), from the spec and the handlers, never a list kept by hand. A shape-only one says its status and
+ * whether its body fits the schema.
+ */
+function operationsView(app: SandboxApp): Record<string, unknown> {
+  const data = [...operations]
+    .sort((a, b) => a.path.localeCompare(b.path) || HTTP_METHODS.indexOf(a.method) - HTTP_METHODS.indexOf(b.method))
+    .map((op) => {
+      const method = op.method.toUpperCase();
+      const simulated = simulationOf(`${method} ${op.path}`, app.config.groupActions);
+      const entry = { method, path: op.path, operation_id: op.operation.operationId ?? null, simulated };
+      if (simulated !== 'shape-only') return entry;
+      const answer = shapeOnlyAnswer(op);
+      return { ...entry, status: answer.status, body_from: answer.source, body_fits_schema: answer.fits };
+    });
+  const count = (simulated: string) => data.filter((d) => d.simulated === simulated).length;
+  return { data, meta: { total: data.length, stateful: count('stateful'), shape_only: count('shape-only'), closed: count('closed') } };
+}
+
 const ROUTES: Route[] = [
   { method: 'GET', pattern: /^\/_sandbox\/?$/, handle: () => ({ status: 200, html: panelHtml() }) },
   { method: 'GET', pattern: /^\/_sandbox\/state$/, handle: (app) => ({ status: 200, body: state(app) }) },
+  { method: 'GET', pattern: /^\/_sandbox\/operations$/, handle: (app) => ({ status: 200, body: operationsView(app) }) },
   {
     method: 'POST',
     pattern: /^\/_sandbox\/reset$/,

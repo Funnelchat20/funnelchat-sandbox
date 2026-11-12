@@ -1,19 +1,8 @@
 {
   "description": "The event catalog of GET /api/v1/webhooks/events as accounts answers it in production: every entry with its keys and in its order, and `example` as accounts publishes it (null for the planned ones). Rendered from the code of the tag, not from a response, with scripts/transcribe-catalog.php: if accounts changes the catalog, render it again from the new tag.",
   "source": {
-    "repository": "Funnelchat20/accounts",
-    "tag": "v1.5.97",
-    "commit": "558332bcf",
-    "files": [
-      "back/app/Modules/Webhook/Catalogs/WebhookEventCatalog.php",
-      "back/app/Modules/Webhook/Catalogs/Areas/AccountsEvents.php",
-      "back/app/Modules/Webhook/Catalogs/Areas/ConversationsEvents.php",
-      "back/app/Modules/Webhook/Catalogs/Areas/CommunitiesEvents.php",
-      "back/app/Modules/Webhook/Http/Controllers/WebhookEventCatalogController.php",
-      "back/app/Modules/Webhook/Services/DeviceWebhookEmitter.php",
-      "back/app/Modules/Webhook/Services/WebhookEventDispatcher.php"
-    ],
-    "platform_gate": "v0.9.1 (back/composer.lock)",
+    "accounts": "v1.5.97, in production on 04-11-2026",
+    "platform_gate": "v0.9.1, the version accounts v1.5.97 uses",
     "transcribed_at": "2026-11-04"
   },
   "meta": {

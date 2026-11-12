@@ -16,6 +16,6 @@ export { catalog, type CatalogEntry } from './webhooks/catalog.js';
 export { REJECTIONS, FAILURE_REASONS, META_ERRORS } from './messaging/rules.js';
 export { SUPPORTED_EXTENSIONS, SEND_FILE_TYPES } from './messaging/files.js';
 export { EDGE_ERRORS } from './http/errors.js';
-export { REQUEST_ID_HEADER } from './server.js';
+export { REQUEST_ID_HEADER, SIMULATED_HEADER } from './server.js';
 export { FORM_TEMPLATES } from './forms/templates.js';
 export { VERSION } from './version.js';

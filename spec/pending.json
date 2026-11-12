@@ -1,141 +1,30 @@
 {
   "x-fc-pending": {
     "title": "Pending of the spec",
-    "description": "Routes, fields and events the API in production has (see `sources`, each one with the release it was read in) but the snapshot in spec/funnelchat.json does not describe, or describes otherwise than production answers. scripts/generate.mjs adds them to the spec before generating the types, only while the snapshot lacks them or still says what a `while` / `x-fc-replace-while` names: when a new snapshot brings them, generation uses the snapshot and lists the entries of this file that can be deleted.",
+    "description": "Fields and shapes the API in production has (see `sources`, each one with the release it was read in) where the spec in spec/funnelchat.json, the one the developer portal publishes, describes an operation or an event otherwise than production answers, or only by an example. scripts/generate.mjs applies them to the spec before generating the types, only while the spec still lacks them or still says what a `while` / `x-fc-replace-while` names: when a new spec brings them, generation uses the spec and lists the entries of this file that can be deleted. The layer corrects what the spec publishes and never adds to it: an operation or an event the spec does not publish is not typed.",
     "rules": {
-      "paths": "An operation (method + path) is added only if the snapshot does not have it.",
       "operationPatches": "A patch adds properties to the body, or `parameters`, to a snapshot operation. With `while`, only while that operation matches it; without `while`, each one only while the operation lacks it.",
-      "webhooks": "An event is added if the snapshot does not have it, or replaces it while it matches `x-fc-replace-while`.",
+      "webhooks": "An event replaces the one the spec publishes while that one matches `x-fc-replace-while`. An event the spec does not publish is not added.",
       "responsePatches": "A patch replaces the responses of a snapshot operation (every 2xx, and the other codes it brings) only while that operation matches `while`.",
       "components.schemas": "The schemas of this layer start with `Pending` so they never clash with the snapshot's.",
       "schemaPatches": "A patch adds properties to a snapshot schema, each one only while the schema lacks it.",
       "while": "In `while` and `x-fc-replace-while`, a key is a property of the operation (or of the event's `post`), or, when it starts with `/`, a JSON Pointer into it (RFC 6901): the entry applies only while that exact place still holds that value."
     },
     "sources": {
-      "accounts-webhooks": "accounts v1.4.24 (300cc843, in production on 22-10): back/routes/api/webhooks.php:87-111, back/config/platform-gate.php:244-299 (routes open to keys and the Notifications (webhooks) permissions), Http/Requests/*WebhookSubscriptionRequest.php, Http/Resources/WebhookSubscription*Resource.php, Services/WebhookPermissionRules.php and Catalogs/Areas/*Events.php. Read again in the releases in production on 04-11-2026 (accounts v1.5.97 558332bcf, conversations v1.19.7 4e35ddb83, communities v2.35.5 2be913d4): same routes, bodies and resources in accounts v1.5.97; since then a subscription belongs to the workspace of the key that creates it, and the cap of 50 counts per workspace (Webhook/Http/Controllers/WebhookSubscriptionController.php, `inActiveWorkspace()`). `PUT webhooks/{id}` answers the subscription (Webhook/Http/Controllers/WebhookSubscriptionController.php:228, WebhookSubscriptionResource), which the full unified spec of developers-portal (generated/specs/funnelchat-completa.json, c90565e4 and f5464516) types as `{type: object}`.",
-      "conversations-send": "conversations v1.19.21 (f2937a713, in production on 05-11-2026; read first in v1.19.7 4e35ddb83): every single send of a key (text, send-message, template, form) answers `200 {message}` with the message it registered, never `null` (back/app/Modules/Message/Support/AcceptedSendAnswer.php:91 and Support/ApiKeySendResponse.php:40-43; notes and the Nova channel the same). the full unified spec of developers-portal (generated/specs/funnelchat-completa.json, c90565e4 and f5464516) documents it as nullable: conversations' docs extension (Shared/PublicApi/Docs/ApiKeySendResponsesOperationExtension.php:54 and :317-320, `nullableMessage`) kept the `null` of the read-back the first version had (f2467e639).",
-      "conversations-status": "conversations v1.19.21 (f2937a713, in production on 05-11-2026; read first in v1.19.7 4e35ddb83): data of message.status_changed (back/app/Modules/Webhook/Payloads/MessageStatusChangedPayload.php:161-189). the full unified spec of developers-portal (generated/specs/funnelchat-completa.json, c90565e4 and f5464516) types it from one example only (`schema: {type: object}`): `status` as any string and `client_reference` never null.",
-      "conversations-forms": "conversations v1.18.10 (a580a3d0, in production on 22-10): WhatsApp forms (back/routes/api/whatsapp-forms.php, WhatsappForm/Http/Controllers/WhatsappFormController.php, WhatsappFormSendController.php, Http/Resources/WhatsappFormResource.php, Webhook/Payloads/WhatsappFormCompletedPayload.php:118-136). Read again in the releases in production on 04-11-2026 (accounts v1.5.97 558332bcf, conversations v1.19.7 4e35ddb83, communities v2.35.5 2be913d4): the payload is byte-identical in conversations v1.19.7; the send route also checks that the contact is of the key's workspace. The full unified spec of developers-portal (c90565e4 and f5464516) types whatsapp_form.completed from one example only: every answer a string and no field null.",
-      "communities-events": "communities v2.34.52 (6f32f0b4, in production on 22-10): data of the group events (back/app/Modules/Shared/Support/PlatformEvents/PlatformEventCatalog.php:250-309 and Services/*EventPublisher.php), relayed by the unified catalog of accounts v1.4.24 (300cc843). Read again in the releases in production on 04-11-2026 (accounts v1.5.97 558332bcf, conversations v1.19.7 4e35ddb83, communities v2.35.5 2be913d4): group_participant.joined and .left as communities v2.35.5 records them (Shared/Services/GroupWebhookService.php:217-269, `campaign` null for a group without a campaign; Shared/Support/PlatformEvents/PlatformEventParticipant.php) and group_action.completed as the catalog of accounts v1.5.97 relays it (Webhook/Catalogs/Areas/CommunitiesEvents.php:218).",
-      "accounts-number-signup": "accounts v1.5.97 (558332bcf, in production on 04-11-2026): back/app/Modules/Device/Http/Requests/StoreDeviceRequest.php, StoreConnectLinkRequest.php, Http/Resources/ConnectLinkResource.php, Http/Resources/DeviceResource.php (`connection` and `external_reference`), Http/Controllers/DeviceProvisioningController.php and config/services.php `connect_links` (the QR every 5 seconds, 10 minutes to scan it from the page, and `meta_enabled`, false by default in production: the official sign-up by link answers `503 meta_connect_disabled` there). The device.* events: Webhook/Services/DeviceWebhookEmitter.php:355-552 (the same `device` block in all of them, `connect_link_id` and `reason`) and Webhook/Catalogs/Areas/AccountsEvents.php:27-81 (all seven active). First read in accounts origin/main dc2907b44 on 25-10 (contract 1022-alta-de-numeros v0.2, first in v1.4.38). Not in the published spec yet: its OpenAPI will replace these entries.",
-      "conversations-received": "conversations v1.19.21 (f2937a713, in production on 05-11-2026; read first in v1.19.7 4e35ddb83): data of message.received (back/app/Modules/Webhook/Payloads/MessageReceivedPayload.php:130-193: `text` and `media` null when absent, phones as `+` and digits or null, `device_id` last). the full unified spec of developers-portal (generated/specs/funnelchat-completa.json, c90565e4 and f5464516) types it from one example: `text` and the phones never null, `media` unknown.",
-      "conversations-templates": "conversations v1.19.21 (f2937a713, in production on 05-11-2026; read first in v1.19.7 4e35ddb83): `GET templates` answers a page of TemplateResource (back/app/Modules/Message/Http/Controllers/MessageTemplateController.php:194-196, with `additional()` for the quality counts); the full unified spec of developers-portal (generated/specs/funnelchat-completa.json, c90565e4 and f5464516) types its items as `{type: object}`.",
-      "accounts-qr": "accounts v1.5.97 (558332bcf, in production on 04-11-2026): `GET devices/{device}/qr` answers `{data: {connected, qr_code, expires_in}}` (back/app/Modules/Device/Http/Controllers/DeviceProvisioningController.php:128-146, its `@body`); the full unified spec of developers-portal (generated/specs/funnelchat-completa.json, c90565e4 and f5464516) infers a union of that body, the inner object in three forms and a bare string.",
-      "communities-group-action": "communities v2.35.5 (2be913d4, in production): `GET groups/actions/{action}` answers `{data: <one action>}` (back/app/Modules/GroupManagement/Controllers/Api/V2/ApiGroupActionController.php:48-62 and Resources/ApiGroupActionResource.php). The full unified spec of developers-portal f5464516 types `data` as an array."
+      "accounts-webhooks": "accounts v1.4.24 (in production on 22-10-2026): the webhook subscription routes open to API keys, their bodies and answers, the Notifications (webhooks) permissions and the events of each area. Read again in accounts v1.5.97 (in production on 04-11-2026): the same routes, bodies and answers; since then a subscription belongs to the workspace of the key that creates it, and the cap of 50 counts per workspace. `PUT webhooks/{id}` answers the subscription, which the spec the portal publishes (portal v0.6.13) types as `{type: object}`.",
+      "conversations-send": "conversations v1.19.21 (in production on 05-11-2026; first read in v1.19.7): every single send of a key (text, send-message, template, form) answers `200 {message}` with the message it registered, never `null`. The spec the portal publishes (portal v0.6.13) documents that `message` as nullable.",
+      "conversations-status": "conversations v1.19.21 (in production on 05-11-2026; first read in v1.19.7): the `data` of message.status_changed. The spec the portal publishes (portal v0.6.13) shows it only by an example (`schema: {type: object}`): `status` as any string and `client_reference` never null.",
+      "conversations-forms": "conversations v1.18.10 (in production on 22-10-2026): WhatsApp forms, their routes and answers, and the `data` of whatsapp_form.completed. Read again in conversations v1.19.7 (in production on 04-11-2026): the same `data`; the send route also checks that the contact is of the key's workspace. The spec the portal publishes (portal v0.6.13) shows whatsapp_form.completed only by an example: every answer a string and no field null.",
+      "communities-events": "communities v2.34.52 (in production on 22-10-2026): the `data` of the group events, relayed by the event catalog of accounts v1.4.24. Read again in the releases in production on 04-11-2026 (accounts v1.5.97, conversations v1.19.7, communities v2.35.5): group_participant.joined and .left as communities v2.35.5 sends them (`campaign` null for a group without a campaign), and group_action.completed as accounts v1.5.97 relays it. communities v2.35.28 (in production on 11-11-2026): group.message_received and group.reaction_added carry `message.uid`, although the example of the spec the portal publishes (portal v0.6.13) says `message.id`.",
+      "accounts-number-signup": "accounts v1.5.97 (in production on 04-11-2026; first in v1.4.38): creating numbers and connect links, the `connection` and `external_reference` of a number, and the connect page (the QR every 5 seconds, 10 minutes to scan it from the page; the official sign-up by link answers `503 meta_connect_disabled` in production). The seven device.* events, all active: the same `device` block in all of them, `connect_link_id` and `reason`. The spec the portal publishes (portal v0.6.13) shows them only by an example.",
+      "conversations-received": "conversations v1.19.21 (in production on 05-11-2026; first read in v1.19.7): the `data` of message.received: `text` and `media` null when absent, phones as `+` and digits or null, `device_id` last. The spec the portal publishes (portal v0.6.13) types it as its example shows: `text` and the phones never null, `media` unknown.",
+      "conversations-templates": "conversations v1.19.21 (in production on 05-11-2026; first read in v1.19.7): `GET templates` answers a page of templates, with the quality counts. The spec the portal publishes (portal v0.6.13) types its items as `{type: object}`.",
+      "accounts-qr": "accounts v1.5.97 (in production on 04-11-2026): `GET devices/{device}/qr` answers `{data: {connected, qr_code, expires_in}}`. The spec the portal publishes (portal v0.6.13) infers a union of that body, the inner object in three forms and a bare string.",
+      "communities-group-action": "communities v2.35.5 (in production on 04-11-2026): `GET groups/actions/{action}` answers `{data: <one action>}`. The spec the portal publishes (portal v0.6.13) types `data` as an array."
     }
   },
   "components": {
     "schemas": {
-      "PendingWebhookSubscriptionFilters": {
-        "type": "object",
-        "properties": {
-          "campaign_ids": {
-            "type": "array",
-            "maxItems": 100,
-            "items": { "type": "string", "minLength": 6, "maxLength": 64, "pattern": "^[A-Za-z0-9_-]+$" },
-            "description": "Only delivers the events of these campaigns. An event without a campaign does not pass the filter."
-          }
-        }
-      },
-      "PendingWebhookSubscription": {
-        "type": "object",
-        "description": "A unified webhook subscription. It never carries the secret.",
-        "properties": {
-          "id": { "type": "string", "format": "uuid", "description": "Identifier of the subscription. Store it when you create it: it is what tells yours apart." },
-          "url": { "type": "string" },
-          "description": { "type": ["string", "null"] },
-          "events": {
-            "type": "array",
-            "items": { "type": "string" }
-          },
-          "filters": { "$ref": "#/components/schemas/PendingWebhookSubscriptionFilters" },
-          "status": { "type": "string", "enum": ["active", "paused", "disabled"] },
-          "disabled_reason": { "type": ["string", "null"], "enum": ["too_many_failures", "key_revoked", null] },
-          "last_delivery_at": { "type": ["string", "null"], "format": "date-time" },
-          "last_success_at": { "type": ["string", "null"], "format": "date-time" },
-          "secret_rotated_at": { "type": ["string", "null"], "format": "date-time" },
-          "created_at": { "type": ["string", "null"], "format": "date-time" },
-          "updated_at": { "type": ["string", "null"], "format": "date-time" },
-          "migration": {
-            "type": ["object", "null"],
-            "properties": {
-              "origin": { "type": "string" },
-              "status": { "type": "string" },
-              "activated_via": { "type": ["string", "null"] },
-              "activated_at": { "type": ["string", "null"], "format": "date-time" },
-              "last_result": {}
-            },
-            "required": ["origin", "status", "activated_via", "activated_at", "last_result"]
-          }
-        },
-        "required": ["id", "url", "description", "events", "filters", "status", "disabled_reason", "last_delivery_at", "last_success_at", "secret_rotated_at", "created_at", "updated_at", "migration"]
-      },
-      "PendingWebhookSubscriptionWithSecret": {
-        "allOf": [
-          { "$ref": "#/components/schemas/PendingWebhookSubscription" },
-          {
-            "type": "object",
-            "properties": {
-              "secret": { "type": "string", "description": "The full secret to verify the signature. It is shown only once: store it." },
-              "secret_notice": { "type": "string" }
-            },
-            "required": ["secret", "secret_notice"]
-          }
-        ]
-      },
-      "PendingFormLintIssue": {
-        "type": "object",
-        "properties": {
-          "code": { "type": "string" },
-          "severity": { "type": "string" },
-          "screenId": { "type": ["string", "null"] },
-          "itemId": { "type": ["string", "null"] },
-          "message": { "type": "string" }
-        },
-        "required": ["code", "severity", "message"]
-      },
-      "PendingFormNumber": {
-        "type": "object",
-        "description": "A number where the form is published (or being published).",
-        "properties": {
-          "device_id": { "type": ["integer", "null"] },
-          "primary": { "type": "boolean" },
-          "status": { "type": "string", "enum": ["draft", "publishing", "published", "failed"] },
-          "error": { "type": ["string", "null"] }
-        },
-        "required": ["device_id", "primary", "status", "error"]
-      },
-      "PendingForm": {
-        "type": "object",
-        "description": "One version of a form. `id` is the version; `family_id` is the form itself: the `form_id` you send it with and the `form.id` of `whatsapp_form.completed`.",
-        "properties": {
-          "id": { "type": "integer", "description": "The version." },
-          "family_id": { "type": "integer", "description": "The form (every version)." },
-          "name": { "type": "string", "description": "The name in Meta (with the `__vN` suffix)." },
-          "label": { "type": "string", "description": "The display name." },
-          "category": { "type": ["string", "null"] },
-          "status": { "type": "string", "enum": ["draft", "published", "deprecated"] },
-          "version": { "type": "integer" },
-          "definition": { "description": "The definition of the form (screens and fields). Only in the detail." },
-          "fields": { "description": "Only in the detail." },
-          "mapping": { "description": "Only in the detail." },
-          "tag_rules": { "description": "Only in the detail." },
-          "has_endpoint": { "type": "boolean" },
-          "first_screen": { "type": ["string", "null"] },
-          "first_screen_dynamic": { "type": ["boolean", "null"] },
-          "lint_errors_count": { "type": ["integer", "null"] },
-          "draft_id": { "type": "integer", "description": "Only in the list: the draft of the family, when it is not this row." },
-          "draft_version": { "type": "integer" },
-          "sends": { "type": "integer", "description": "Only in the list." },
-          "responses": { "type": "integer", "description": "Only in the list." },
-          "meta_flow_id": { "type": ["string", "null"] },
-          "flow_json": { "description": "Only in the detail." },
-          "validation_errors": { "description": "Only in the detail." },
-          "published_at": { "type": ["string", "null"], "format": "date-time" },
-          "updated_at": { "type": ["string", "null"], "format": "date-time" }
-        },
-        "required": ["id", "family_id", "name", "label", "status", "version"]
-      },
       "PendingDeviceConnection": {
         "type": ["string", "null"],
         "enum": ["qr", "coexistence", "dedicated", null],
@@ -231,925 +120,6 @@
           "failed_at": { "type": ["string", "null"], "format": "date-time" }
         },
         "required": ["action_id", "type", "status", "device_id", "group", "result", "reason", "created_at", "started_at", "completed_at", "failed_at"]
-      }
-    }
-  },
-  "paths": {
-    "/api/v1/webhooks/{id}/rotate-secret": {
-      "post": {
-        "operationId": "pendingWebhookSubscription.rotateSecret",
-        "summary": "Generate a new secret",
-        "description": "A new secret, shown only once; the previous one stops working.\n\n**Not open to API keys:** with a key it answers `403 route_not_available`. Rotate the secret from the panel.",
-        "tags": ["Webhooks"],
-        "x-fc-domain": "accounts",
-        "x-fc-permission": "webhooks:write",
-        "x-fc-pending": "accounts-webhooks",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/PendingWebhookSubscriptionWithSecret" }
-              }
-            }
-          }
-        },
-        "x-fc-key-access": "closed"
-      }
-    },
-    "/api/v1/forms": {
-      "get": {
-        "operationId": "pendingForms.list",
-        "summary": "List forms",
-        "tags": ["WhatsappForm"],
-        "x-fc-domain": "conversations",
-        "x-fc-permission": "conversations:read",
-        "x-fc-pending": "conversations-forms",
-        "parameters": [
-          {
-            "name": "q",
-            "in": "query",
-            "required": false,
-            "schema": { "type": "string", "maxLength": 191 }
-          },
-          {
-            "name": "status",
-            "in": "query",
-            "required": false,
-            "schema": { "type": "string", "enum": ["draft", "published", "deprecated"] }
-          },
-          {
-            "name": "device_id",
-            "in": "query",
-            "required": false,
-            "schema": { "type": "integer" }
-          },
-          {
-            "name": "perPage",
-            "in": "query",
-            "required": false,
-            "schema": { "type": "integer", "minimum": 1, "maximum": 100 },
-            "description": "25 by default."
-          },
-          {
-            "name": "page",
-            "in": "query",
-            "required": false,
-            "schema": { "type": "integer" }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "type": "array",
-                      "items": { "$ref": "#/components/schemas/PendingForm" }
-                    },
-                    "links": { "type": "object" },
-                    "meta": { "type": "object" }
-                  },
-                  "required": ["data"]
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "operationId": "pendingForms.create",
-        "summary": "Create a form from a template",
-        "tags": ["WhatsappForm"],
-        "x-fc-domain": "conversations",
-        "x-fc-permission": "conversations:write",
-        "x-fc-pending": "conversations-forms",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "device_id": { "type": "integer", "minimum": 1, "description": "The primary number." },
-                  "device_ids": {
-                    "type": "array",
-                    "maxItems": 50,
-                    "items": { "type": "integer" },
-                    "description": "Other numbers to publish it on."
-                  },
-                  "template_key": { "type": "string", "description": "A `key` of `GET /api/v1/forms/templates`." }
-                },
-                "required": ["device_id"]
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Created as a draft.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": { "$ref": "#/components/schemas/PendingForm" },
-                    "lint": {
-                      "type": "array",
-                      "items": { "$ref": "#/components/schemas/PendingFormLintIssue" }
-                    },
-                    "numbers": {
-                      "type": "array",
-                      "items": { "$ref": "#/components/schemas/PendingFormNumber" }
-                    }
-                  },
-                  "required": ["data"]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/forms/templates": {
-      "get": {
-        "operationId": "pendingForms.templates",
-        "summary": "Templates to start a form",
-        "tags": ["WhatsappForm"],
-        "x-fc-domain": "conversations",
-        "x-fc-permission": "conversations:read",
-        "x-fc-pending": "conversations-forms",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "key": { "type": "string" },
-                          "title": { "type": "string" },
-                          "description": { "type": ["string", "null"] },
-                          "category": { "type": ["string", "null"] }
-                        },
-                        "required": ["key", "title"]
-                      }
-                    }
-                  },
-                  "required": ["data"]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/forms/{id}": {
-      "get": {
-        "operationId": "pendingForms.retrieve",
-        "summary": "One version of a form",
-        "tags": ["WhatsappForm"],
-        "x-fc-domain": "conversations",
-        "x-fc-permission": "conversations:read",
-        "x-fc-pending": "conversations-forms",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "integer" },
-            "description": "The version of the form."
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": { "$ref": "#/components/schemas/PendingForm" },
-                    "lint": {
-                      "type": "array",
-                      "items": { "$ref": "#/components/schemas/PendingFormLintIssue" }
-                    },
-                    "versions": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "id": { "type": "integer" },
-                          "version": { "type": "integer" },
-                          "status": { "type": "string" },
-                          "published_at": { "type": ["string", "null"] }
-                        }
-                      }
-                    },
-                    "numbers": {
-                      "type": "array",
-                      "items": { "$ref": "#/components/schemas/PendingFormNumber" }
-                    }
-                  },
-                  "required": ["data"]
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "operationId": "pendingForms.update",
-        "summary": "Save the definition of a draft",
-        "tags": ["WhatsappForm"],
-        "x-fc-domain": "conversations",
-        "x-fc-permission": "conversations:write",
-        "x-fc-pending": "conversations-forms",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "integer" },
-            "description": "The version of the form."
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "name": { "type": "string", "maxLength": 120 },
-                  "definition": { "type": "object", "description": "Screens and fields of the form." },
-                  "expected_updated_at": { "type": ["string", "null"], "description": "The `updated_at` you read: if it changed since then, it answers `409 STALE`." }
-                },
-                "required": ["definition"]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": { "$ref": "#/components/schemas/PendingForm" },
-                    "lint": {
-                      "type": "array",
-                      "items": { "$ref": "#/components/schemas/PendingFormLintIssue" }
-                    }
-                  },
-                  "required": ["data"]
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "operationId": "pendingForms.delete",
-        "summary": "Delete a draft",
-        "tags": ["WhatsappForm"],
-        "x-fc-domain": "conversations",
-        "x-fc-permission": "conversations:write",
-        "x-fc-pending": "conversations-forms",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "integer" },
-            "description": "The version of the form."
-          }
-        ],
-        "responses": {
-          "204": { "description": "Deleted. A published version answers `409 PUBLISHED`." }
-        }
-      }
-    },
-    "/api/v1/forms/{id}/versions": {
-      "post": {
-        "operationId": "pendingForms.createVersion",
-        "summary": "Open a new version (draft) of a published form",
-        "tags": ["WhatsappForm"],
-        "x-fc-domain": "conversations",
-        "x-fc-permission": "conversations:write",
-        "x-fc-pending": "conversations-forms",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "integer" },
-            "description": "The version of the form."
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "There was a draft already: this is it (`created: false`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": { "$ref": "#/components/schemas/PendingForm" },
-                    "lint": {
-                      "type": "array",
-                      "items": { "$ref": "#/components/schemas/PendingFormLintIssue" }
-                    },
-                    "created": { "type": "boolean" },
-                    "numbers": {
-                      "type": "array",
-                      "items": { "$ref": "#/components/schemas/PendingFormNumber" }
-                    }
-                  },
-                  "required": ["data"]
-                }
-              }
-            }
-          },
-          "201": {
-            "description": "New draft (`created: true`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": { "$ref": "#/components/schemas/PendingForm" },
-                    "lint": {
-                      "type": "array",
-                      "items": { "$ref": "#/components/schemas/PendingFormLintIssue" }
-                    },
-                    "created": { "type": "boolean" },
-                    "numbers": {
-                      "type": "array",
-                      "items": { "$ref": "#/components/schemas/PendingFormNumber" }
-                    }
-                  },
-                  "required": ["data"]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/forms/{id}/sync": {
-      "post": {
-        "operationId": "pendingForms.sync",
-        "summary": "Upload the draft to Meta without publishing it",
-        "tags": ["WhatsappForm"],
-        "x-fc-domain": "conversations",
-        "x-fc-permission": "conversations:write",
-        "x-fc-pending": "conversations-forms",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "integer" },
-            "description": "The version of the form."
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": { "$ref": "#/components/schemas/PendingForm" },
-                    "lint": {
-                      "type": "array",
-                      "items": { "$ref": "#/components/schemas/PendingFormLintIssue" }
-                    },
-                    "numbers": {
-                      "type": "array",
-                      "items": { "$ref": "#/components/schemas/PendingFormNumber" }
-                    }
-                  },
-                  "required": ["data"]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/forms/{id}/publish": {
-      "post": {
-        "operationId": "pendingForms.publish",
-        "summary": "Publish on Meta",
-        "tags": ["WhatsappForm"],
-        "x-fc-domain": "conversations",
-        "x-fc-permission": "conversations:write",
-        "x-fc-pending": "conversations-forms",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "integer" },
-            "description": "The version of the form."
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Published. If Meta rejects it: `502 META` with `meta_code` and `lint`; if it does not pass validation: `422 LINT`.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": { "$ref": "#/components/schemas/PendingForm" },
-                    "lint": {
-                      "type": "array",
-                      "items": { "$ref": "#/components/schemas/PendingFormLintIssue" }
-                    },
-                    "numbers": {
-                      "type": "array",
-                      "items": { "$ref": "#/components/schemas/PendingFormNumber" }
-                    }
-                  },
-                  "required": ["data"]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/forms/{id}/numbers": {
-      "get": {
-        "operationId": "pendingForms.numbers",
-        "summary": "The numbers of the form",
-        "tags": ["WhatsappForm"],
-        "x-fc-domain": "conversations",
-        "x-fc-permission": "conversations:read",
-        "x-fc-pending": "conversations-forms",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "integer" },
-            "description": "The version of the form."
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "numbers": {
-                      "type": "array",
-                      "items": { "$ref": "#/components/schemas/PendingFormNumber" }
-                    }
-                  },
-                  "required": ["numbers"]
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "operationId": "pendingForms.addNumber",
-        "summary": "Publish it on another number too",
-        "tags": ["WhatsappForm"],
-        "x-fc-domain": "conversations",
-        "x-fc-permission": "conversations:write",
-        "x-fc-pending": "conversations-forms",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "integer" },
-            "description": "The version of the form."
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "device_id": { "type": "integer" }
-                },
-                "required": ["device_id"]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "numbers": {
-                      "type": "array",
-                      "items": { "$ref": "#/components/schemas/PendingFormNumber" }
-                    }
-                  },
-                  "required": ["numbers"]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/forms/{id}/numbers/{deviceId}": {
-      "delete": {
-        "operationId": "pendingForms.removeNumber",
-        "summary": "Take it off a number",
-        "tags": ["WhatsappForm"],
-        "x-fc-domain": "conversations",
-        "x-fc-permission": "conversations:write",
-        "x-fc-pending": "conversations-forms",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "integer" },
-            "description": "The version of the form."
-          },
-          {
-            "name": "deviceId",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "integer" }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The primary number cannot be taken off: `422 PRIMARY_NUMBER`.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "numbers": {
-                      "type": "array",
-                      "items": { "$ref": "#/components/schemas/PendingFormNumber" }
-                    }
-                  },
-                  "required": ["numbers"]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/forms/{id}/numbers/retry": {
-      "post": {
-        "operationId": "pendingForms.retryNumbers",
-        "summary": "Retry the numbers that failed",
-        "tags": ["WhatsappForm"],
-        "x-fc-domain": "conversations",
-        "x-fc-permission": "conversations:write",
-        "x-fc-pending": "conversations-forms",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "integer" },
-            "description": "The version of the form."
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "numbers": {
-                      "type": "array",
-                      "items": { "$ref": "#/components/schemas/PendingFormNumber" }
-                    }
-                  },
-                  "required": ["numbers"]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/forms/families/{familyId}/definition": {
-      "get": {
-        "operationId": "pendingForms.definition",
-        "summary": "The current definition of a form",
-        "tags": ["WhatsappForm"],
-        "x-fc-domain": "conversations",
-        "x-fc-permission": "conversations:read",
-        "x-fc-pending": "conversations-forms",
-        "parameters": [
-          {
-            "name": "familyId",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "integer" },
-            "description": "The form (`family_id`)."
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "anyOf": [
-                        {
-                          "type": "object",
-                          "properties": {
-                            "family_id": { "type": "integer" },
-                            "form_id": { "type": "integer" },
-                            "name": { "type": "string" },
-                            "status": { "type": "string" },
-                            "version": { "type": "integer" },
-                            "definition": {}
-                          }
-                        },
-                        { "type": "null" }
-                      ]
-                    }
-                  },
-                  "required": ["data"]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/forms/families/{familyId}/versions": {
-      "get": {
-        "operationId": "pendingForms.versions",
-        "summary": "The versions of a form",
-        "tags": ["WhatsappForm"],
-        "x-fc-domain": "conversations",
-        "x-fc-permission": "conversations:read",
-        "x-fc-pending": "conversations-forms",
-        "parameters": [
-          {
-            "name": "familyId",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "integer" },
-            "description": "The form (`family_id`)."
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "id": { "type": "integer" },
-                          "version": { "type": "integer" },
-                          "name": { "type": "string" },
-                          "status": { "type": "string" },
-                          "is_current": { "type": "boolean" },
-                          "published_at": { "type": ["string", "null"] },
-                          "deprecated_at": { "type": ["string", "null"] },
-                          "meta_flow_id": { "type": ["string", "null"] },
-                          "retained_reason": { "type": ["string", "null"] },
-                          "responses": { "type": "integer" },
-                          "templates": {}
-                        }
-                      }
-                    }
-                  },
-                  "required": ["data"]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/forms/families/{familyId}/responses": {
-      "get": {
-        "operationId": "pendingForms.responses",
-        "summary": "The answers of a form",
-        "tags": ["WhatsappForm"],
-        "x-fc-domain": "conversations",
-        "x-fc-permission": "conversations:read",
-        "x-fc-pending": "conversations-forms",
-        "parameters": [
-          {
-            "name": "familyId",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "integer" },
-            "description": "The form (`family_id`)."
-          },
-          {
-            "name": "from",
-            "in": "query",
-            "required": false,
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "to",
-            "in": "query",
-            "required": false,
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "version_id",
-            "in": "query",
-            "required": false,
-            "schema": { "type": "integer" }
-          },
-          {
-            "name": "origin",
-            "in": "query",
-            "required": false,
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "status",
-            "in": "query",
-            "required": false,
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "search",
-            "in": "query",
-            "required": false,
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "page",
-            "in": "query",
-            "required": false,
-            "schema": { "type": "integer" }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "type": "array",
-                      "items": { "type": "object" }
-                    },
-                    "columns": {
-                      "type": "array",
-                      "items": {}
-                    }
-                  },
-                  "required": ["data"]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/forms/families/{familyId}/responses/{runId}": {
-      "get": {
-        "operationId": "pendingForms.response",
-        "summary": "One answer",
-        "tags": ["WhatsappForm"],
-        "x-fc-domain": "conversations",
-        "x-fc-permission": "conversations:read",
-        "x-fc-pending": "conversations-forms",
-        "parameters": [
-          {
-            "name": "familyId",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "integer" },
-            "description": "The form (`family_id`)."
-          },
-          {
-            "name": "runId",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "integer" }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {}
-                  },
-                  "required": ["data"]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/forms/families/{familyId}/metrics": {
-      "get": {
-        "operationId": "pendingForms.metrics",
-        "summary": "The funnel of a form: sent, opened, completed",
-        "tags": ["WhatsappForm"],
-        "x-fc-domain": "conversations",
-        "x-fc-permission": "conversations:read",
-        "x-fc-pending": "conversations-forms",
-        "parameters": [
-          {
-            "name": "familyId",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "integer" },
-            "description": "The form (`family_id`)."
-          },
-          {
-            "name": "from",
-            "in": "query",
-            "required": false,
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "to",
-            "in": "query",
-            "required": false,
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "version_id",
-            "in": "query",
-            "required": false,
-            "schema": { "type": "integer" }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {}
-                  },
-                  "required": ["data"]
-                }
-              }
-            }
-          }
-        }
       }
     }
   },
@@ -1412,6 +382,9 @@
         "x-fc-status": "live",
         "x-fc-domain": "accounts",
         "x-fc-pending": "accounts-number-signup",
+        "x-fc-replace-while": {
+          "/requestBody/content/application~1json/schema": { "type": "object" }
+        },
         "requestBody": {
           "content": {
             "application/json": {
@@ -1441,6 +414,9 @@
         "x-fc-status": "live",
         "x-fc-domain": "accounts",
         "x-fc-pending": "accounts-number-signup",
+        "x-fc-replace-while": {
+          "/requestBody/content/application~1json/schema": { "type": "object" }
+        },
         "requestBody": {
           "content": {
             "application/json": {
@@ -1471,6 +447,11 @@
         "x-fc-status": "live",
         "x-fc-domain": "accounts",
         "x-fc-pending": "accounts-webhooks",
+        "x-fc-replace-while": {
+          "/requestBody/content/application~1json": {
+            "schema": { "type": "object" }
+          }
+        },
         "requestBody": {
           "content": {
             "application/json": {
@@ -1483,22 +464,6 @@
         }
       }
     },
-    "billing.plan_blocked": {
-      "post": {
-        "summary": "billing.plan_blocked",
-        "description": "The plan was blocked by an unprocessed charge. Planned: not emitted yet.",
-        "x-fc-status": "planned",
-        "x-fc-domain": "accounts",
-        "x-fc-pending": "accounts-webhooks",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": { "type": "object" }
-            }
-          }
-        }
-      }
-    },
     "billing.upcoming_charge": {
       "post": {
         "summary": "billing.upcoming_charge",
@@ -1506,85 +471,17 @@
         "x-fc-status": "live",
         "x-fc-domain": "accounts",
         "x-fc-pending": "accounts-webhooks",
+        "x-fc-replace-while": {
+          "/requestBody/content/application~1json": {
+            "schema": { "type": "object" }
+          }
+        },
         "requestBody": {
           "content": {
             "application/json": {
               "schema": { "type": "object" },
               "example": {
                 "data": { "charge_date": "2026-11-05T00:00:00Z", "amount_cents": 2990, "currency": "USD" }
-              }
-            }
-          }
-        }
-      }
-    },
-    "subscription.expiring": {
-      "post": {
-        "summary": "subscription.expiring",
-        "description": "The subscription is about to expire. Planned: not emitted yet.",
-        "x-fc-status": "planned",
-        "x-fc-domain": "accounts",
-        "x-fc-pending": "accounts-webhooks",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": { "type": "object" }
-            }
-          }
-        }
-      }
-    },
-    "subscription.trial_ending": {
-      "post": {
-        "summary": "subscription.trial_ending",
-        "description": "The trial period is about to end.",
-        "x-fc-status": "live",
-        "x-fc-domain": "accounts",
-        "x-fc-pending": "accounts-webhooks",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": { "type": "object" },
-              "example": {
-                "data": { "trial_ends_at": "2026-10-04T00:00:00Z" }
-              }
-            }
-          }
-        }
-      }
-    },
-    "subscription.reactivated": {
-      "post": {
-        "summary": "subscription.reactivated",
-        "description": "The scheduled cancellation of the subscription was reverted (Stripe subscriptions only).",
-        "x-fc-status": "live",
-        "x-fc-domain": "accounts",
-        "x-fc-pending": "accounts-webhooks",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": { "type": "object" },
-              "example": {
-                "data": { "renews_at": "2026-11-05T00:00:00Z" }
-              }
-            }
-          }
-        }
-      }
-    },
-    "subscription.cancellation_confirmed": {
-      "post": {
-        "summary": "subscription.cancellation_confirmed",
-        "description": "The cancellation of the subscription was confirmed (Stripe subscriptions only).",
-        "x-fc-status": "live",
-        "x-fc-domain": "accounts",
-        "x-fc-pending": "accounts-webhooks",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": { "type": "object" },
-              "example": {
-                "data": { "access_until": "2026-11-05T00:00:00Z" }
               }
             }
           }
@@ -1598,136 +495,17 @@
         "x-fc-status": "live",
         "x-fc-domain": "accounts",
         "x-fc-pending": "accounts-webhooks",
+        "x-fc-replace-while": {
+          "/requestBody/content/application~1json": {
+            "schema": { "type": "object" }
+          }
+        },
         "requestBody": {
           "content": {
             "application/json": {
               "schema": { "type": "object" },
               "example": {
                 "data": { "charge_date": "2026-10-08T00:00:00Z", "amount_cents": 1990, "currency": "USD" }
-              }
-            }
-          }
-        }
-      }
-    },
-    "ai_quota.low_balance": {
-      "post": {
-        "summary": "ai_quota.low_balance",
-        "description": "The AI message quota is about to run out. Planned: not emitted yet.",
-        "x-fc-status": "planned",
-        "x-fc-domain": "accounts",
-        "x-fc-pending": "accounts-webhooks",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": { "type": "object" }
-            }
-          }
-        }
-      }
-    },
-    "ai_quota.topup_succeeded": {
-      "post": {
-        "summary": "ai_quota.topup_succeeded",
-        "description": "An AI quota top-up was credited. Planned: not emitted yet.",
-        "x-fc-status": "planned",
-        "x-fc-domain": "accounts",
-        "x-fc-pending": "accounts-webhooks",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": { "type": "object" }
-            }
-          }
-        }
-      }
-    },
-    "ai_quota.topup_failed": {
-      "post": {
-        "summary": "ai_quota.topup_failed",
-        "description": "An AI quota top-up could not be processed. Planned: not emitted yet.",
-        "x-fc-status": "planned",
-        "x-fc-domain": "accounts",
-        "x-fc-pending": "accounts-webhooks",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": { "type": "object" }
-            }
-          }
-        }
-      }
-    },
-    "mac.usage_80": {
-      "post": {
-        "summary": "mac.usage_80",
-        "description": "The account reached 80% of its monthly active contacts of the cycle.",
-        "x-fc-status": "live",
-        "x-fc-domain": "accounts",
-        "x-fc-pending": "accounts-webhooks",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": { "type": "object" },
-              "example": {
-                "data": { "used": 8000, "limit": 10000, "percentage": 80, "cycle_started_at": "2026-10-01T00:00:00Z" }
-              }
-            }
-          }
-        }
-      }
-    },
-    "mac.usage_100": {
-      "post": {
-        "summary": "mac.usage_100",
-        "description": "The account used up its monthly active contacts of the cycle; a 24-hour grace period starts.",
-        "x-fc-status": "live",
-        "x-fc-domain": "accounts",
-        "x-fc-pending": "accounts-webhooks",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": { "type": "object" },
-              "example": {
-                "data": { "used": 10000, "limit": 10000, "percentage": 100, "cycle_started_at": "2026-10-01T00:00:00Z", "grace_expires_at": "2026-10-02T12:00:00Z" }
-              }
-            }
-          }
-        }
-      }
-    },
-    "mac.expiring": {
-      "post": {
-        "summary": "mac.expiring",
-        "description": "Some monthly active contacts expire in the next 7 days.",
-        "x-fc-status": "live",
-        "x-fc-domain": "accounts",
-        "x-fc-pending": "accounts-webhooks",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": { "type": "object" },
-              "example": {
-                "data": { "contacts_expiring": 1200, "expires_at": "2026-10-08T03:00:00Z" }
-              }
-            }
-          }
-        }
-      }
-    },
-    "account.blocked": {
-      "post": {
-        "summary": "account.blocked",
-        "description": "The account was blocked by usage: the 24-hour grace period after using up the monthly active contacts ended.",
-        "x-fc-status": "live",
-        "x-fc-domain": "accounts",
-        "x-fc-pending": "accounts-webhooks",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": { "type": "object" },
-              "example": {
-                "data": { "reason": "mac_grace_expired", "grace_started_at": "2026-10-01T12:00:00Z", "grace_expired_at": "2026-10-02T12:00:00Z" }
               }
             }
           }
@@ -1741,6 +519,9 @@
         "x-fc-status": "live",
         "x-fc-domain": "communities",
         "x-fc-pending": "communities-events",
+        "x-fc-replace-while": {
+          "/requestBody/content/application~1json/schema": { "type": "object" }
+        },
         "requestBody": {
           "content": {
             "application/json": {
@@ -1817,77 +598,6 @@
         }
       }
     },
-    "daily_report.generated": {
-      "post": {
-        "summary": "daily_report.generated",
-        "description": "The daily report of the account was generated (clicks, joins and leaves).",
-        "x-fc-status": "live",
-        "x-fc-domain": "communities",
-        "x-fc-pending": "accounts-webhooks",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": { "type": "object" },
-              "example": {
-                "data": {
-                  "period": { "date": "2026-10-01", "timezone": "America/Argentina/Buenos_Aires" },
-                  "clicks": 120,
-                  "joins": 80,
-                  "leaves": 10,
-                  "conversion_rate": 0.67
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "campaign.no_groups_available": {
-      "post": {
-        "summary": "campaign.no_groups_available",
-        "description": "A campaign has no groups to send the people who come through its link to.",
-        "x-fc-status": "live",
-        "x-fc-domain": "communities",
-        "x-fc-pending": "accounts-webhooks",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": { "type": "object" },
-              "example": {
-                "data": {
-                  "campaign": { "uuid": "xK9mQz", "name": "Example campaign" },
-                  "reason": "none_selectable"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "group.full": {
-      "post": {
-        "summary": "group.full",
-        "description": "A group went from not full to full.",
-        "x-fc-status": "live",
-        "x-fc-domain": "communities",
-        "x-fc-pending": "accounts-webhooks",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": { "type": "object" },
-              "example": {
-                "data": {
-                  "group": { "uid": "120363000000000000@g.us", "name": "Example group", "type": "example_type" },
-                  "campaign": { "uuid": "xK9mQz", "name": "Example campaign" },
-                  "trigger": "participants_limit",
-                  "participants": 1024
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "group.message_received": {
       "post": {
         "summary": "group.message_received",
@@ -1895,6 +605,9 @@
         "x-fc-status": "live",
         "x-fc-domain": "communities",
         "x-fc-pending": "communities-events",
+        "x-fc-replace-while": {
+          "/requestBody/content/application~1json/schema": { "type": "object" }
+        },
         "requestBody": {
           "content": {
             "application/json": {
@@ -1959,6 +672,9 @@
         "x-fc-status": "live",
         "x-fc-domain": "communities",
         "x-fc-pending": "communities-events",
+        "x-fc-replace-while": {
+          "/requestBody/content/application~1json/schema": { "type": "object" }
+        },
         "requestBody": {
           "content": {
             "application/json": {
@@ -2018,6 +734,9 @@
         "x-fc-status": "live",
         "x-fc-domain": "communities",
         "x-fc-pending": "communities-events",
+        "x-fc-replace-while": {
+          "/requestBody/content/application~1json/schema": { "type": "object" }
+        },
         "requestBody": {
           "content": {
             "application/json": {
@@ -2067,6 +786,9 @@
         "x-fc-status": "live",
         "x-fc-domain": "communities",
         "x-fc-pending": "communities-events",
+        "x-fc-replace-while": {
+          "/requestBody/content/application~1json/schema": { "type": "object" }
+        },
         "requestBody": {
           "content": {
             "application/json": {
@@ -2116,6 +838,9 @@
         "x-fc-status": "live",
         "x-fc-domain": "accounts",
         "x-fc-pending": "accounts-number-signup",
+        "x-fc-replace-while": {
+          "/requestBody/content/application~1json/schema": { "type": "object" }
+        },
         "requestBody": {
           "content": {
             "application/json": {
@@ -2145,6 +870,9 @@
         "x-fc-status": "live",
         "x-fc-domain": "accounts",
         "x-fc-pending": "accounts-number-signup",
+        "x-fc-replace-while": {
+          "/requestBody/content/application~1json/schema": { "type": "object" }
+        },
         "requestBody": {
           "content": {
             "application/json": {
@@ -2176,6 +904,9 @@
         "x-fc-status": "live",
         "x-fc-domain": "accounts",
         "x-fc-pending": "accounts-number-signup",
+        "x-fc-replace-while": {
+          "/requestBody/content/application~1json/schema": { "type": "object" }
+        },
         "requestBody": {
           "content": {
             "application/json": {
@@ -2207,6 +938,9 @@
         "x-fc-status": "live",
         "x-fc-domain": "accounts",
         "x-fc-pending": "accounts-number-signup",
+        "x-fc-replace-while": {
+          "/requestBody/content/application~1json/schema": { "type": "object" }
+        },
         "requestBody": {
           "content": {
             "application/json": {
@@ -2238,6 +972,9 @@
         "x-fc-status": "live",
         "x-fc-domain": "accounts",
         "x-fc-pending": "accounts-number-signup",
+        "x-fc-replace-while": {
+          "/requestBody/content/application~1json/schema": { "type": "object" }
+        },
         "requestBody": {
           "content": {
             "application/json": {
@@ -2272,6 +1009,9 @@
         "x-fc-status": "live",
         "x-fc-domain": "communities",
         "x-fc-pending": "communities-events",
+        "x-fc-replace-while": {
+          "/requestBody/content/application~1json/schema": { "type": "object" }
+        },
         "requestBody": {
           "content": {
             "application/json": {
