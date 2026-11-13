@@ -73,7 +73,7 @@ describe('sending with an API key', () => {
     const api = await startSandbox();
     expect(await api.call('POST', '/api/v1/devices/3/templates')).toMatchObject({ status: 202, body: { status: 'completed' } });
     expect(await api.call('POST', '/api/v1/devices/4/templates')).toMatchObject({ status: 422, body: { error: 'number_not_connected_to_meta' } });
-    expect(await api.call('POST', '/api/v1/devices/99/templates')).toMatchObject({ status: 404, body: { message: 'Objeto no encontrado.' } });
+    expect(await api.call('POST', '/api/v1/devices/99/templates')).toMatchObject({ status: 404, body: { error: 'not_found', message: 'Objeto no encontrado.' } });
   });
 
   it('send-message and send-template answer {message} too; a template needs no window', async () => {

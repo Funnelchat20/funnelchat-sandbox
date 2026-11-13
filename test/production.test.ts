@@ -153,7 +153,7 @@ describe('the bodies of each route', () => {
     });
     const missing = await api.call('POST', '/api/v1/devices/3/templates/45/send-template', { phone: '5491100000000', contact_id: 2001, template_variables: { body: [] } });
     expect(missing.body).toMatchObject({ error: 'template_unresolved_placeholder', placeholders: ['{{1}}'], count: 1 });
-    expect(await api.call('GET', '/api/v1/contacts/2001/messages/424242')).toMatchObject({ status: 404, body: { message: 'Objeto no encontrado.' } });
+    expect(await api.call('GET', '/api/v1/contacts/2001/messages/424242')).toMatchObject({ status: 404, body: { error: 'not_found', message: 'Objeto no encontrado.' } });
     expect(await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 4, contact_id: 2001, note: true, text: 'n', options: [{ id: 'a', label: 'A' }] })).toMatchObject({
       status: 422,
       body: { error: 'A note cannot carry interactive options.' },
@@ -212,7 +212,7 @@ describe('numbers and groups', () => {
     expect(cloud.health).toMatchObject({ state: 'available' });
     expect(qr.health).toBeNull();
     expect(qr.capabilities).toMatchObject({ messages: { templates: false, polls: true }, groups: { create: true, add_participants: 'direct', join_requests: false }, statuses: ['sent', 'delivered', 'read', 'failed'] });
-    expect(await api.call('GET', '/api/v1/devices/99')).toMatchObject({ status: 404, body: { message: 'Object not found' } });
+    expect(await api.call('GET', '/api/v1/devices/99')).toMatchObject({ status: 404, body: { error: 'not_found', message: 'Object not found' } });
   });
 
   it('polls and events are not in the published spec: 404 route_not_found', async () => {

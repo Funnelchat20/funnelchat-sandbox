@@ -13,7 +13,7 @@
  */
 import type { SandboxApp } from '../app.js';
 import { body, listContext, noContent, ok, type HandlerContext, type HandlerTable } from '../http/context.js';
-import { ApiError, invalidRequest, notFound, RawApiError } from '../http/errors.js';
+import { ApiError, invalidRequest, notFound } from '../http/errors.js';
 import { idempotent } from '../http/idempotency.js';
 import { paginate } from '../http/paginate.js';
 import {
@@ -83,14 +83,14 @@ function checkLinkBody(b: Record<string, unknown>): void {
   if (Object.keys(errors).length) throw invalidRequest(errors);
 }
 
-/** `throttle`: N creations per minute per account; one more gets Laravel's own `429`, without `error`. */
+/** `throttle`: N creations per minute per account; one more gets `429 rate_limited`, with `Retry-After`. */
 function throttle(app: SandboxApp): void {
   const now = Date.now();
   const { store } = app;
   store.linkAttempts = store.linkAttempts.filter((at) => now - at < 60_000);
   if (store.linkAttempts.length >= store.numbers.linksPerMinute) {
     const retryAfter = Math.max(1, Math.ceil((60_000 - (now - (store.linkAttempts[0] as number))) / 1000));
-    throw new RawApiError(429, { message: 'Too Many Attempts.' }, { 'Retry-After': String(retryAfter) });
+    throw new ApiError(429, 'rate_limited', 'Too Many Attempts.', {}, { 'Retry-After': String(retryAfter) });
   }
   store.linkAttempts.push(now);
 }

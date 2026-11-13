@@ -35,7 +35,7 @@ describe('the groups of the account', () => {
 
     expect(await api.call('GET', '/api/v1/groups?perPage=101')).toMatchObject({
       status: 422,
-      body: { message: 'Con una API key, `perPage` admite como máximo 100 elementos por página.' },
+      body: { error: 'validation_failed', message: 'Con una API key, `perPage` admite como máximo 100 elementos por página.' },
     });
     expect((await api.call('GET', '/api/v1/groups?orderBy=participants')).body.errors.orderBy).toEqual(['`orderBy` solo acepta: created_at, id, name, updated_at.']);
     expect((await api.call('GET', '/api/v1/groups?orderByMethod=DESC')).status).toBe(422);
@@ -48,7 +48,7 @@ describe('the groups of the account', () => {
     expect(res.body).toMatchObject({ uid: UID, ownNumbers: null, admins: [{ isConnected: false }] });
     expect(await api.call('GET', '/api/v1/groups/120363999999999999@g.us')).toMatchObject({
       status: 404,
-      body: { message: 'No query results for model [App\\Modules\\Shared\\Models\\Group] 120363999999999999@g.us' },
+      body: { error: 'not_found', message: 'No query results for model [App\\Modules\\Shared\\Models\\Group] 120363999999999999@g.us' },
     });
   });
 });

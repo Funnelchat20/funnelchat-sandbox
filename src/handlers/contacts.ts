@@ -8,7 +8,7 @@
  */
 import type { SandboxApp } from '../app.js';
 import { body, listContext, ok, type HandlerContext, type HandlerTable } from '../http/context.js';
-import { fieldError, objectNotFound, RawApiError } from '../http/errors.js';
+import { ApiError, fieldError, notFound, objectNotFound } from '../http/errors.js';
 import { cursorPaginate, paginate } from '../http/paginate.js';
 import {
   contactCustomFieldResource,
@@ -23,14 +23,14 @@ import { digits, iso8601, toE164 } from '../util.js';
 
 /**
  * conversations' `abort(404)` for a record or a number outside the key's workspace (`EnsureRecordInWorkspace`,
- * `ApiKeyWorkspace::abortUnlessDeviceAllowed`): Laravel's body for an exception without a message.
+ * `ApiKeyWorkspace::abortUnlessDeviceAllowed`): the common `404 not_found` of what belongs to another account.
  */
-export const outsideWorkspace = () => new RawApiError(404, { message: '' });
+export const outsideWorkspace = () => notFound();
 
 /** A contact by id; with `scope`, one of another workspace answers `outsideWorkspace()`. */
 export function getContact(app: SandboxApp, id: unknown, scope?: WorkspaceScope): Contact {
   const contact = app.store.contacts.get(Number(id));
-  // The model binding of conversations (`bootstrap/app.php`): `{message: "Objeto no encontrado."}`.
+  // The model binding of conversations (`bootstrap/app.php`): `404 not_found`, "Objeto no encontrado.".
   if (!contact) throw objectNotFound();
   if (scope && !sees(scope, contact.workspaceId)) throw outsideWorkspace();
   return contact;
@@ -94,7 +94,7 @@ const BSUID = /^[A-Za-z]{2}\.(?:[A-Za-z0-9]+\.)*[A-Za-z0-9]{1,128}$/;
 /** `ContactService::isBsuid`: Meta's business-scoped user id, like `US.13491208655302741918`. */
 export const isBsuid = (value: string): boolean => BSUID.test(value);
 
-const invalidPhone = (message: string, error: string) => new RawApiError(422, { message, errors: { phone: [error] } });
+const invalidPhone = (message: string, error: string) => new ApiError(422, 'validation_failed', message, { errors: { phone: [error] } });
 
 /**
  * conversations v1.19.21 `FindOrCreateSendRecipientAction` (send by phone, without `contact_id`): the contact of that

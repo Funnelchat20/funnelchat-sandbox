@@ -42,8 +42,8 @@ export const routeNotFound = () => new ApiError(404, 'route_not_found', 'La ruta
 
 export const notFound = (message = 'No encontramos lo que pediste en esta cuenta.') => new ApiError(404, 'not_found', message);
 
-/** `404` of a model binding in conversations (`bootstrap/app.php`): only `message`, `errors.object_not_found`. */
-export const objectNotFound = () => new RawApiError(404, { message: 'Objeto no encontrado.' });
+/** `404` of a model binding in conversations (`bootstrap/app.php`, `errors.object_not_found`), in the common format. */
+export const objectNotFound = () => new ApiError(404, 'not_found', 'Objeto no encontrado.');
 
 /** `403` of the gate for a route no API key enables (platform-gate `RouteNotAvailable`). */
 export const routeNotAvailable = () =>
@@ -67,7 +67,7 @@ export const edgeError = (code: string) => {
 export const methodNotAllowed = (method: string, allowed: string[]) =>
   new ApiError(405, 'method_not_allowed', `El método ${method} no está disponible para esta ruta. Usa ${allowed.join(', ')}.`, {}, { Allow: allowed.join(', ') });
 
-/** `422` of a validation: Laravel's `{message, errors}`, inside the `{error, message}` body of the sandbox. */
+/** `422` of a validation: Laravel's `{message, errors}` in the common format, with `error: "validation_failed"`. */
 export const validationFailed = (errors: FieldErrors) => new ApiError(422, 'validation_failed', summarize(errors), { errors });
 
 export const fieldError = (field: string, message: string) => validationFailed({ [field]: [message] });

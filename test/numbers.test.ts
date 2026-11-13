@@ -351,13 +351,12 @@ describe('sign-up links', () => {
     expect((await api.call('GET', `/api/v1/connect-links/${link.id}`)).body.data.status).toBe('completed');
   });
 
-  it('limits the creations per minute with the 429 of Laravel', async () => {
+  it('limits the creations per minute: 429 rate_limited with Retry-After', async () => {
     const api = await startSandbox({ numbers: { linksPerMinute: 2 } });
     await createLink(api, { type: 'qr' });
     await createLink(api, { type: 'qr' });
     const third = await api.call('POST', '/api/v1/connect-links', { type: 'qr' });
-    expect(third).toMatchObject({ status: 429, body: { message: 'Too Many Attempts.' } });
-    expect(third.body.error).toBeUndefined();
+    expect(third).toMatchObject({ status: 429, body: { error: 'rate_limited', message: 'Too Many Attempts.' } });
     expect(Number(third.headers.get('retry-after'))).toBeGreaterThan(0);
   });
 

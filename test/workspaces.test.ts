@@ -39,7 +39,7 @@ describe('a key of another workspace', () => {
     const subA = await subscribe(api, receiver.url, ['device.connected']);
 
     expect((await b.as('GET', '/api/v1/devices')).body.data).toEqual([]);
-    expect(await b.as('GET', '/api/v1/devices/3')).toMatchObject({ status: 404, body: { message: 'Not Found' } });
+    expect(await b.as('GET', '/api/v1/devices/3')).toMatchObject({ status: 404, body: { error: 'not_found', message: 'No encontramos lo que pediste en esta cuenta.' } });
     expect((await b.as('DELETE', '/api/v1/devices/4')).status).toBe(404);
     expect((await b.as('GET', '/api/v1/webhooks')).body).toEqual([]);
     expect((await b.as('GET', `/api/v1/webhooks/${subA.id}`)).status).toBe(404);
@@ -98,7 +98,7 @@ describe('a key of another workspace', () => {
 });
 
 describe('contacts, conversations and messages of another workspace', () => {
-  it('a key of B neither lists nor reaches the contacts and messages of the default workspace: conversations answers 404 {message: ""}', async () => {
+  it('a key of B neither lists nor reaches the contacts and messages of the default workspace: conversations answers 404 not_found', async () => {
     const api = await startSandbox();
     const b = await secondWorkspace(api);
     await api.call('POST', '/_sandbox/inbound/message', { contact_id: 2001, device_id: 4, text: 'Hola' });
@@ -106,10 +106,10 @@ describe('contacts, conversations and messages of another workspace', () => {
     expect((await b.as('GET', '/api/v1/contacts')).body.data).toEqual([]);
     expect((await b.as('GET', '/api/v1/conversations')).body.data).toEqual([]);
     expect((await b.as('GET', '/api/v1/conversations/count/all')).body).toEqual({ count: 0 });
-    expect(await b.as('GET', '/api/v1/contacts/2001')).toMatchObject({ status: 404, body: { message: '' } });
-    expect(await b.as('GET', '/api/v1/contacts/2001/messages/9001')).toMatchObject({ status: 404, body: { message: '' } });
-    expect(await b.as('GET', '/api/v1/contacts/2001/messages')).toMatchObject({ status: 404, body: { message: 'Contacto no encontrado.' } });
-    expect(await b.as('POST', '/api/v1/contacts/2001/message', { device_id: 4, contact_id: 2001, text: 'x' })).toMatchObject({ status: 404, body: { message: '' } });
+    expect(await b.as('GET', '/api/v1/contacts/2001')).toMatchObject({ status: 404, body: { error: 'not_found', message: 'No encontramos lo que pediste en esta cuenta.' } });
+    expect(await b.as('GET', '/api/v1/contacts/2001/messages/9001')).toMatchObject({ status: 404, body: { error: 'not_found', message: 'No encontramos lo que pediste en esta cuenta.' } });
+    expect(await b.as('GET', '/api/v1/contacts/2001/messages')).toMatchObject({ status: 404, body: { error: 'not_found', message: 'Contacto no encontrado.' } });
+    expect(await b.as('POST', '/api/v1/contacts/2001/message', { device_id: 4, contact_id: 2001, text: 'x' })).toMatchObject({ status: 404, body: { error: 'not_found', message: 'No encontramos lo que pediste en esta cuenta.' } });
     expect(await b.as('POST', '/api/v1/message/send-message', { device_id: 4, contact_id: 2001, text: 'x' })).toMatchObject({
       status: 404,
       body: { status: 'error', error: 'Contacto no encontrado.' },
@@ -135,7 +135,7 @@ describe('contacts, conversations and messages of another workspace', () => {
     const contact = await b.as('POST', '/api/v1/contacts', { phone: '5491155550000' });
     expect(await b.as('POST', `/api/v1/contacts/${contact.body.id}/message`, { device_id: 4, contact_id: contact.body.id, text: 'x' })).toMatchObject({
       status: 404,
-      body: { message: '' },
+      body: { error: 'not_found', message: 'No encontramos lo que pediste en esta cuenta.' },
     });
 
     const receiver = await startReceiver();

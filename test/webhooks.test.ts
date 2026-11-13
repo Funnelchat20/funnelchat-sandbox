@@ -39,8 +39,7 @@ describe('subscriptions', () => {
     // The secret is rotated from the panel: the published spec does not carry the route.
     expect((await api.call('POST', `/api/v1/webhooks/${sub.id}/rotate-secret`)).body.error).toBe('route_not_found');
     expect((await api.call('DELETE', `/api/v1/webhooks/${sub.id}`)).status).toBe(204);
-    // accounts answers `{message}` without `error`.
-    expect((await api.call('GET', `/api/v1/webhooks/${sub.id}`)).body).toEqual({ message: 'Suscripción de webhook no encontrada.' });
+    expect((await api.call('GET', `/api/v1/webhooks/${sub.id}`)).body).toEqual({ error: 'not_found', message: 'Suscripción de webhook no encontrada.' });
   });
 
   it('a paused subscription receives nothing', async () => {
