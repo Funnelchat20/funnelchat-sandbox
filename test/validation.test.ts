@@ -45,7 +45,7 @@ describe('routes', () => {
   it('a path parameter that does not fit is 404, like a model binding', async () => {
     const api = await startSandbox();
     expect((await api.call('GET', '/api/v1/contacts/abc')).status).toBe(404);
-    expect((await api.call('GET', '/api/v1/contacts/999999')).body).toEqual({ message: 'Objeto no encontrado.' });
+    expect((await api.call('GET', '/api/v1/contacts/999999')).body).toEqual({ error: 'not_found', message: 'Objeto no encontrado.' });
     expect((await api.call('GET', '/api/v1/webhooks/not-a-uuid')).status).toBe(404);
   });
 

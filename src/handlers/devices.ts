@@ -12,7 +12,7 @@
  * workspace.
  */
 import { body, listContext, ok, type HandlerContext, type HandlerTable } from '../http/context.js';
-import { ApiError, RawApiError } from '../http/errors.js';
+import { ApiError, notFound } from '../http/errors.js';
 import { idempotent } from '../http/idempotency.js';
 import { paginate } from '../http/paginate.js';
 import { checkPendingNumber, checkQuota, checkSameNumber, createDevice, deleteDevice } from '../numbers/numbers.js';
@@ -29,10 +29,10 @@ export const QR_EXPIRES_IN = 5;
 
 export function deviceOf(ctx: HandlerContext, id: unknown): Device {
   const device = ctx.app.store.devices.get(Number(id));
-  // accounts `bootstrap/app.php`: the 404 of a model, in English and without `error`.
-  if (!device) throw new RawApiError(404, { message: 'Object not found' });
-  // A number of the account in another workspace: `DevicePolicy` answers `denyAsNotFound()`, Laravel's 404.
-  if (!sees(ctx.workspace, device.workspaceId)) throw new RawApiError(404, { message: 'Not Found' });
+  // accounts `bootstrap/app.php`: the `404 not_found` of a model, its message in English.
+  if (!device) throw new ApiError(404, 'not_found', 'Object not found');
+  // A number of the account in another workspace: `DevicePolicy` answers `denyAsNotFound()`, the common `404 not_found`.
+  if (!sees(ctx.workspace, device.workspaceId)) throw notFound();
   return device;
 }
 

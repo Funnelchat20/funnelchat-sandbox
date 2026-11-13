@@ -350,7 +350,7 @@ export const messageHandlers: HandlerTable = {
 
   'GET /api/v1/contacts/{contactId}/messages': (ctx) => {
     const contact = ctx.app.store.contacts.get(Number(ctx.path.contactId));
-    if (!contact || !sees(ctx.workspace, contact.workspaceId)) throw new RawApiError(404, { message: 'Contacto no encontrado.' });
+    if (!contact || !sees(ctx.workspace, contact.workspaceId)) throw new ApiError(404, 'not_found', 'Contacto no encontrado.');
     const since = ctx.query.updated_since ? new Date(String(ctx.query.updated_since)) : null;
     const list = ctx.app.store
       .contactMessages(contact.id)

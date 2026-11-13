@@ -116,7 +116,7 @@ const groupsOnWhatsApp = (app: SandboxApp, device: Device): Group[] =>
 
 const isAdminOf = (device: Device, group: Group): boolean => group.participants.some((p) => p.admin && p.phone === device.number);
 
-/** The fixed Spanish texts of communities `BoundKeyListings` for a key's list: `{message, errors}`, without `error`. */
+/** The fixed Spanish texts of communities `BoundKeyListings` for a key's list: `422 validation_failed` with `errors`. */
 function checkListQuery(q: Record<string, unknown>): void {
   const errors: Record<string, string[]> = {};
   if (q.perPage !== undefined) {
@@ -129,7 +129,7 @@ function checkListQuery(q: Record<string, unknown>): void {
   }
   if (q.orderByMethod !== undefined && !['asc', 'desc'].includes(String(q.orderByMethod))) errors.orderByMethod = ['`orderByMethod` solo acepta: asc, desc.'];
   const first = Object.values(errors)[0];
-  if (first) throw new RawApiError(422, { message: first[0], errors });
+  if (first) throw new ApiError(422, 'validation_failed', first[0] as string, { errors });
 }
 
 const groupError = (status: number, code: string, message: string, extra: Record<string, unknown> = {}, headers: Record<string, string> = {}) =>
@@ -237,7 +237,7 @@ function checkSendBody(b: Record<string, unknown>): void {
   if (type !== 'image' && type !== 'video') prohibited('caption');
   else if (present('caption') && String(b.caption).length > 1024) errors.caption = ['El campo caption no debe tener más de 1024 caracteres.'];
   if (type !== 'document') prohibited('file_name');
-  if (Object.keys(errors).length) throw new RawApiError(422, { message: summarize(errors), errors });
+  if (Object.keys(errors).length) throw new ApiError(422, 'validation_failed', summarize(errors), { errors });
 }
 
 function summarize(errors: Record<string, string[]>): string {
@@ -360,10 +360,10 @@ export const groupHandlers: HandlerTable = {
     return ok({ ...page, meta: { ...(page.meta as Record<string, unknown>), cloud_api_groups_enabled: false } });
   },
 
-  // By `uid`. One that is not of the key's workspace answers the 404 of Laravel's model binding.
+  // By `uid`. One that is not of the key's workspace answers the `404 not_found` of Laravel's model binding.
   'GET /api/v1/groups/{group}': (ctx) => {
     const group = groupOf(ctx.app, ctx.path.group, ctx.workspace);
-    if (!group) throw new RawApiError(404, { message: `No query results for model [App\\Modules\\Shared\\Models\\Group] ${String(ctx.path.group)}` });
+    if (!group) throw new ApiError(404, 'not_found', `No query results for model [App\\Modules\\Shared\\Models\\Group] ${String(ctx.path.group)}`);
     return ok(groupResource(ctx.app, group, ctx.workspace, 'show'));
   },
 

@@ -11,7 +11,7 @@
  */
 import type { SandboxApp } from '../app.js';
 import { body, listContext, noContent, ok, type HandlerContext, type HandlerTable } from '../http/context.js';
-import { RawApiError, validationFailed } from '../http/errors.js';
+import { ApiError, validationFailed } from '../http/errors.js';
 import { paginate } from '../http/paginate.js';
 import { deliveryResource, subscriptionResource, subscriptionWithSecret } from '../state/resources.js';
 import type { Subscription } from '../state/store.js';
@@ -24,8 +24,8 @@ const SUBSCRIPTION_LIMIT = 50;
 
 function getSubscription(ctx: HandlerContext, id: unknown): Subscription {
   const subscription = ctx.app.store.subscriptions.get(String(id));
-  // One of another workspace is out of the query (`inActiveWorkspace`): the same 404, `{message}` without `error`.
-  if (!subscription || !sees(ctx.workspace, subscription.workspaceId)) throw new RawApiError(404, { message: 'Suscripción de webhook no encontrada.' });
+  // One of another workspace is out of the query (`inActiveWorkspace`): the same `404 not_found`.
+  if (!subscription || !sees(ctx.workspace, subscription.workspaceId)) throw new ApiError(404, 'not_found', 'Suscripción de webhook no encontrada.');
   return subscription;
 }
 
@@ -96,9 +96,9 @@ export const webhookHandlers: HandlerTable = {
   'POST /api/v1/webhooks': (ctx) => {
     const b = body(ctx);
     checkSubscriptionBody(ctx.app, b);
-    // accounts answers the cap with Laravel's own body, `{message}` without `error`.
+    // The cap, in the common format: `422 validation_failed` with the message, and no field to point at.
     if (ofWorkspace(ctx).length >= SUBSCRIPTION_LIMIT) {
-      throw new RawApiError(422, { message: `Alcanzaste el límite de ${SUBSCRIPTION_LIMIT} suscripciones de webhook.` });
+      throw new ApiError(422, 'validation_failed', `Alcanzaste el límite de ${SUBSCRIPTION_LIMIT} suscripciones de webhook.`);
     }
     const now = new Date();
     const subscription: Subscription = {
@@ -163,7 +163,7 @@ export const webhookHandlers: HandlerTable = {
   'POST /api/v1/webhooks/{id}/test': async (ctx: HandlerContext) => {
     const subscription = getSubscription(ctx, ctx.path.id);
     const reason = untestableReason(subscription);
-    if (reason) throw new RawApiError(422, { message: reason });
+    if (reason) throw new ApiError(422, 'validation_failed', reason);
     return ok(await ctx.app.webhooks.test(subscription));
   },
 

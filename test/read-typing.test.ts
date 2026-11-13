@@ -27,7 +27,7 @@ describe('mark a message as read', () => {
       status: 422,
       body: { error: 'message_not_inbound', message: expect.stringContaining('No se marcó como leído') },
     });
-    expect(await api.call('POST', '/api/v1/contacts/2001/messages/99999/read')).toMatchObject({ status: 404, body: { message: 'Objeto no encontrado.' } });
+    expect(await api.call('POST', '/api/v1/contacts/2001/messages/99999/read')).toMatchObject({ status: 404, body: { error: 'not_found', message: 'Objeto no encontrado.' } });
   });
 });
 
