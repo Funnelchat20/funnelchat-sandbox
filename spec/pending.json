@@ -14,10 +14,10 @@
       "accounts-webhooks": "accounts v1.4.24 (in production on 22-10-2026): the webhook subscription routes open to API keys, their bodies and answers, the Notifications (webhooks) permissions and the events of each area. Read again in accounts v1.5.97 (in production on 04-11-2026): the same routes, bodies and answers; since then a subscription belongs to the workspace of the key that creates it, and the cap of 50 counts per workspace. `PUT webhooks/{id}` answers the subscription, which the spec the portal publishes (portal v0.6.13) types as `{type: object}`.",
       "conversations-send": "conversations v1.19.21 (in production on 05-11-2026; first read in v1.19.7): every single send of a key (text, send-message, template, form) answers `200 {message}` with the message it registered, never `null`. The spec the portal publishes (portal v0.6.13) documents that `message` as nullable.",
       "conversations-status": "conversations v1.19.21 (in production on 05-11-2026; first read in v1.19.7): the `data` of message.status_changed. The spec the portal publishes (portal v0.6.13) shows it only by an example (`schema: {type: object}`): `status` as any string and `client_reference` never null.",
-      "conversations-forms": "conversations v1.18.10 (in production on 22-10-2026): WhatsApp forms, their routes and answers, and the `data` of whatsapp_form.completed. Read again in conversations v1.19.7 (in production on 04-11-2026): the same `data`; the send route also checks that the contact is of the key's workspace. The spec the portal publishes (portal v0.6.13) shows whatsapp_form.completed only by an example: every answer a string and no field null.",
-      "communities-events": "communities v2.34.52 (in production on 22-10-2026): the `data` of the group events, relayed by the event catalog of accounts v1.4.24. Read again in the releases in production on 04-11-2026 (accounts v1.5.97, conversations v1.19.7, communities v2.35.5): group_participant.joined and .left as communities v2.35.5 sends them (`campaign` null for a group without a campaign), and group_action.completed as accounts v1.5.97 relays it. communities v2.35.28 (in production on 11-11-2026): group.message_received and group.reaction_added carry `message.uid`, although the example of the spec the portal publishes (portal v0.6.13) says `message.id`.",
+      "conversations-forms": "conversations v1.18.10 (in production on 22-10-2026): WhatsApp forms, their routes and answers, and the `data` of whatsapp_form.completed. Read again in conversations v1.19.7 (in production on 04-11-2026): the same `data`; the send route also checks that the contact is of the key's workspace. Checked again on 13-11-2026: `label` is always a string (the question's name when it has no label) and `value` may be null. The spec the portal publishes (portal v0.6.14) shows whatsapp_form.completed only by an example (`schema: {type: object}`).",
+      "communities-events": "communities v2.34.52 (in production on 22-10-2026): the `data` of the group events, relayed by the event catalog of accounts v1.4.24. Read again in the releases in production on 04-11-2026 (accounts v1.5.97, conversations v1.19.7, communities v2.35.5): group_participant.joined and .left as communities v2.35.5 sends them (`campaign` null for a group without a campaign), and group_action.completed as accounts v1.5.97 relays it. communities v2.35.28 (in production on 11-11-2026): group.message_received and group.reaction_added carry `message.uid`, and group.message_received every key of the message. The spec the portal publishes shows them so since portal v0.6.14, but only by an example (`schema: {type: object}`).",
       "accounts-number-signup": "accounts v1.5.97 (in production on 04-11-2026; first in v1.4.38): creating numbers and connect links, the `connection` and `external_reference` of a number, and the connect page (the QR every 5 seconds, 10 minutes to scan it from the page; the official sign-up by link answers `503 meta_connect_disabled` in production). The seven device.* events, all active: the same `device` block in all of them, `connect_link_id` and `reason`. The spec the portal publishes (portal v0.6.13) shows them only by an example.",
-      "conversations-received": "conversations v1.19.21 (in production on 05-11-2026; first read in v1.19.7): the `data` of message.received: `text` and `media` null when absent, phones as `+` and digits or null, `device_id` last. The spec the portal publishes (portal v0.6.13) types it as its example shows: `text` and the phones never null, `media` unknown.",
+      "conversations-received": "conversations v1.19.21 (in production on 05-11-2026; first read in v1.19.7): the `data` of message.received: `text` and `media` null when absent, phones as `+` and digits or null, `device_id` last. `message.type` takes the values of the spec's enum, and new ones may appear (checked again on 13-11-2026): any string is accepted. The spec the portal publishes (portal v0.6.13) types it as its example shows: `text` and the phones never null, `media` unknown.",
       "conversations-templates": "conversations v1.19.21 (in production on 05-11-2026; first read in v1.19.7): `GET templates` answers a page of templates, with the quality counts. The spec the portal publishes (portal v0.6.13) types its items as `{type: object}`.",
       "accounts-qr": "accounts v1.5.97 (in production on 04-11-2026): `GET devices/{device}/qr` answers `{data: {connected, qr_code, expires_in}}`. The spec the portal publishes (portal v0.6.13) infers a union of that body, the inner object in three forms and a bare string.",
       "communities-group-action": "communities v2.35.5 (in production on 04-11-2026): `GET groups/actions/{action}` answers `{data: <one action>}`. The spec the portal publishes (portal v0.6.13) types `data` as an array."
@@ -1328,33 +1328,39 @@
                         "properties": {
                           "id": { "type": "integer", "description": "The id of the message in the history of the contact." },
                           "type": {
-                            "type": "string",
-                            "enum": [
-                              "text",
-                              "image",
-                              "video",
-                              "document",
-                              "sticker",
-                              "contact",
-                              "audio",
-                              "note",
-                              "action",
-                              "invalid",
-                              "interactive",
-                              "location",
-                              "voice_call",
-                              "video_call",
-                              "event",
-                              "button",
-                              "template",
-                              "notification",
-                              "option_list",
-                              "template_button_reply",
-                              "poll",
-                              "whatsapp_form",
-                              "call_permission_request",
-                              "call_permission_reply",
-                              "request_contact_info"
+                            "description": "The known types; new ones may appear, so any other string is accepted too.",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "text",
+                                  "image",
+                                  "video",
+                                  "document",
+                                  "sticker",
+                                  "contact",
+                                  "audio",
+                                  "note",
+                                  "action",
+                                  "invalid",
+                                  "interactive",
+                                  "location",
+                                  "voice_call",
+                                  "video_call",
+                                  "event",
+                                  "button",
+                                  "template",
+                                  "notification",
+                                  "option_list",
+                                  "template_button_reply",
+                                  "poll",
+                                  "whatsapp_form",
+                                  "call_permission_request",
+                                  "call_permission_reply",
+                                  "request_contact_info"
+                                ]
+                              },
+                              { "type": "string" }
                             ]
                           },
                           "text": { "type": ["string", "null"], "description": "`null` when the message has no text (a file without caption, say)." },
@@ -1504,7 +1510,7 @@
                           "type": "object",
                           "properties": {
                             "key": { "type": "string" },
-                            "label": { "type": ["string", "null"] },
+                            "label": { "type": "string", "description": "The question's label, or its name when it has none." },
                             "value": {
                               "anyOf": [
                                 { "type": "boolean" },

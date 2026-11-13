@@ -33718,6 +33718,24 @@
           ]
          }
         }
+       },
+       "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "device.connected",
+        "version": 1,
+        "occurred_at": "2026-10-05T03:00:00Z",
+        "data": {
+         "device": {
+          "id": 4521,
+          "name": "Ventas",
+          "number": "5491100000000",
+          "connection": "qr",
+          "external_reference": "cliente-42"
+         },
+         "connected_at": "2026-10-05T03:00:00+00:00",
+         "connect_link_id": 812,
+         "workspace_id": 37
+        }
        }
       }
      }
@@ -33786,6 +33804,25 @@
            "reason"
           ]
          }
+        }
+       },
+       "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "device.disconnected",
+        "version": 1,
+        "occurred_at": "2026-10-05T03:00:00Z",
+        "data": {
+         "device": {
+          "id": 4521,
+          "name": "Ventas",
+          "number": "5491100000000",
+          "connection": "qr",
+          "external_reference": "cliente-42"
+         },
+         "disconnected_at": "2026-10-05T03:00:00+00:00",
+         "reason": "qr_logged_out",
+         "connect_link_id": 812,
+         "workspace_id": 37
         }
        }
       }
@@ -34634,6 +34671,24 @@
           ]
          }
         }
+       },
+       "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "device.deleted",
+        "version": 1,
+        "occurred_at": "2026-10-05T03:00:00Z",
+        "data": {
+         "device": {
+          "id": 4521,
+          "name": "Ventas",
+          "number": "5491100000000",
+          "connection": "qr",
+          "external_reference": "cliente-42"
+         },
+         "deleted_at": "2026-10-05T03:00:00+00:00",
+         "connect_link_id": 812,
+         "workspace_id": 37
+        }
        }
       }
      }
@@ -34711,6 +34766,26 @@
           ]
          }
         }
+       },
+       "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "device.health_changed",
+        "version": 1,
+        "occurred_at": "2026-10-05T03:00:00Z",
+        "data": {
+         "device": {
+          "id": 4522,
+          "name": "Soporte",
+          "number": "5491100000000",
+          "connection": "dedicated",
+          "external_reference": "cliente-42"
+         },
+         "previous_state": "available",
+         "state": "limited",
+         "changed_at": "2026-10-05T03:00:00+00:00",
+         "connect_link_id": null,
+         "workspace_id": 37
+        }
        }
       }
      }
@@ -34776,6 +34851,26 @@
           ]
          }
         }
+       },
+       "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "device.quality_changed",
+        "version": 1,
+        "occurred_at": "2026-10-05T03:00:00Z",
+        "data": {
+         "device": {
+          "id": 4522,
+          "name": "Soporte",
+          "number": "5491100000000",
+          "connection": "dedicated",
+          "external_reference": "cliente-42"
+         },
+         "previous": "GREEN",
+         "current": "YELLOW",
+         "changed_at": "2026-10-05T03:00:00+00:00",
+         "connect_link_id": null,
+         "workspace_id": 37
+        }
        }
       }
      }
@@ -34840,6 +34935,26 @@
            "connect_link_id"
           ]
          }
+        }
+       },
+       "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "device.messaging_limit_changed",
+        "version": 1,
+        "occurred_at": "2026-10-05T03:00:00Z",
+        "data": {
+         "device": {
+          "id": 4522,
+          "name": "Soporte",
+          "number": "5491100000000",
+          "connection": "dedicated",
+          "external_reference": "cliente-42"
+         },
+         "previous": "TIER_1K",
+         "current": "TIER_10K",
+         "changed_at": "2026-10-05T03:00:00+00:00",
+         "connect_link_id": null,
+         "workspace_id": 37
         }
        }
       }
@@ -34930,6 +35045,29 @@
            "connect_link_id"
           ]
          }
+        }
+       },
+       "example": {
+        "id": "evt_0f8e4b526c1d4c7a9a3e2b5d",
+        "type": "device.display_name_reviewed",
+        "version": 1,
+        "occurred_at": "2026-10-05T03:00:00Z",
+        "data": {
+         "device": {
+          "id": 4522,
+          "name": "Soporte",
+          "number": "5491100000000",
+          "connection": "dedicated",
+          "external_reference": "cliente-42"
+         },
+         "decision": "approved",
+         "previous_status": "PENDING_REVIEW",
+         "status": "APPROVED",
+         "verified_name": "Soporte Lucky Shrub",
+         "rejection_reason": null,
+         "reviewed_at": "2026-10-05T03:00:00+00:00",
+         "connect_link_id": null,
+         "workspace_id": 37
         }
        }
       }
@@ -35457,33 +35595,41 @@
               "description": "The id of the message in the history of the contact."
              },
              "type": {
-              "type": "string",
-              "enum": [
-               "text",
-               "image",
-               "video",
-               "document",
-               "sticker",
-               "contact",
-               "audio",
-               "note",
-               "action",
-               "invalid",
-               "interactive",
-               "location",
-               "voice_call",
-               "video_call",
-               "event",
-               "button",
-               "template",
-               "notification",
-               "option_list",
-               "template_button_reply",
-               "poll",
-               "whatsapp_form",
-               "call_permission_request",
-               "call_permission_reply",
-               "request_contact_info"
+              "description": "The known types; new ones may appear, so any other string is accepted too.",
+              "anyOf": [
+               {
+                "type": "string",
+                "enum": [
+                 "text",
+                 "image",
+                 "video",
+                 "document",
+                 "sticker",
+                 "contact",
+                 "audio",
+                 "note",
+                 "action",
+                 "invalid",
+                 "interactive",
+                 "location",
+                 "voice_call",
+                 "video_call",
+                 "event",
+                 "button",
+                 "template",
+                 "notification",
+                 "option_list",
+                 "template_button_reply",
+                 "poll",
+                 "whatsapp_form",
+                 "call_permission_request",
+                 "call_permission_reply",
+                 "request_contact_info"
+                ]
+               },
+               {
+                "type": "string"
+               }
               ]
              },
              "text": {
@@ -35743,6 +35889,27 @@
           ]
          }
         }
+       },
+       "example": {
+        "id": "evt_000000000000000000000014",
+        "type": "message.status_changed",
+        "version": 1,
+        "occurred_at": "2026-10-01T12:00:00Z",
+        "data": {
+         "message_id": 1001,
+         "contact_id": 2001,
+         "device_id": 4521,
+         "status": "failed",
+         "previous_status": "sent",
+         "error": {
+          "code": 131047,
+          "title": "Re-engagement message",
+          "reason": null
+         },
+         "occurred_at": "2026-10-01T12:00:00Z",
+         "client_reference": "pedido-1001",
+         "workspace_id": 37
+        }
        }
       }
      }
@@ -35812,10 +35979,8 @@
                "type": "string"
               },
               "label": {
-               "type": [
-                "string",
-                "null"
-               ]
+               "type": "string",
+               "description": "The question's label, or its name when it has none."
               },
               "value": {
                "anyOf": [
@@ -46534,8 +46699,8 @@
   "generated_by": "scripts/generate.mjs",
   "note": "GENERATED: do not edit it. The portal's snapshot plus the pending layers.",
   "inputs": {
-   "spec/funnelchat.json": "a7b480743848dabccbea2a1f2314263ca070316eeed97aab4a6f09f171c80e5a",
-   "spec/pending.json": "39662e350155b12b96099a495993f3d243e9098e575a65c914432f224b1c002e",
+   "spec/funnelchat.json": "37c54a5aad4cc467e088af50294012484692ef668714dcdd748babc7314b587f",
+   "spec/pending.json": "dd7b8cf6e5be45ddf1c0c00a9f4480cceec11b364adec083bbf989fa11944d9d",
    "spec/pending-sandbox.json": "32bcbfef902fbabd57e1626f4d97e964b89f3c561c7b0f0e21531c8576019aaf"
   },
   "snapshot_commit": null,

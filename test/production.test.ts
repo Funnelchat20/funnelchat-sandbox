@@ -230,6 +230,6 @@ describe('numbers and groups', () => {
     await subscribe(api, receiver.url, ['group.message_received']);
     await api.call('POST', '/_sandbox/events/group.message_received', { data: { message: { text: '¿A qué hora?' } } });
     const [d] = await receiver.waitFor(1);
-    expect(d!.json.data.message).toEqual({ uid: 'msg-ejemplo-01', type: 'text', text: '¿A qué hora?', caption: null, media_url: null, mime_type: null, file_name: null, quoted_uid: null });
+    expect(d!.json.data.message).toEqual({ uid: expect.any(String), type: 'text', text: '¿A qué hora?', caption: null, media_url: null, mime_type: null, file_name: null, quoted_uid: null });
   });
 });

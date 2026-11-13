@@ -1,10 +1,16 @@
 /**
- * Subscriptions with the routes the SDKs use (`/api/v1/webhooks`), the test delivery, the history and the retries.
+ * Subscriptions with the routes the SDKs use (`/api/v1/webhooks`), the catalog, the events as the spec types them, the
+ * test delivery, the history and the retries.
  */
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { describe, expect, it, onTestFinished } from 'vitest';
+import { spec } from '../src/openapi/spec.js';
+import { conforms } from '../src/openapi/validate.js';
 import { startReceiver, startSandbox, subscribe, until } from './helpers.js';
+
+/** The `data` schema of an event in the spec the sandbox serves. */
+const eventData = (type: string): any => (spec.webhooks[type]?.post?.requestBody?.content?.['application/json']?.schema as any).properties.data;
 
 describe('subscriptions', () => {
   it('create shows the secret once; reads never do', async () => {
@@ -68,33 +74,50 @@ describe('subscriptions', () => {
     expect(receiver.received.map((d) => d.json.data.campaign.uuid)).toEqual(['campana-a']);
   });
 
-  it('the catalog has the shape of accounts', async () => {
+  it('the catalog is the spec\'s: the events enum of POST /webhooks, then webhook.test, each as the spec documents it', async () => {
     const api = await startSandbox();
     const res = await api.call('GET', '/api/v1/webhooks/events');
-    expect(res.body.meta).toMatchObject({ envelope_version: 'v1', signature_header: 'X-Funnelchat-Signature' });
+    const subscribable = (spec.components as any).schemas.StoreWebhookSubscriptionRequest.properties.events.items.enum;
     const types = res.body.data.map((e: { type: string }) => e.type);
-    expect(types).toEqual(expect.arrayContaining(['message.received', 'message.status_changed', 'contact.created', 'device.connected', 'group_participant.joined', 'webhook.test']));
-    const status = res.body.data.find((e: { type: string }) => e.type === 'message.status_changed');
-    expect(status).toMatchObject({ area: 'conversations', status: 'active', subscribable: true });
-    // accounts v1.5.97: 59 types, 54 active, in the order of the catalog (accounts, conversations, communities), with
-    // the seven device.* first.
-    expect(res.body.meta).toMatchObject({ total: 59, active: 54 });
-    expect(types.slice(0, 7)).toEqual([
-      'device.disconnected',
-      'device.connected',
-      'device.deleted',
-      'device.health_changed',
-      'device.quality_changed',
-      'device.messaging_limit_changed',
-      'device.display_name_reviewed',
-    ]);
-    // Every example says its workspace (Q35): accounts' fictitious 37.
-    for (const entry of res.body.data) if (entry.example) expect(entry.example.data.workspace_id).toBe(37);
-    expect(Object.keys(res.body.data[0])).toEqual(['type', 'area', 'status', 'is_critical', 'label', 'description', 'subscribable', 'example']);
-    expect(types.slice(0, 2)).toEqual(['device.disconnected', 'device.connected']);
-    expect(types).toEqual(expect.arrayContaining(['whatsapp_form.completed', 'group_action.completed', 'group.message_received', 'group.reaction_added', 'group_join_request.created']));
-    expect(res.body.data.find((e: { type: string }) => e.type === 'billing.plan_blocked')).toMatchObject({ status: 'planned', example: null });
-    expect(res.body.data.find((e: { type: string }) => e.type === 'webhook.test')).toMatchObject({ subscribable: false });
+    expect(types).toEqual([...subscribable, 'webhook.test']);
+    expect(res.body.meta).toMatchObject({ total: 56, active: 56, envelope_version: 'v1', signature_header: 'X-Funnelchat-Signature' });
+    expect(types).toEqual(expect.arrayContaining(['contact.updated', 'message.reaction_failed']));
+    for (const gone of ['ai_quota.low_balance', 'ai_quota.topup_succeeded', 'ai_quota.topup_failed', 'billing.plan_blocked', 'subscription.expiring']) {
+      expect(types).not.toContain(gone);
+    }
+    expect(Object.keys(res.body.data[0])).toEqual(['type', 'area', 'status', 'description', 'subscribable', 'example']);
+    expect(res.body.data.find((e: { type: string }) => e.type === 'contact.updated')).toMatchObject({ area: 'conversations', status: 'active', subscribable: true });
+    expect(res.body.data.find((e: { type: string }) => e.type === 'webhook.test')).toMatchObject({ area: 'accounts', subscribable: false });
+    // Every example is its type's envelope and says its workspace: the API's fictitious 37.
+    for (const entry of res.body.data) expect(entry.example, entry.type).toMatchObject({ type: entry.type, data: { workspace_id: 37 } });
+  });
+
+  it('subscribes to contact.updated and message.reaction_failed, and not to types the spec does not publish', async () => {
+    const api = await startSandbox();
+    const created = await api.call('POST', '/api/v1/webhooks', { url: 'https://example.com/h', events: ['contact.updated', 'message.reaction_failed'] });
+    expect(created.status).toBe(201);
+    for (const type of ['ai_quota.low_balance', 'billing.plan_blocked', 'subscription.expiring']) {
+      expect((await api.call('POST', '/api/v1/webhooks', { url: 'https://example.com/h', events: [type] })).status, type).toBe(422);
+      expect((await api.call('POST', `/_sandbox/events/${type}`)).status, type).toBe(404);
+    }
+  });
+});
+
+describe('the events, as the spec the sandbox serves types them', () => {
+  it('message.received with a type the spec does not list goes out, and the spec accepts it', async () => {
+    const api = await startSandbox();
+    const receiver = await startReceiver();
+    await subscribe(api, receiver.url, ['message.received']);
+    await api.call('POST', '/_sandbox/inbound/message', { contact_id: 2001, device_id: 3, type: 'a_new_type', text: 'Hola' });
+    const [d] = await receiver.waitFor(1);
+    expect(d!.json.data.message.type).toBe('a_new_type');
+    expect(conforms(eventData('message.received'), d!.json.data)).toBe(true);
+  });
+
+  it('whatsapp_form.completed: `label` is always a string, `value` may be null', () => {
+    const answer = eventData('whatsapp_form.completed').properties.answers.items;
+    expect(conforms(answer, { key: 'comentarios', label: 'comentarios', value: null })).toBe(true);
+    expect(conforms(answer, { key: 'comentarios', label: null, value: 'Hola' })).toBe(false);
   });
 });
 

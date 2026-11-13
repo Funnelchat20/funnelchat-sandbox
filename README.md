@@ -2,7 +2,7 @@
 
 A local server that imitates the Funnelchat public API and sends signed webhooks, with no real effects: nothing goes out to WhatsApp, nothing is charged, everything stays in memory. Build and test your integration without an account.
 
-It imitates production on 06-11: accounts v1.5.97, conversations v1.19.37, communities v2.35.7, platform-gate v0.9.1 and the API edge v0.3.0.
+It comes from the spec the developer portal publishes, v0.6.14: the same operations and events (see [Pending of the spec](#pending-of-the-spec)). What it simulates with state follows production as it was checked on 06-11.
 
 ## Try it in 3 minutes, without an account
 
@@ -129,7 +129,7 @@ npx funnelchat-sandbox
 ```
 
 ```
-funnelchat-sandbox 0.4.0 at http://127.0.0.1:4010
+funnelchat-sandbox 0.5.0 at http://127.0.0.1:4010
   API:    http://127.0.0.1:4010/api/v1/...   (Authorization: Bearer 1|fc_live_sandbox, or any well-formed key)
   panel:  http://127.0.0.1:4010/_sandbox
   example numbers: 3 (official, with the 24-hour window) and 4 (QR, no window); contact 2001; template 45
@@ -149,12 +149,12 @@ npx funnelchat-sandbox
 
 ```bash
 docker build -t funnelchat-sandbox .
-docker run --rm -p 4010:4010 funnelchat-sandbox
+docker run --rm -p 127.0.0.1:4010:4010 funnelchat-sandbox
 # with your configuration:
-docker run --rm -p 4010:4010 -v "$PWD/funnelchat-sandbox.config.json:/app/funnelchat-sandbox.config.json:ro" funnelchat-sandbox
+docker run --rm -p 127.0.0.1:4010:4010 -v "$PWD/funnelchat-sandbox.config.json:/app/funnelchat-sandbox.config.json:ro" funnelchat-sandbox
 ```
 
-Inside the container it listens on `0.0.0.0`. If your webhook receiver runs on your machine, from the container it is `http://host.docker.internal:<port>` (on Linux, add `--add-host=host.docker.internal:host-gateway`).
+Inside the container it listens on `0.0.0.0`; `127.0.0.1:` publishes the port only on your machine (with `-p 4010:4010` the whole network reaches the sandbox, which takes no key on `/_sandbox`). If your webhook receiver runs on your machine, from the container it is `http://host.docker.internal:<port>` (on Linux, add `--add-host=host.docker.internal:host-gateway`).
 
 **From your tests**, with no other process:
 
@@ -582,7 +582,7 @@ You subscribe with the same routes the SDKs and the n8n trigger use (the unified
 | `DELETE /api/v1/webhooks/{id}` | Deletes it (`204`). |
 | `POST /api/v1/webhooks/{id}/test` | Sends a signed `webhook.test` now and answers `{succeeded, response_status, error, duration_ms, delivery_id}`. |
 | `GET /api/v1/webhooks/{id}/deliveries` | The history: one record per attempt, newest first. |
-| `GET /api/v1/webhooks/events` | The catalog of accounts in production: 59 types (54 `active`), with `area`, `status`, `is_critical`, `label`, `description` and `example`. |
+| `GET /api/v1/webhooks/events` | The event catalog of the spec: the 55 types of the `events` enum of `POST /api/v1/webhooks` and `webhook.test` (not subscribable), all `active`, each with `area`, `status`, `description`, `subscribable` and `example`. |
 
 **Each delivery** is a `POST` with the portal's envelope and these headers:
 
@@ -632,7 +632,7 @@ These routes take no key: they belong to the sandbox, not to the API.
 | `POST /_sandbox/devices/{id}/health` | The health of an official number changes: `{"state": "limited"}` (`available`, `limited`, `blocked`, `unknown`) emits `device.health_changed`, only if it changed. |
 | `POST /_sandbox/numbers`, `GET /_sandbox/numbers` | The quota of the account: `{"limit": 3, "included": true, "trial": false, "meta_connect": true, "links_per_minute": 10}` (`meta_connect` turns the Meta sign-up on or off). `GET` also says how many places are in use and which QR numbers are pending. |
 | `POST /_sandbox/templates/{id}/status` | Meta approves or rejects a template: `{"status": "REJECTED", "reason": "…"}` emits `template.status_changed`. |
-| `POST /_sandbox/events/{type}` | Any event of the catalog, with its example; what you send in `{"data": {…}}` overrides it, and `{"workspace_id": 2}` sends it to that workspace (the default one otherwise). `GET /_sandbox/events` lists them. `group.message_received` and `group.reaction_added` go out with the shape communities emits (`message.uid` and every key of the message), not with the example of the accounts catalog, which uses `message.id`. |
+| `POST /_sandbox/events/{type}` | Any event of the catalog, with its example; what you send in `{"data": {…}}` overrides it, and `{"workspace_id": 2}` sends it to that workspace (the default one otherwise). `GET /_sandbox/events` lists them. The example is the one of the catalog, the spec's. |
 | `POST /_sandbox/window` | Opens or closes the window by hand: `{"contact_id": 2001, "device_id": 3, "open": false}`. |
 | `POST /_sandbox/workspaces`, `GET /_sandbox/workspaces` | A [workspace](#workspaces) with a key that only sees it: `{"name": "Cliente B"}` answers `201 {workspace, key}`. `POST /_sandbox/keys` with `{"workspace_id": 2}` mints another key (of the default workspace without `workspace_id`); with `"permissions": [...]` it has only those (the sandbox checks just `communities:operate`, to import a group). |
 | `POST /_sandbox/reset` | Back to the initial state. |
@@ -721,7 +721,7 @@ And at `http://localhost:4010/_sandbox` you see each request and each delivery w
 - **The shape-only routes** answer the shape of the spec, always the same: it does not match your data, a write keeps nothing and no event goes out. See [With state or shape only](#with-state-or-shape-only).
 - **The validation messages** are Laravel's in Spanish, built from the schema: they may not match the API's word for word (decide by the HTTP status and by `error`, not by `message`). The real API's validation `422` is Laravel's, `{message, errors}`, without `error`; the sandbox adds `"error": "validation_failed"`.
 - **Webhook URLs** may be `http` and local, without the real API's protection against internal destinations (try `--require-https`). Do not expose the sandbox to the internet: the `/_sandbox` routes take no key and the sandbox `POST`s to any URL subscribed to it.
-- **The catalog** is rendered from the code of accounts v1.5.97 (`spec/catalog.json`, with `scripts/transcribe-catalog.php`), not read from a response: if accounts changes it, it has to be rendered again.
+- **The event catalog** is what the spec documents (`generated/catalog.json`, transcribed by `npm run generate`): fields of production's catalog the spec does not document, such as `is_critical` and `label`, are not there.
 - **Groups have state only for the number's live list, the list, one group, the import and the send of a message** (the action is `completed` after the delays of `sent` and `delivered`; it never fails on its own). The live list is never cached (production keeps it a minute for a key). The other group actions, the campaigns and the rest of the groups' routes answer shape only, and their events are fired from `/_sandbox`. There are no official groups (the account is not in their beta), no `too_many_pending_actions` and no rate limit of 30 sends per minute.
 - **Workspaces confine** numbers, sign-up links, webhook subscriptions, contacts, conversations, messages, templates and groups. Tags, custom fields and forms are not confined in the sandbox. A contact belongs to one workspace, and the phone stays unique in the account: `POST /api/v1/contacts`, `update-or-create` and a send by phone with a phone of another workspace answer `404`.
 - **Forms do not talk to Meta:** `sync` and `publish` succeed unless the linter finds an error, and the linter is a short version of the real one (screens without a title, without an ending, without questions, with a connection to the server). The metrics (`…/metrics`) answer shape only, and there are no dynamic forms.
@@ -734,12 +734,12 @@ And at `http://localhost:4010/_sandbox` you see each request and each delivery w
 
 ## Pending of the spec
 
-The spec (`spec/funnelchat.json`) is the one the portal publishes, v0.6.13 (https://developers-portal.funnelchat.app/specs/funnelchat.json, 11-11), made from accounts v1.6.41, conversations v1.19.91 and communities v2.35.28: only the operations and events the portal shows. **The sandbox offers only that:** a layer corrects shapes where the spec says otherwise than production answers, but never adds an operation or an event (the generator refuses it and says so). The corrections are in two layers, which the next regeneration drops on its own once the spec carries them:
+The spec (`spec/funnelchat.json`) is the one the portal publishes, v0.6.14 (https://developers-portal.funnelchat.app/specs/funnelchat.json, 13-11): only the operations and events the portal shows. **The sandbox offers only that:** a layer corrects shapes where the spec says otherwise than production answers, but never adds an operation or an event (the generator refuses it and says so). The corrections are in two layers, which the next regeneration drops on its own once the spec carries them:
 
-- `spec/pending.json`: the pending layer of the Node SDK, copied unchanged (`funnelchat-node` `feat/todas-las-funciones` @ `bde8679`). Guarded by JSON Pointer conditions: the send answers, `devices/{device}/qr`, the template list, `PUT webhooks/{id}`, `GET groups/actions/{action}`, and the shapes of the number, group, billing and message events.
+- `spec/pending.json`: the pending layer of the Node SDK (`funnelchat-node` @ `bde8679`), with the corrections of 13-11 made here ahead of the SDK: `answers[].label` of `whatsapp_form.completed` is always a string, `message.type` of `message.received` accepts types the spec does not list yet, and its sources say what portal v0.6.14 shows (its note in `spec/procedencia.json` lists them). Guarded by JSON Pointer conditions: the send answers, `devices/{device}/qr`, the template list, `PUT webhooks/{id}`, `GET groups/actions/{action}`, and the shapes of the number, group, billing, form and message events.
 - `spec/pending-sandbox.json`: what the sandbox corrects on top of it, with its sources inside.
 
-Besides, `spec/catalog.json` is the event catalog of accounts v1.5.97, with its provenance.
+The event catalog (`generated/catalog.json`) comes out of the merged spec, with the same command: see [Regenerating](#regenerating).
 
 What `spec/pending-sandbox.json` still corrects:
 
@@ -756,7 +756,7 @@ Everything generated comes from a single script:
 # With a new spec of the portal: always the one it publishes, only the operations and events the portal shows (the
 # tools are generated only from what the portal publishes). Download it, and say with --origin which version of the
 # portal it is, for example {"url": "https://developers-portal.funnelchat.app/specs/funnelchat.json",
-# "portal_version": "v0.6.13", "domains": [{"domain": "accounts", "tag": "v1.6.41"}, …]}:
+# "portal_version": "v0.6.14"}; it is the only place the version is written, and spec/procedencia.json keeps it:
 curl -sO https://developers-portal.funnelchat.app/specs/funnelchat.json
 npm run generate -- --spec funnelchat.json --origin <that JSON>
 
@@ -770,17 +770,18 @@ npm run generate
 npm run generate:check
 ```
 
-The event catalog (`spec/catalog.json`) is rendered from accounts' code with `scripts/transcribe-catalog.php` (PHP 8.2 or later, no Laravel needed); its header says how.
+The event catalog comes out of the same command, so it is never transcribed by hand: the types are the `events` enum of `POST /api/v1/webhooks`, in its order, and each entry is what the spec documents for the type in `webhooks`, its example always the whole envelope (a correction that brings only `data` takes `id`, `version` and `occurred_at` from the portal's example); `webhook.test`, which only the test route sends, goes last and is not subscribable. A type of the enum that `webhooks` does not document stops the generation.
 
 What it does:
 
 1. With `--spec` or `--pending`, it copies the file to `spec/` and writes in `spec/procedencia.json` the repository, the branch, the commit, the date and the `sha256` (from git, or from `--origin` for what git cannot say).
-2. It applies over the snapshot `spec/pending.json` and then `spec/pending-sandbox.json`, but **only what the snapshot lacks**, and never an operation or an event the snapshot does not carry: it refuses those and lists them. At the end it lists what the snapshot already carries, so you can delete it.
+2. It applies over the snapshot `spec/pending.json` and then `spec/pending-sandbox.json`, but **only what the snapshot lacks**, and never an operation or an event the snapshot does not carry: it refuses those and lists them. At the end it lists what the snapshot already carries, so you can delete it. An event a layer types without an example keeps the portal's example.
 3. It writes `generated/openapi.json`, the spec the sandbox validates and answers with.
+4. It writes `generated/catalog.json`, the event catalog, from that spec.
 
 **A handler whose operation is not in the spec is not reached:** the route answers `404 route_not_found`, like a route the API does not have. After a regeneration, `GET /_sandbox/operations` says what has state and what answers [shape only](#with-state-or-shape-only).
 
-**The current spec** is the one the portal publishes, v0.6.13, at https://developers-portal.funnelchat.app/specs/funnelchat.json (sha256 `a7b480743848dabccbea2a1f2314263ca070316eeed97aab4a6f09f171c80e5a`, as served on 12-11): 209 paths, 253 operations and 57 events (56 types) of accounts v1.6.41, conversations v1.19.91 and communities v2.35.28, in 30 groups: 1 of «Primer uso», 9 of «Funciones de WhatsApp» and 20 of «Funciones de Funnelchat». The detail is in `spec/procedencia.json`.
+**The current spec** is the one the portal publishes, v0.6.14, at https://developers-portal.funnelchat.app/specs/funnelchat.json (sha256 `37c54a5aad4cc467e088af50294012484692ef668714dcdd748babc7314b587f`, as served on 13-11): 209 paths, 253 operations and 57 events (56 types: the 55 of the `events` enum and `webhook.test`, which two areas document), in 30 groups: 1 of «Primer uso», 9 of «Funciones de WhatsApp» and 20 of «Funciones de Funnelchat». The detail is in `spec/procedencia.json`.
 
 ## Development
 
@@ -796,9 +797,9 @@ npm run build            # dist/ in ESM, with .d.ts
 The tests verify the deliveries with unchanged copies of the Node SDK's `verify` and of the portal's snippet (`test/vendor/`, with their provenance). If the `funnelchat-node` repo is next to this one (or in `FUNNELCHAT_NODE_SDK`), they also run against its current code, including the whole client pointed at the sandbox.
 
 ```
-spec/            the spec, its provenance, the two pending layers and the event catalog
-scripts/         generate.mjs, the only generator, and transcribe-catalog.php for the catalog
-generated/       the merged spec (not edited)
+spec/            the spec, its provenance and the two pending layers
+scripts/         generate.mjs, the only generator
+generated/       the merged spec and the event catalog (not edited)
 src/openapi/     routes, validation and the shape-only answers, from the spec
 src/handlers/    the routes with state (numbers, links, contacts, messages, forms, groups, webhooks); index.ts is the table
 src/forms/       the form templates
