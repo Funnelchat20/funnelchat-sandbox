@@ -790,7 +790,7 @@ npm install
 npm run generate:check   # generated/ is up to date
 npm run typecheck        # tsc
 npm run lint
-npm test                 # vitest, no network: the receivers are local servers
+npm test                 # vitest (Node 20.19 or later), no network: the receivers are local servers
 npm run build            # dist/ in ESM, with .d.ts
 ```
 
@@ -810,7 +810,9 @@ src/sandbox/     the /_sandbox routes and the panel
 test/            vitest
 ```
 
-**Publishing:** push a `vX.Y.Z` tag on `main` that matches the `version` in `package.json`; GitHub Actions publishes it through npm Trusted Publishing (`.github/workflows/publish.yml`).
+**Checks:** every pull request and every push to `main` run `.github/workflows/ci.yml`: `generate:check`, `typecheck`, `lint`, the tests and the build on Node 20.19, 22 and 24, and the built package started on Node 20.11, the minimum of `engines` (the test tools need 20.19).
+
+**Publishing:** push a `vX.Y.Z` tag, on a commit of `main`, that matches the `version` in `package.json`. `.github/workflows/publish.yml` stops before publishing if the tag's commit is not on `main`, runs the same checks and the tests, and publishes through npm Trusted Publishing. A pre-release tag (`vX.Y.Z-rc.N`, `vX.Y.Z-beta.N`) goes out under the `next` dist-tag, never as `latest`.
 
 ## License
 
