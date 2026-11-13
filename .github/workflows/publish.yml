@@ -2,6 +2,9 @@
 # Publishing: npm accepts the publish only from this repo and this workflow, by OIDC, with no token,
 # and adds provenance on its own.
 #
+# Only a tag whose commit is on main is published, and only after the checks and the tests pass. A pre-release
+# (vX.Y.Z-rc.N, vX.Y.Z-beta.N) goes out under the `next` dist-tag, never as `latest`.
+#
 # ONE-TIME SETUP: on npmjs.com, in the package settings, add a Trusted Publisher for GitHub Actions
 # with organization Funnelchat20, repository funnelchat-sandbox, workflow publish.yml and no environment.
 #
@@ -27,7 +30,10 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
+      # The whole history, to know whether the tag's commit is on main.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # Node 20, as in engines (>=20.11) and the Dockerfile. The latest 20.x also meets npm 11 (^20.17.0).
       - uses: actions/setup-node@v4
@@ -58,6 +64,15 @@ jobs:
           fi
           echo "Trusted publishing OK for $name"
 
+      - name: Check that the tag's commit is on main
+        if: github.event_name != 'workflow_dispatch'
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag $GITHUB_REF_NAME points to $GITHUB_SHA, which is not on main: only a commit of main is published"
+            exit 1
+          fi
+
       - name: Check that the tag matches package.json
         if: github.event_name != 'workflow_dispatch'
         run: |
@@ -82,6 +97,18 @@ jobs:
       - run: npm ci
         if: github.event_name != 'workflow_dispatch' && steps.published.outputs.already != 'true'
 
-      # prepack builds dist/.
-      - run: npm publish --provenance --access public
+      - name: Test before publishing
         if: github.event_name != 'workflow_dispatch' && steps.published.outputs.already != 'true'
+        run: |
+          npm run generate:check
+          npm run typecheck
+          npm run lint
+          npm test
+
+      # prepack builds dist/. A pre-release (1.2.3-rc.1, 1.2.3-beta.2) goes out under `next`, never as `latest`.
+      - name: Publish
+        if: github.event_name != 'workflow_dispatch' && steps.published.outputs.already != 'true'
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [[ "$version" == *-* ]]; then dist_tag=next; else dist_tag=latest; fi
+          npm publish --provenance --access public --tag "$dist_tag"

@@ -1,16 +1,13 @@
 /**
- * The event catalog of accounts in production (spec/catalog.json, rendered from accounts v1.5.97): it answers
- * `GET /api/v1/webhooks/events` exactly as accounts does, decides which types a subscription accepts, and gives the
- * `data` the sandbox emits by default for each type (`POST /_sandbox/events/{type}`).
+ * The event catalog (generated/catalog.json, transcribed by `npm run generate` from the spec the sandbox serves): it
+ * answers `GET /api/v1/webhooks/events`, decides which types a subscription accepts (the `events` enum of
+ * `POST /api/v1/webhooks`), and gives the `data` the sandbox emits by default for each type
+ * (`POST /_sandbox/events/{type}`).
  *
- * The `example` of the catalog is what accounts publishes, with `data.workspace_id` = 37 like every example of
- * accounts (Q35); when the sandbox emits, `workspace_id` is the workspace the event is routed to. For two types the
- * example is not what communities emits, and the sandbox emits what communities emits (communities
- * `GroupMessageReceivedEventPublisher`, `GroupReactionAddedEventPublisher`): `message.uid` instead of `message.id`, and
- * every key of the message. For the planned types accounts publishes `example: null`; the sandbox takes their `data`
- * from the spec, if it has them.
+ * The `example` of an entry is the one of the spec, with `data.workspace_id` = 37 like every example of the API; when
+ * the sandbox emits, `workspace_id` is the workspace the event is routed to.
  */
-import catalogFile from '../../spec/catalog.json' with { type: 'json' };
+import catalogFile from '../../generated/catalog.json' with { type: 'json' };
 import { exampleFor } from '../openapi/example.js';
 import { spec, type Schema } from '../openapi/spec.js';
 import { isRecord } from '../util.js';
@@ -25,28 +22,15 @@ export interface Envelope {
 
 export interface CatalogEntry {
   type: string;
+  /** The area that emits it: `accounts`, `conversations` or `communities`. */
   area: string;
-  /** `active`: accounts accepts and delivers it. `planned`: you can subscribe, but nothing is emitted yet. */
+  /** `active`: it is delivered. Every type the portal publishes is. */
   status: 'active' | 'planned';
-  is_critical: boolean;
-  label: string;
   description: string;
+  /** `false` only for `webhook.test`, which only `POST /api/v1/webhooks/{id}/test` sends. */
   subscribable: boolean;
   example: Envelope | null;
 }
-
-const GROUP = { uid: '120363000000000000@g.us', name: 'Grupo de ejemplo' };
-const PARTICIPANT = { identity: '5491100000000', identity_type: 'phone', name: 'Ana Ejemplo' };
-
-/** What communities emits where the catalog's example differs. */
-const EMITTED: Record<string, Record<string, unknown>> = {
-  'group.message_received': {
-    group: GROUP,
-    message: { uid: 'msg-ejemplo-01', type: 'text', text: 'Hola a todos', caption: null, media_url: null, mime_type: null, file_name: null, quoted_uid: null },
-    participant: PARTICIPANT,
-  },
-  'group.reaction_added': { group: GROUP, message: { uid: 'msg-ejemplo-01' }, participant: PARTICIPANT, reaction: '👍' },
-};
 
 const eventTypeOfKey = (key: string): string => key.replace(/\s*\(.*\)\s*$/, '');
 
@@ -74,10 +58,10 @@ export function isSubscribable(type: string): boolean {
 
 /** The `data` the sandbox emits for a type when you send nothing: a copy, so callers may change it. */
 export function emittedData(entry: CatalogEntry): unknown {
-  return structuredClone(EMITTED[entry.type] ?? entry.example?.data ?? specData(entry.type));
+  return structuredClone(entry.example?.data ?? specData(entry.type));
 }
 
-/** The body of `GET /api/v1/webhooks/events` (accounts `WebhookEventCatalogController`). */
+/** The body of `GET /api/v1/webhooks/events`. */
 export function catalogResponse(): Record<string, unknown> {
   return {
     data: catalog,

@@ -2,8 +2,8 @@
  * Webhook subscriptions: the unified subscriptions of accounts (`/api/v1/webhooks`), the same routes the SDKs and
  * the n8n trigger use.
  *
- * In production since accounts v1.4.24. Their types are in spec/pending.json (funnelchat-node), not in the snapshot; the
- * catalog (`/webhooks/events`) is spec/catalog.json, rendered from accounts.
+ * In production since accounts v1.4.24. The catalog (`/webhooks/events`) and the types a subscription accepts are
+ * generated/catalog.json, transcribed from the spec by `npm run generate`.
  *
  * Workspaces (accounts v1.5.97): a subscription belongs to the workspace of the key that created it, a key only sees
  * and changes the subscriptions of its workspace (another workspace's answers `404`), and the cap of 50 counts per

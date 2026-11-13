@@ -45,7 +45,8 @@ describe('WhatsApp forms', () => {
     const published = await api.call('POST', `/api/v1/forms/${created.id}/publish`);
     expect(published.body.data).toMatchObject({ status: 'published', version: 1 });
     expect(published.body.data.meta_flow_id).toEqual(expect.any(String));
-    expect((await api.call('PUT', `/api/v1/forms/${created.id}`, { definition: {} })).body.error).toBe('PUBLISHED');
+    // A valid body (the spec requires definition.screens): an invalid one is a 422 before the form is looked at.
+    expect((await api.call('PUT', `/api/v1/forms/${created.id}`, { definition: { screens: [] } })).body.error).toBe('PUBLISHED');
 
     // The rules of a form send.
     expect((await api.call('POST', '/api/v1/contacts/2001/message/form', { form_id: 99999, device_id: 3 })).status).toBe(404);

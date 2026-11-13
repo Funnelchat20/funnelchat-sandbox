@@ -83,7 +83,7 @@ describe('other simulated events', () => {
       data: { group: { uid: '120363000000000099@g.us', name: 'Clientes VIP' }, participant: { identity: '5491100000044', identity_type: 'phone', name: 'Ana' } },
     });
     expect(left!.json.type).toBe('group_participant.left');
-    expect(left!.json.data.campaign).toEqual({ uuid: 'xK9mQz' });
+    expect(left!.json.data).toMatchObject({ group: { uid: '120363000000000099@g.us' }, campaign: null, participant: { identity: '5491100000044' } });
   });
 
   it('any event of the catalog, from its example, with your changes', async () => {
@@ -93,7 +93,7 @@ describe('other simulated events', () => {
     const res = await api.call('POST', '/_sandbox/events/group.created', { data: { group: { name: 'Lanzamiento' } } });
     expect(res.status).toBe(202);
     const [d] = await receiver.waitFor(1);
-    expect(d!.json.data.group).toEqual({ uid: '120363000000000000@g.us', name: 'Lanzamiento', type: 'group' });
+    expect(d!.json.data.group).toEqual({ uid: '120363000000000001@g.us', name: 'Lanzamiento', type: 'group' });
     expect((await api.call('POST', '/_sandbox/events/nope.nope')).status).toBe(404);
     expect((await api.call('POST', '/_sandbox/events/webhook.test')).status).toBe(422);
   });

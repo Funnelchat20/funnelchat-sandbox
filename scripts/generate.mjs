@@ -7,21 +7,23 @@
  *                                                record where it came from, then merge
  *   node scripts/generate.mjs --pending <file>   copy a new pending layer of funnelchat-node (its spec/pending.json)
  *                                                into spec/pending.json, record where it came from, then merge
- *   node scripts/generate.mjs --check            merge in memory and fail if generated/openapi.json differs
+ *   node scripts/generate.mjs --check            generate in memory and fail if anything in generated/ differs
  *
  * Steps:
  *   1. (with --spec / --pending) copy the file and write its entry in spec/procedencia.json
  *      (repository, branch, commit, sha256).
  *   2. Merge, in this order, over a copy of the snapshot:
- *        - spec/pending.json          the "pending of the spec" layer of the Node SDK, unchanged;
+ *        - spec/pending.json          the "pending of the spec" layer of the Node SDK;
  *        - spec/pending-sandbox.json  what the sandbox corrects on top of it (extra event fields, `null` in the
  *                                     conditional fields of the sign-up links).
  *      A layer only corrects shapes: the snapshot is the spec the portal publishes, and the tools offer only what it
  *      publishes, so an operation or an event a layer would add is refused and listed. Every other pending entry is
  *      applied only while the snapshot lacks it; the report lists the entries a new snapshot made obsolete so they
  *      can be deleted.
- *   3. Write generated/openapi.json: the merged spec the server validates and answers with. It is
- *      deterministic (no dates), so --check works in CI.
+ *   3. Write generated/openapi.json: the merged spec the server validates and answers with.
+ *   4. Write generated/catalog.json: the event catalog (`GET /api/v1/webhooks/events`), transcribed from the merged
+ *      spec (see buildCatalog).
+ *   Both outputs are deterministic (no dates), so --check works in CI.
  *
  * Nothing in generated/ is edited by hand.
  */
@@ -37,6 +39,7 @@ const PENDING_FILE = resolve(ROOT, 'spec/pending.json');
 const SANDBOX_PENDING_FILE = resolve(ROOT, 'spec/pending-sandbox.json');
 const PROVENANCE_FILE = resolve(ROOT, 'spec/procedencia.json');
 const OUT_FILE = resolve(ROOT, 'generated/openapi.json');
+const CATALOG_FILE = resolve(ROOT, 'generated/catalog.json');
 const HTTP_METHODS = ['get', 'put', 'post', 'delete', 'patch'];
 
 function parseArgs(argv) {
@@ -216,7 +219,8 @@ function requestSchema(merged, op) {
  *   - `operationPatches` with `replace: true`: replace properties of a body the snapshot does have, a correction of
  *     the snapshot (for example, Laravel's conditional `prohibited` letting `null` through), applied every time;
  *   - `webhookPatches`: set properties of an event's `data` (schema and example), while the event meets
- *     `while` or while its `data` lacks `whileMissing`. `type: "*"` patches every event.
+ *     `while` or while its `data` lacks `whileMissing`. `type: "*"` patches every event;
+ *   - `webhooks`: an event that replaces the portal's and brings no example keeps the portal's example.
  */
 function mergeLayer(merged, layer, layerName, report) {
   // `paths` and `webhooks` entries only stand for what the snapshot already has (obsolete, or a correction of an
@@ -348,8 +352,14 @@ function mergeLayer(merged, layer, layerName, report) {
       report.superseded.push(label);
       continue;
     }
+    // The layer types the event; when it brings no example, the portal's stays: the catalog and the sandbox's
+    // default `data` come from it.
+    const replacement = structuredClone(item);
+    const content = replacement.post?.requestBody?.content?.['application/json'];
+    const portalExample = merged.webhooks[currentKey].post?.requestBody?.content?.['application/json']?.example;
+    if (content && content.example === undefined && portalExample !== undefined) content.example = portalExample;
     delete merged.webhooks[currentKey];
-    merged.webhooks[type] = item;
+    merged.webhooks[type] = replacement;
     snapshotTypes.set(type, type);
     report.applied.push(label);
   }
@@ -371,7 +381,8 @@ function mergeLayer(merged, layer, layerName, report) {
       if (patch.while && !matches(post, patch.while)) continue;
       if (patch.whileMissing) {
         const inSchema = dataSchema?.properties && patch.whileMissing in dataSchema.properties && !dataSchema.properties[patch.whileMissing]['x-fc-pending'];
-        const inExample = exampleData && typeof exampleData === 'object' && patch.whileMissing in exampleData;
+        // A typed `data` says it by its schema; only an event shown just by its example says it by the example.
+        const inExample = !dataSchema?.properties && exampleData && typeof exampleData === 'object' && patch.whileMissing in exampleData;
         if (inSchema || inExample) continue;
       }
       content.schema ??= { type: 'object', properties: {} };
@@ -403,6 +414,77 @@ function merge(spec, layers) {
   return { merged, report };
 }
 
+/**
+ * Step 4: the event catalog, `GET /api/v1/webhooks/events`, transcribed from the merged spec:
+ *   - the types are the `events` enum of `POST /api/v1/webhooks`, in its order, all subscribable; then the types
+ *     `webhooks` documents that the enum lacks, not subscribable (`webhook.test`, which only the test route sends);
+ *   - each entry is what `webhooks` documents for the type: `area` (`x-fc-domain`), `status` (`x-fc-status`, `live`
+ *     or absent: `active`), `description` and `example`, the envelope. A type that several areas document belongs to
+ *     the area of the catalog's own operation, and takes the first of those entries;
+ *   - `meta` is the constants of that operation's answer; `total` and `active` are counted when answering.
+ * An example is always the whole envelope: a layer's example that brings only `data` takes `id`, `version` and
+ * `occurred_at` from the portal's example of the type, or from EXAMPLE_ENVELOPE when the portal has none.
+ * A type of the enum without an event in `webhooks`, or a status it does not know, stops the generation.
+ */
+const EXAMPLE_ENVELOPE = { id: 'evt_000000000000000000000000', version: 1, occurred_at: '2026-10-01T12:00:00Z' };
+
+function envelopeOf(type, example, portalExample) {
+  if (!example || typeof example !== 'object') return null;
+  if ('type' in example) return example;
+  const base = portalExample && typeof portalExample === 'object' && 'type' in portalExample ? portalExample : EXAMPLE_ENVELOPE;
+  return { id: base.id, type, version: base.version, occurred_at: base.occurred_at, data: example.data ?? null };
+}
+
+function buildCatalog(merged, snapshot, portalVersion, specSha) {
+  const subscribe = merged.paths['/api/v1/webhooks']?.post;
+  const subscribable = subscribe ? requestSchema(merged, subscribe)?.properties?.events?.items?.enum : null;
+  if (!Array.isArray(subscribable)) throw new Error('POST /api/v1/webhooks has no `events` enum: the catalog cannot be transcribed.');
+  const catalogOperation = merged.paths['/api/v1/webhooks/events']?.get;
+  const metaProperties = catalogOperation?.responses?.['200']?.content?.['application/json']?.schema?.properties?.meta?.properties;
+  if (!metaProperties) throw new Error('GET /api/v1/webhooks/events has no `meta` in its answer: the catalog cannot be transcribed.');
+  const meta = Object.fromEntries(Object.entries(metaProperties).filter(([, schema]) => 'const' in schema).map(([key, schema]) => [key, schema.const]));
+
+  const byType = new Map();
+  for (const [key, item] of Object.entries(merged.webhooks)) {
+    const type = eventTypeOfKey(key);
+    byType.set(type, [...(byType.get(type) ?? []), item.post ?? {}]);
+  }
+  const portalExamples = new Map();
+  for (const [key, item] of Object.entries(snapshot.webhooks ?? {})) {
+    const example = item.post?.requestBody?.content?.['application/json']?.example;
+    if (example && !portalExamples.has(eventTypeOfKey(key))) portalExamples.set(eventTypeOfKey(key), example);
+  }
+  const undocumented = subscribable.filter((type) => !byType.has(type));
+  if (undocumented.length) throw new Error(`types of the events enum of POST /api/v1/webhooks without an event in webhooks: ${undocumented.join(', ')}`);
+
+  const types = [...subscribable, ...[...byType.keys()].filter((type) => !subscribable.includes(type))];
+  const entries = types.map((type) => {
+    const posts = byType.get(type);
+    const areas = [...new Set(posts.map((post) => post['x-fc-domain']))];
+    const area = areas.length === 1 ? areas[0] : catalogOperation['x-fc-domain'];
+    if (!area) throw new Error(`${type}: no x-fc-domain says its area.`);
+    const post = posts.find((p) => p['x-fc-domain'] === area) ?? posts[0];
+    const status = post['x-fc-status'] ?? 'live';
+    if (status !== 'live') throw new Error(`${type}: x-fc-status "${status}" is new; say in scripts/generate.mjs what the catalog shows for it.`);
+    return {
+      type,
+      area,
+      status: 'active',
+      description: post.description ?? '',
+      subscribable: subscribable.includes(type),
+      example: envelopeOf(type, post.requestBody?.content?.['application/json']?.example, portalExamples.get(type)),
+    };
+  });
+
+  return {
+    description:
+      'GENERATED by scripts/generate.mjs: do not edit it. The event catalog of GET /api/v1/webhooks/events, transcribed from generated/openapi.json: the types are the `events` enum of POST /api/v1/webhooks, and each entry is what the spec documents for the event in `webhooks`.',
+    source: { portal_version: portalVersion, 'spec/funnelchat.json': specSha },
+    meta,
+    entries,
+  };
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.spec) importSpec(args.spec, args.origin);
@@ -424,7 +506,8 @@ function main() {
   const layers = [];
   if (pendingBytes) layers.push(['pending.json', JSON.parse(pendingBytes.toString('utf8'))]);
   if (sandboxBytes) layers.push(['pending-sandbox.json', JSON.parse(sandboxBytes.toString('utf8'))]);
-  const { merged, report } = merge(JSON.parse(specBytes.toString('utf8')), layers);
+  const snapshot = JSON.parse(specBytes.toString('utf8'));
+  const { merged, report } = merge(snapshot, layers);
 
   merged['x-fc-sandbox'] = {
     generated_by: 'scripts/generate.mjs',
@@ -454,18 +537,29 @@ function main() {
     for (const label of report.missing) console.warn(`  - ${label}`);
   }
 
+  const catalog = buildCatalog(merged, snapshot, provenance.snapshot?.source?.portal_version ?? null, sha256(specBytes));
+  const subscribable = catalog.entries.filter((entry) => entry.subscribable).length;
+  console.log(`event catalog: ${catalog.entries.length} types, ${subscribable} subscribable.`);
+  const outputs = [
+    [OUT_FILE, output],
+    [CATALOG_FILE, `${JSON.stringify(catalog, null, 2)}\n`],
+  ];
+
   if (args.check) {
-    if (!existsSync(OUT_FILE) || readFileSync(OUT_FILE, 'utf8') !== output) {
-      console.error('generated/openapi.json is out of date: run `npm run generate`.');
+    const stale = outputs.filter(([file, text]) => !existsSync(file) || readFileSync(file, 'utf8') !== text).map(([file]) => relative(ROOT, file));
+    if (stale.length) {
+      console.error(`${stale.join(' and ')} out of date: run \`npm run generate\`.`);
       process.exit(1);
     }
-    console.log('generated/openapi.json is up to date.');
+    console.log('generated/ is up to date.');
     return;
   }
 
-  mkdirSync(dirname(OUT_FILE), { recursive: true });
-  writeFileSync(OUT_FILE, output);
-  console.log(`generated: ${relative(ROOT, OUT_FILE)}`);
+  for (const [file, text] of outputs) {
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, text);
+    console.log(`generated: ${relative(ROOT, file)}`);
+  }
 }
 
 try {

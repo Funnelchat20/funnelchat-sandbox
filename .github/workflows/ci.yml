@@ -1,0 +1,71 @@
+# Checks every pull request and every push to main: install, generated/ up to date, types, style, the tests and the
+# build, on the Node versions the package supports.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 20.19 is the oldest Node the test tools run on (vitest 4 needs vite 8, which asks for ^20.19.0);
+        # 22 and 24 are the other maintained lines.
+        node: ['20.19', '22', '24']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+      - run: npm run generate:check
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  minimum-node:
+    # `engines` says >=20.11, so the built package has to start there. The tests do not run on 20.11 (see above):
+    # this job builds the package and starts it.
+    name: Node 20.11 (the minimum), the built package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.11.0'
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+      - run: node dist/cli.js --version
+
+      - name: The built sandbox starts and answers
+        run: |
+          node --input-type=module <<'EOF'
+          import { createSandbox } from './dist/index.js';
+          const sandbox = createSandbox({ config: { port: 0, log: false } });
+          const { url } = await sandbox.listen();
+          const res = await fetch(`${url}/api/v1/webhooks/events`, { headers: { Authorization: 'Bearer 1|fc_live_sandbox' } });
+          const body = await res.json();
+          await sandbox.close();
+          if (res.status !== 200 || body.data.length === 0) throw new Error(`GET /api/v1/webhooks/events answered ${res.status}`);
+          console.log(`Node ${process.version}: the sandbox answers, ${body.data.length} event types`);
+          EOF

@@ -1,4 +1,4 @@
-# funnelchat-sandbox in a container: docker build -t funnelchat-sandbox . && docker run --rm -p 4010:4010 funnelchat-sandbox
+# funnelchat-sandbox in a container: docker build -t funnelchat-sandbox . && docker run --rm -p 127.0.0.1:4010:4010 funnelchat-sandbox
 FROM node:20-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -6,7 +6,6 @@ RUN npm ci
 COPY tsconfig.json tsup.config.ts ./
 COPY src ./src
 COPY generated ./generated
-COPY spec/catalog.json ./spec/catalog.json
 RUN npm run build
 
 FROM node:20-alpine
