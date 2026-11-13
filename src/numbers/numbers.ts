@@ -19,7 +19,7 @@ import { ApiError } from '../http/errors.js';
 import { eventDevice } from '../state/resources.js';
 import type { ConnectLink, Connection, Device, HealthState } from '../state/store.js';
 import { sees, type WorkspaceScope } from '../state/workspaces.js';
-import { iso8601 } from '../util.js';
+import { isoSeconds } from '../util.js';
 
 /** Closed list of `device.disconnected` `reason` (contract A3). */
 export const DISCONNECT_REASONS = ['qr_logged_out', 'meta_account_not_registered', 'shadow_ban_protection', 'provider_error', 'unknown', 'disconnected_by_user'] as const;
@@ -179,14 +179,14 @@ export function connectDevice(app: SandboxApp, device: Device, options: { number
   device.connected = true;
   device.firstConnectedAt ??= at;
   if (device.kind === 'cloud' && (device.health === null || device.health === 'unknown')) device.health = 'available';
-  return app.webhooks.emit('device.connected', eventData(device, { connected_at: iso8601(at) }, connectLinkId), { occurredAt: at, workspaceId: device.workspaceId });
+  return app.webhooks.emit('device.connected', eventData(device, { connected_at: isoSeconds(at) }, connectLinkId), { occurredAt: at, workspaceId: device.workspaceId });
 }
 
 export function disconnectDevice(app: SandboxApp, device: Device, reason: DisconnectReason) {
   if (!device.connected) return null;
   const at = new Date();
   device.connected = false;
-  return app.webhooks.emit('device.disconnected', eventData(device, { disconnected_at: iso8601(at), reason }), { occurredAt: at, workspaceId: device.workspaceId });
+  return app.webhooks.emit('device.disconnected', eventData(device, { disconnected_at: isoSeconds(at), reason }), { occurredAt: at, workspaceId: device.workspaceId });
 }
 
 /** Emits `device.health_changed` only when the aggregated state changes. */
@@ -195,7 +195,7 @@ export function setHealth(app: SandboxApp, device: Device, state: HealthState) {
   if (previous === state) return null;
   device.health = state;
   const at = new Date();
-  return app.webhooks.emit('device.health_changed', eventData(device, { previous_state: previous, state, changed_at: iso8601(at) }), {
+  return app.webhooks.emit('device.health_changed', eventData(device, { previous_state: previous, state, changed_at: isoSeconds(at) }), {
     occurredAt: at,
     workspaceId: device.workspaceId,
   });
@@ -207,7 +207,7 @@ export function setHealth(app: SandboxApp, device: Device, state: HealthState) {
  */
 export function deleteDevice(app: SandboxApp, device: Device) {
   const at = new Date();
-  const event = app.webhooks.emit('device.deleted', eventData(device, { deleted_at: iso8601(at) }), { occurredAt: at, workspaceId: device.workspaceId });
+  const event = app.webhooks.emit('device.deleted', eventData(device, { deleted_at: isoSeconds(at) }), { occurredAt: at, workspaceId: device.workspaceId });
   app.store.devices.delete(device.id);
   for (const link of app.store.connectLinks.values()) {
     if (link.reconnect && link.deviceId === device.id && link.status === 'pending') {

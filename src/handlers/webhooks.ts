@@ -96,9 +96,9 @@ export const webhookHandlers: HandlerTable = {
   'POST /api/v1/webhooks': (ctx) => {
     const b = body(ctx);
     checkSubscriptionBody(ctx.app, b);
-    // The cap, in the common format: `422 validation_failed` with the message, and no field to point at.
+    // The cap: `422 webhooks_limit_reached`, whatever the status of the subscriptions.
     if (ofWorkspace(ctx).length >= SUBSCRIPTION_LIMIT) {
-      throw new ApiError(422, 'validation_failed', `Alcanzaste el límite de ${SUBSCRIPTION_LIMIT} suscripciones de webhook.`);
+      throw new ApiError(422, 'webhooks_limit_reached', `Alcanzaste el límite de ${SUBSCRIPTION_LIMIT} suscripciones de webhook.`);
     }
     const now = new Date();
     const subscription: Subscription = {

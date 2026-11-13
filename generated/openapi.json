@@ -1308,8 +1308,34 @@
       "content": {
        "application/json": {
         "schema": {
-         "type": "array",
-         "items": {}
+         "type": "object",
+         "properties": {
+          "contactsCount": {
+           "type": "integer"
+          },
+          "unreachableCount": {
+           "type": "integer"
+          },
+          "pausedCount": {
+           "type": "integer"
+          },
+          "optedOutCount": {
+           "type": "integer"
+          },
+          "hardBouncedCount": {
+           "type": "integer"
+          },
+          "blockedCount": {
+           "type": "integer"
+          }
+         },
+         "required": [
+          "contactsCount",
+          "unreachableCount",
+          "pausedCount",
+          "optedOutCount",
+          "hardBouncedCount"
+         ]
         }
        }
       }
@@ -3710,77 +3736,18 @@
         "schema": {
          "type": "array",
          "items": {
-          "anyOf": [
-           {
-            "type": "object",
-            "properties": {
-             "message": {
-              "type": "string",
-              "const": "No autorizado: el campo personalizado no pertenece al usuario autenticado."
-             },
-             "status": {
-              "type": "integer",
-              "const": 403
-             }
-            },
-            "required": [
-             "message",
-             "status"
-            ]
+          "type": "object",
+          "properties": {
+           "message": {
+            "type": "string"
            },
-           {
-            "type": "object",
-            "properties": {
-             "message": {
-              "type": "string",
-              "const": "No autorizado: el contacto no pertenece al usuario autenticado."
-             },
-             "status": {
-              "type": "integer",
-              "const": 403
-             }
-            },
-            "required": [
-             "message",
-             "status"
-            ]
-           },
-           {
-            "type": "object",
-            "properties": {
-             "message": {
-              "type": [
-               "string",
-               "null"
-              ]
-             },
-             "status": {
-              "type": "integer",
-              "const": 422
-             }
-            },
-            "required": [
-             "message",
-             "status"
-            ]
-           },
-           {
-            "type": "object",
-            "properties": {
-             "message": {
-              "type": "string",
-              "const": "Custom field value attached successfully."
-             },
-             "status": {
-              "type": "integer",
-              "const": 201
-             }
-            },
-            "required": [
-             "message",
-             "status"
-            ]
+           "status": {
+            "type": "integer"
            }
+          },
+          "required": [
+           "message",
+           "status"
           ]
          }
         }
@@ -4030,14 +3997,7 @@
     },
     "responses": {
      "200": {
-      "description": "OK",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
+      "description": "OK"
      },
      "401": {
       "$ref": "#/components/responses/ConversationsAuthenticationException"
@@ -5069,14 +5029,7 @@
     },
     "responses": {
      "200": {
-      "description": "OK",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "null"
-        }
-       }
-      }
+      "description": "OK"
      },
      "401": {
       "$ref": "#/components/responses/ConversationsAuthenticationException"
@@ -5387,7 +5340,7 @@
   "/api/v1/contacts/{contact}/message/contact-card": {
    "post": {
     "operationId": "contactCard.store",
-    "description": "**Permiso requerido:** **Contactos y conversaciones → Enviar**\n\nSi el límite de contactos activos (MAC) frena el envío, responde `429` con `error` = `mac_lockout_24h` o `mac_limit_reached` y sin `Retry-After`: reintentar no sirve hasta que sumes capacidad o empiece un ciclo nuevo. El envío no sale, pero queda en el historial del contacto un mensaje con estado de error que lleva tu `client_reference`. Detalle en «Errores y límites».",
+    "description": "**Permiso requerido:** **Contactos y conversaciones → Enviar**\n\nSi el límite de contactos activos (MAC) frena el envío, responde `429` con `error` = `mac_lockout_24h` o `mac_limit_reached` y sin `Retry-After`: reintentar no sirve hasta que sumes capacidad o empiece un ciclo nuevo. El envío no sale y no se guarda ningún mensaje ni tu `client_reference`: no queda nada en el historial del contacto. Detalle en «Errores y límites».",
     "summary": "Mandar una tarjeta de contacto",
     "tags": [
      "Atender una conversación"
@@ -5613,7 +5566,7 @@
          "properties": {
           "error": {
            "type": "string",
-           "description": "Código estable del error: es lo que se compara. `message` es para personas y puede cambiar.",
+           "description": "Código estable del error: es lo que se compara. `message` es para personas y puede cambiar. Con este status, el portero también puede devolver `gate_misconfigured`.",
            "examples": [
             "internal_error"
            ]
@@ -6429,11 +6382,17 @@
          "properties": {
           "error": {
            "type": "string",
-           "const": "No se pudieron cargar las conversaciones"
+           "enum": [
+            "internal_error"
+           ]
+          },
+          "message": {
+           "type": "string"
           }
          },
          "required": [
-          "error"
+          "error",
+          "message"
          ]
         }
        }
@@ -6692,11 +6651,18 @@
          "type": "object",
          "properties": {
           "count": {
-           "type": [
-            "integer",
-            "null"
-           ],
-           "minimum": 0
+           "anyOf": [
+            {
+             "type": "null"
+            },
+            {
+             "type": "integer",
+             "minimum": 0
+            },
+            {
+             "type": "integer"
+            }
+           ]
           }
          },
          "required": [
@@ -7033,7 +6999,7 @@
   "/api/v1/contacts/{contact}/message": {
    "post": {
     "operationId": "conversation.sendMessage",
-    "description": "**Permiso requerido:** **Contactos y conversaciones → Enviar**\n\nSi el límite de contactos activos (MAC) frena el envío, responde `429` con `error` = `mac_lockout_24h` o `mac_limit_reached` y sin `Retry-After`: reintentar no sirve hasta que sumes capacidad o empiece un ciclo nuevo. El envío no sale, pero queda en el historial del contacto un mensaje con estado de error que lleva tu `client_reference`. Detalle en «Errores y límites».",
+    "description": "**Permiso requerido:** **Contactos y conversaciones → Enviar**\n\nSi el límite de contactos activos (MAC) frena el envío, responde `429` con `error` = `mac_lockout_24h` o `mac_limit_reached` y sin `Retry-After`: reintentar no sirve hasta que sumes capacidad o empiece un ciclo nuevo. El envío no sale y no se guarda ningún mensaje ni tu `client_reference`: no queda nada en el historial del contacto. Detalle en «Errores y límites».",
     "summary": "Mandar un mensaje a un contacto",
     "tags": [
      "Atender una conversación"
@@ -7110,6 +7076,37 @@
      },
      "404": {
       "$ref": "#/components/responses/ConversationsModelNotFoundException"
+     },
+     "415": {
+      "description": "Unsupported Media Type",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string",
+           "enum": [
+            "bad_request"
+           ]
+          },
+          "message": {
+           "type": "string"
+          },
+          "supported_file_types": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           }
+          }
+         },
+         "required": [
+          "error",
+          "message"
+         ]
+        }
+       }
+      }
      },
      "422": {
       "description": "Unprocessable Content",
@@ -7234,7 +7231,7 @@
          "properties": {
           "error": {
            "type": "string",
-           "description": "Código estable del error: es lo que se compara. `message` es para personas y puede cambiar.",
+           "description": "Código estable del error: es lo que se compara. `message` es para personas y puede cambiar. Con este status, el portero también puede devolver `gate_misconfigured`.",
            "examples": [
             "internal_error"
            ]
@@ -7807,14 +7804,7 @@
     },
     "responses": {
      "200": {
-      "description": "OK",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
+      "description": "OK"
      },
      "401": {
       "$ref": "#/components/responses/ConversationsAuthenticationException"
@@ -9920,14 +9910,7 @@
     },
     "responses": {
      "200": {
-      "description": "OK",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
+      "description": "OK"
      },
      "401": {
       "$ref": "#/components/responses/ConversationsAuthenticationException"
@@ -9990,14 +9973,7 @@
     ],
     "responses": {
      "200": {
-      "description": "OK",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
+      "description": "OK"
      },
      "401": {
       "$ref": "#/components/responses/ConversationsAuthenticationException"
@@ -10286,7 +10262,7 @@
          "properties": {
           "error": {
            "type": "string",
-           "description": "Código estable del error: es lo que se compara. `message` es para personas y puede cambiar.",
+           "description": "Código estable del error: es lo que se compara. `message` es para personas y puede cambiar. Con este status, el portero también puede devolver `gate_misconfigured`.",
            "examples": [
             "internal_error"
            ]
@@ -12344,48 +12320,34 @@
         "schema": {
          "anyOf": [
           {
-           "type": "string"
-          },
-          {
            "type": "object",
            "properties": {
             "enforcement_enabled": {
              "type": "boolean"
             },
             "unlimited": {
-             "type": "string"
+             "type": "boolean"
             },
             "current_count": {
-             "type": "integer",
-             "const": 0
+             "type": "integer"
             },
             "limit": {
              "type": [
               "integer",
               "null"
-             ],
-             "enum": [
-              0,
-              null
              ]
             },
             "remaining": {
              "type": [
               "integer",
               "null"
-             ],
-             "enum": [
-              0,
-              null
              ]
             },
             "usage_percentage": {
-             "type": "integer",
-             "const": 0
+             "type": "integer"
             },
             "state": {
-             "type": "string",
-             "const": "normal"
+             "type": "string"
             },
             "grace": {
              "type": "null"
@@ -12404,6 +12366,159 @@
             "state",
             "grace",
             "period_start"
+           ]
+          },
+          {
+           "type": "object",
+           "properties": {
+            "mac_count": {
+             "type": "integer"
+            },
+            "mac_limit": {
+             "type": [
+              "integer",
+              "null"
+             ]
+            },
+            "cycle_capacity": {
+             "type": [
+              "integer",
+              "null"
+             ]
+            },
+            "accumulated_available": {
+             "type": [
+              "integer",
+              "null"
+             ]
+            },
+            "total_available": {
+             "type": [
+              "integer",
+              "null"
+             ]
+            },
+            "usage_percentage": {
+             "type": "number"
+            },
+            "enforcement_enabled": {
+             "type": "boolean"
+            },
+            "alert_level": {
+             "type": [
+              "string",
+              "null"
+             ]
+            },
+            "expiring_buckets": {
+             "type": "array",
+             "items": {
+              "type": "object",
+              "properties": {
+               "amount": {
+                "type": "integer"
+               },
+               "expires_in_days": {
+                "type": "integer"
+               }
+              },
+              "required": [
+               "amount",
+               "expires_in_days"
+              ]
+             }
+            },
+            "buckets": {
+             "type": "array",
+             "items": {
+              "type": "object",
+              "properties": {
+               "source": {
+                "type": "string"
+               },
+               "macs_remaining": {
+                "type": "integer"
+               },
+               "expires_at": {
+                "type": "string"
+               }
+              },
+              "required": [
+               "source",
+               "macs_remaining",
+               "expires_at"
+              ]
+             }
+            },
+            "state": {
+             "type": "string"
+            },
+            "grace": {
+             "type": [
+              "object",
+              "null"
+             ],
+             "properties": {
+              "grace_period_id": {
+               "type": [
+                "integer",
+                "null"
+               ]
+              },
+              "started_at": {
+               "type": [
+                "string",
+                "null"
+               ]
+              },
+              "expires_at": {
+               "type": [
+                "string",
+                "null"
+               ]
+              },
+              "seconds_remaining": {
+               "type": "integer"
+              },
+              "end_reason": {
+               "type": [
+                "string",
+                "null"
+               ]
+              }
+             },
+             "required": [
+              "grace_period_id",
+              "started_at",
+              "expires_at",
+              "seconds_remaining",
+              "end_reason"
+             ]
+            },
+            "unlimited": {
+             "type": "boolean"
+            },
+            "workspace_id": {
+             "type": "integer"
+            },
+            "inactive_contacts_count": {
+             "type": "integer"
+            }
+           },
+           "required": [
+            "mac_count",
+            "mac_limit",
+            "cycle_capacity",
+            "accumulated_available",
+            "total_available",
+            "usage_percentage",
+            "enforcement_enabled",
+            "alert_level",
+            "expiring_buckets",
+            "buckets",
+            "state",
+            "grace",
+            "unlimited"
            ]
           }
          ]
@@ -12913,7 +13028,7 @@
   "/api/v1/message/send-message": {
    "post": {
     "operationId": "message.sendMessage",
-    "description": "**Permiso requerido:** **Contactos y conversaciones → Enviar**\n\nIndica a quién envías con `phone`: el teléfono con código de país, por ejemplo `5491122334455`. No hace falta crear el contacto antes: si ese teléfono todavía no es un contacto de tu cuenta, se crea en el workspace de tu clave, igual que con `POST /contacts/update-or-create` y con el mismo permiso, que **Enviar** ya incluye. La respuesta trae su id en `message.contact_id`, el mismo que llevan los eventos `message.status_changed`. Si el teléfono no es válido, o ya es un contacto de otro workspace de tu cuenta, la respuesta es la misma que daría `POST /contacts/update-or-create`: 422, o 404 sin datos de ese contacto. Con un número oficial de WhatsApp (API Cloud) también puedes indicar `whatsapp_id`, el BSUID que envía Meta (por ejemplo `US.13491208655302741918`), en lugar de `phone`; usado así con un número conectado por QR, responde 422. En un número oficial, el primer mensaje a un contacto nuevo tiene que ser una plantilla: un mensaje libre solo sale dentro de las 24 horas desde que el contacto te escribió. Si ya tienes el `contact_id`, puedes seguir enviándolo: si junto con él mandas `phone` o `whatsapp_id`, tienen que ser de ese mismo contacto (si no, 422 `recipient_mismatch`). En `send-template`, `phone` o `whatsapp_id` va siempre, con o sin `contact_id`.\n\nSi el límite de contactos activos (MAC) frena el envío, responde `429` con `error` = `mac_lockout_24h` o `mac_limit_reached` y sin `Retry-After`: reintentar no sirve hasta que sumes capacidad o empiece un ciclo nuevo. El envío no sale, pero queda en el historial del contacto un mensaje con estado de error que lleva tu `client_reference`. Detalle en «Errores y límites».",
+    "description": "**Permiso requerido:** **Contactos y conversaciones → Enviar**\n\nIndica a quién envías con `phone`: el teléfono con código de país, por ejemplo `5491122334455`. No hace falta crear el contacto antes: si ese teléfono todavía no es un contacto de tu cuenta, se crea en el workspace de tu clave, igual que con `POST /contacts/update-or-create` y con el mismo permiso, que **Enviar** ya incluye. La respuesta trae su id en `message.contact_id`, el mismo que llevan los eventos `message.status_changed`. Si el teléfono no es válido, o ya es un contacto de otro workspace de tu cuenta, la respuesta es la misma que daría `POST /contacts/update-or-create`: 422, o 404 sin datos de ese contacto. Con un número oficial de WhatsApp (API Cloud) también puedes indicar `whatsapp_id`, el BSUID que envía Meta (por ejemplo `US.13491208655302741918`), en lugar de `phone`; usado así con un número conectado por QR, responde 422. En un número oficial, el primer mensaje a un contacto nuevo tiene que ser una plantilla: un mensaje libre solo sale dentro de las 24 horas desde que el contacto te escribió. Si ya tienes el `contact_id`, puedes seguir enviándolo: si junto con él mandas `phone` o `whatsapp_id`, tienen que ser de ese mismo contacto (si no, 422 `recipient_mismatch`). En `send-template`, `phone` o `whatsapp_id` va siempre, con o sin `contact_id`.\n\nSi el límite de contactos activos (MAC) frena el envío, responde `429` con `error` = `mac_lockout_24h` o `mac_limit_reached` y sin `Retry-After`: reintentar no sirve hasta que sumes capacidad o empiece un ciclo nuevo. El envío no sale y no se guarda ningún mensaje ni tu `client_reference`: no queda nada en el historial del contacto. Detalle en «Errores y límites».",
     "summary": "Mandar un mensaje",
     "tags": [
      "Mensajes"
@@ -12983,36 +13098,58 @@
       "content": {
        "application/json": {
         "schema": {
-         "anyOf": [
-          {
-           "type": "object",
-           "properties": {
-            "status": {
-             "type": "string",
-             "enum": [
-              "error"
-             ]
-            },
-            "error": {
-             "type": "string"
-            }
-           },
-           "required": [
-            "status",
-            "error"
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string",
+           "enum": [
+            "not_found"
            ]
           },
-          {
-           "type": "object",
-           "properties": {
-            "message": {
-             "type": "string"
-            }
-           },
-           "required": [
-            "message"
+          "message": {
+           "type": "string"
+          },
+          "status": {
+           "type": "string",
+           "enum": [
+            "error"
            ]
           }
+         },
+         "required": [
+          "error",
+          "message"
+         ]
+        }
+       }
+      }
+     },
+     "415": {
+      "description": "Unsupported Media Type",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string",
+           "enum": [
+            "bad_request"
+           ]
+          },
+          "message": {
+           "type": "string"
+          },
+          "supported_file_types": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           }
+          }
+         },
+         "required": [
+          "error",
+          "message"
          ]
         }
        }
@@ -13141,7 +13278,7 @@
          "properties": {
           "error": {
            "type": "string",
-           "description": "Código estable del error: es lo que se compara. `message` es para personas y puede cambiar.",
+           "description": "Código estable del error: es lo que se compara. `message` es para personas y puede cambiar. Con este status, el portero también puede devolver `gate_misconfigured`.",
            "examples": [
             "internal_error"
            ]
@@ -13480,6 +13617,12 @@
           {
            "type": "object",
            "properties": {
+            "error": {
+             "type": "string",
+             "examples": [
+              "validation_failed"
+             ]
+            },
             "message": {
              "type": "string"
             },
@@ -13488,6 +13631,7 @@
             }
            },
            "required": [
+            "error",
             "message",
             "errors"
            ]
@@ -14034,31 +14178,21 @@
       "content": {
        "application/json": {
         "schema": {
-         "anyOf": [
-          {
-           "type": "object",
-           "properties": {
-            "error": {
-             "type": "string",
-             "const": "Approved templates can be edited up to 10 times in a 30-day period or once in a 24-hour period."
-            }
-           },
-           "required": [
-            "error"
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string",
+           "enum": [
+            "bad_request"
            ]
           },
-          {
-           "type": "object",
-           "properties": {
-            "error": {
-             "type": "string",
-             "const": "Templates with pending status cannot be updated."
-            }
-           },
-           "required": [
-            "error"
-           ]
+          "message": {
+           "type": "string"
           }
+         },
+         "required": [
+          "error",
+          "message"
          ]
         }
        }
@@ -14496,50 +14630,22 @@
       "content": {
        "application/json": {
         "schema": {
-         "anyOf": [
-          {
-           "type": "object",
-           "properties": {
-            "error": {
-             "type": "string",
-             "enum": [
-              "template_not_found"
-             ]
-            },
-            "message": {
-             "type": "string"
-            }
-           },
-           "required": [
-            "error",
-            "message"
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string",
+           "enum": [
+            "template_not_found",
+            "not_found"
            ]
           },
-          {
-           "type": "object",
-           "properties": {
-            "error": {
-             "type": "string",
-             "enum": [
-              "Contact not found"
-             ]
-            }
-           },
-           "required": [
-            "error"
-           ]
-          },
-          {
-           "type": "object",
-           "properties": {
-            "message": {
-             "type": "string"
-            }
-           },
-           "required": [
-            "message"
-           ]
+          "message": {
+           "type": "string"
           }
+         },
+         "required": [
+          "error",
+          "message"
          ]
         }
        }
@@ -14648,6 +14754,24 @@
             "placeholders",
             "count"
            ]
+          },
+          {
+           "type": "object",
+           "properties": {
+            "error": {
+             "type": "string",
+             "enum": [
+              "template_waba_mismatch"
+             ]
+            },
+            "message": {
+             "type": "string"
+            }
+           },
+           "required": [
+            "error",
+            "message"
+           ]
           }
          ]
         }
@@ -14696,7 +14820,7 @@
          "properties": {
           "error": {
            "type": "string",
-           "description": "Código estable del error: es lo que se compara. `message` es para personas y puede cambiar.",
+           "description": "Código estable del error: es lo que se compara. `message` es para personas y puede cambiar. Con este status, el portero también puede devolver `gate_misconfigured`.",
            "examples": [
             "internal_error"
            ]
@@ -14787,6 +14911,63 @@
      },
      "404": {
       "$ref": "#/components/responses/ConversationsModelNotFoundException"
+     },
+     "422": {
+      "description": "Unprocessable Content",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string",
+           "enum": [
+            "number_not_connected_to_meta",
+            "meta_rejected"
+           ]
+          },
+          "message": {
+           "type": "string"
+          },
+          "meta_code": {
+           "type": [
+            "integer",
+            "null"
+           ]
+          }
+         },
+         "required": [
+          "error",
+          "message"
+         ]
+        }
+       }
+      }
+     },
+     "502": {
+      "description": "Bad Gateway",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string",
+           "enum": [
+            "meta_unavailable"
+           ]
+          },
+          "message": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "error",
+          "message"
+         ]
+        }
+       }
+      }
      }
     },
     "x-fc-permission": "conversations:write",
@@ -16569,14 +16750,7 @@
     },
     "responses": {
      "200": {
-      "description": "OK",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
+      "description": "OK"
      },
      "400": {
       "description": "Bad Request",
@@ -16913,14 +17087,7 @@
     },
     "responses": {
      "200": {
-      "description": "OK",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
+      "description": "OK"
      },
      "401": {
       "$ref": "#/components/responses/ConversationsAuthenticationException"
@@ -17008,21 +17175,14 @@
       "content": {
        "application/json": {
         "schema": {
-         "anyOf": [
-          {
-           "type": "object",
-           "properties": {
-            "data": {
-             "$ref": "#/components/schemas/TemplateMetricsResource"
-            }
-           },
-           "required": [
-            "data"
-           ]
-          },
-          {
-           "type": "object"
+         "type": "object",
+         "properties": {
+          "data": {
+           "$ref": "#/components/schemas/TemplateMetricsResource"
           }
+         },
+         "required": [
+          "data"
          ]
         }
        }
@@ -17998,14 +18158,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "anyOf": [
-          {
-           "$ref": "#/components/schemas/UserResource"
-          },
-          {
-           "type": "object"
-          }
-         ]
+         "$ref": "#/components/schemas/UserResource"
         }
        }
       }
@@ -20297,15 +20450,7 @@
     ],
     "responses": {
      "204": {
-      "description": "No Content",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "array",
-         "items": {}
-        }
-       }
-      }
+      "description": "No Content"
      },
      "401": {
       "$ref": "#/components/responses/ConversationsAuthenticationException"
@@ -20601,7 +20746,109 @@
       "content": {
        "application/json": {
         "schema": {
-         "type": "string"
+         "type": "object",
+         "properties": {
+          "data": {
+           "$ref": "#/components/schemas/WhatsappFormResource"
+          },
+          "created": {
+           "type": "boolean"
+          },
+          "lint": {
+           "type": "array",
+           "items": {}
+          },
+          "numbers": {
+           "type": "array",
+           "prefixItems": [
+            {
+             "type": "object",
+             "properties": {
+              "device_id": {},
+              "primary": {
+               "type": "boolean"
+              },
+              "status": {
+               "type": "string"
+              },
+              "error": {
+               "type": "string"
+              }
+             },
+             "required": [
+              "device_id",
+              "primary",
+              "status",
+              "error"
+             ]
+            }
+           ],
+           "minItems": 1,
+           "maxItems": 1
+          }
+         },
+         "required": [
+          "data",
+          "created",
+          "lint",
+          "numbers"
+         ]
+        }
+       }
+      }
+     },
+     "201": {
+      "description": "Created",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "data": {
+           "$ref": "#/components/schemas/WhatsappFormResource"
+          },
+          "created": {
+           "type": "boolean"
+          },
+          "lint": {
+           "type": "array",
+           "items": {}
+          },
+          "numbers": {
+           "type": "array",
+           "prefixItems": [
+            {
+             "type": "object",
+             "properties": {
+              "device_id": {},
+              "primary": {
+               "type": "boolean"
+              },
+              "status": {
+               "type": "string"
+              },
+              "error": {
+               "type": "string"
+              }
+             },
+             "required": [
+              "device_id",
+              "primary",
+              "status",
+              "error"
+             ]
+            }
+           ],
+           "minItems": 1,
+           "maxItems": 1
+          }
+         },
+         "required": [
+          "data",
+          "created",
+          "lint",
+          "numbers"
+         ]
         }
        }
       }
@@ -21201,36 +21448,22 @@
       "content": {
        "application/json": {
         "schema": {
-         "anyOf": [
-          {
-           "type": "object",
-           "properties": {
-            "error": {
-             "type": "string",
-             "enum": [
-              "form_not_found"
-             ]
-            },
-            "message": {
-             "type": "string"
-            }
-           },
-           "required": [
-            "error",
-            "message"
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string",
+           "enum": [
+            "form_not_found",
+            "not_found"
            ]
           },
-          {
-           "type": "object",
-           "properties": {
-            "message": {
-             "type": "string"
-            }
-           },
-           "required": [
-            "message"
-           ]
+          "message": {
+           "type": "string"
           }
+         },
+         "required": [
+          "error",
+          "message"
          ]
         }
        }
@@ -21364,7 +21597,7 @@
          "properties": {
           "error": {
            "type": "string",
-           "description": "Código estable del error: es lo que se compara. `message` es para personas y puede cambiar.",
+           "description": "Código estable del error: es lo que se compara. `message` es para personas y puede cambiar. Con este status, el portero también puede devolver `gate_misconfigured`.",
            "examples": [
             "internal_error"
            ]
@@ -23511,6 +23744,61 @@
      "401": {
       "$ref": "#/components/responses/CommunitiesAuthenticationException"
      },
+     "402": {
+      "description": "La cuenta llegó al tope de grupos oficiales de su plan. No se registra ninguna acción.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string",
+           "description": "Código estable del error: es lo que se compara. `message` es para personas y puede cambiar.",
+           "enum": [
+            "plan_cap_reached"
+           ]
+          },
+          "message": {
+           "type": "string",
+           "examples": [
+            "Alcanzaste el límite de tu plan."
+           ]
+          },
+          "feature": {
+           "type": "string",
+           "description": "La función del plan que tiene el tope.",
+           "examples": [
+            "cloud_api_groups"
+           ]
+          },
+          "parameter": {
+           "type": "string",
+           "description": "El tope que se alcanzó: grupos oficiales creados.",
+           "examples": [
+            "cloud_api_groups_created"
+           ]
+          },
+          "cap": {
+           "type": "integer",
+           "description": "El tope del plan."
+          },
+          "used": {
+           "type": "integer",
+           "description": "Lo que la cuenta ya usó de ese tope."
+          }
+         },
+         "required": [
+          "error",
+          "message",
+          "feature",
+          "parameter",
+          "cap",
+          "used"
+         ]
+        }
+       }
+      }
+     },
      "403": {
       "$ref": "#/components/responses/CommunitiesAuthorizationException"
      },
@@ -24752,14 +25040,14 @@
     ],
     "responses": {
      "200": {
-      "description": "The action.",
+      "description": "El estado de la acción y, si terminó `completed`, su resultado.",
       "content": {
        "application/json": {
         "schema": {
          "type": "object",
          "properties": {
           "data": {
-           "$ref": "#/components/schemas/PendingGroupAction"
+           "$ref": "#/components/schemas/ApiGroupActionResource"
           }
          },
          "required": [
@@ -24778,9 +25066,7 @@
     },
     "x-fc-proposito": "Sirve para saber cómo terminó lo que le pediste a un grupo, como mandarle un mensaje: si sigue en cola, se está haciendo, terminó o falló, y su resultado.",
     "x-fc-domain": "communities",
-    "x-fc-permission": "communities:read",
-    "x-fc-pending": "communities-group-action",
-    "x-fc-pending-response": "communities-group-action"
+    "x-fc-permission": "communities:read"
    }
   },
   "/api/v1/groups/{group}/participants": {
@@ -25056,7 +25342,7 @@
   "/api/v1/groups/{group}/description": {
    "put": {
     "operationId": "apiGroupAction.updateDescription",
-    "description": "**Permiso requerido:** **Grupos y campañas → Administrar grupos**\n\n**Nota:** Asíncrona: responde 202 con `action_id`; consulta el resultado en `GET /groups/actions/{action}`. Hasta 2048 caracteres; una descripción vacía la borra. Se ejecuta al ritmo de las campañas del número.",
+    "description": "**Permiso requerido:** **Grupos y campañas → Administrar grupos**\n\n**Nota:** Asíncrona: responde 202 con `action_id`; consulta el resultado en `GET /groups/actions/{action}`. Hasta 2048 caracteres. Con un número QR, una descripción vacía la borra; con un número oficial responde `422 validation_failed`, porque WhatsApp no permite borrar la descripción de un grupo oficial. Se ejecuta al ritmo de las campañas del número.",
     "summary": "Cambiar la descripción de un grupo",
     "tags": [
      "Acciones de grupo"
@@ -32777,19 +33063,22 @@
       }
      },
      "400": {
-      "description": "El número no admite esta edición.",
+      "description": "El número no admite esta edición (`unsupported_provider`).",
       "content": {
        "application/json": {
         "schema": {
          "type": "object",
          "properties": {
           "error": {
-           "type": "string",
-           "const": "Unsupported provider"
+           "type": "string"
+          },
+          "message": {
+           "type": "string"
           }
          },
          "required": [
-          "error"
+          "error",
+          "message"
          ]
         }
        }
@@ -34945,7 +35234,7 @@
   "/api/v1/devices/{device}/username": {
    "get": {
     "operationId": "deviceUsername.show",
-    "description": "**Lectura** · requiere **Números de WhatsApp → Ver**.\n\nLo consulta en Meta; si Meta no devuelve ninguno, responde el último que se reservó. Solo\npara números oficiales.",
+    "description": "**Lectura** · requiere **Números de WhatsApp → Ver**.\n\nLo consulta en Meta; si Meta no devuelve ninguno, responde el último que se reservó. Solo\npara números oficiales. Si Meta rechaza la consulta, la respuesta lleva el mismo código HTTP\nque dio Meta, `error` `meta_error` y el motivo de Meta en `message`.",
     "summary": "Ver el nombre de usuario de un número",
     "tags": [
      "Números"
@@ -35044,35 +35333,22 @@
       "$ref": "#/components/responses/AccountsModelNotFoundException"
      },
      "422": {
-      "description": "El número no es oficial o no está conectado.",
+      "description": "El número no es oficial (`device_not_meta`) o todavía no está conectado a Meta (`device_not_ready`).",
       "content": {
        "application/json": {
         "schema": {
-         "anyOf": [
-          {
-           "type": "object",
-           "properties": {
-            "error": {
-             "type": "string",
-             "const": "El dispositivo no tiene credenciales Meta configuradas."
-            }
-           },
-           "required": [
-            "error"
-           ]
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string"
           },
-          {
-           "type": "object",
-           "properties": {
-            "error": {
-             "type": "string",
-             "const": "Solo disponible para dispositivos WhatsApp Cloud API."
-            }
-           },
-           "required": [
-            "error"
-           ]
+          "message": {
+           "type": "string"
           }
+         },
+         "required": [
+          "error",
+          "message"
          ]
         }
        }
@@ -35113,11 +35389,23 @@
       }
      },
      "502": {
-      "description": "Meta no respondió. Vuelve a intentarlo.",
+      "description": "Meta no respondió (`provider_error`). Vuelve a intentarlo.",
       "content": {
        "application/json": {
         "schema": {
-         "type": "string"
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string"
+          },
+          "message": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "error",
+          "message"
+         ]
         }
        }
       }
@@ -35131,7 +35419,7 @@
    },
    "post": {
     "operationId": "deviceUsername.store",
-    "description": "**Escritura** · requiere **Números de WhatsApp → Editar**.\n\n`username` va de 3 a 35 caracteres: letras minúsculas, números, puntos y guiones bajos. Se\nreserva en Meta; si Meta lo rechaza (por ejemplo, porque ya está tomado), la respuesta\ntrae su motivo en `message`. Solo para números oficiales.",
+    "description": "**Escritura** · requiere **Números de WhatsApp → Editar**.\n\n`username` va de 3 a 35 caracteres: letras minúsculas, números, puntos y guiones bajos. Se\nreserva en Meta; si Meta lo rechaza (por ejemplo, porque ya está tomado), la respuesta\nlleva el mismo código HTTP que dio Meta, `error` `meta_error` y su motivo en `message`. Solo\npara números oficiales.",
     "summary": "Reservar un nombre de usuario",
     "tags": [
      "Números"
@@ -35258,35 +35546,22 @@
       "$ref": "#/components/responses/AccountsModelNotFoundException"
      },
      "422": {
-      "description": "El nombre no es válido, o el número no es oficial o no está conectado.",
+      "description": "El nombre no es válido (`validation_failed`, con `errors`), el número no es oficial (`device_not_meta`) o todavía no está conectado a Meta (`device_not_ready`).",
       "content": {
        "application/json": {
         "schema": {
-         "anyOf": [
-          {
-           "type": "object",
-           "properties": {
-            "error": {
-             "type": "string",
-             "const": "El dispositivo no tiene credenciales Meta configuradas."
-            }
-           },
-           "required": [
-            "error"
-           ]
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string"
           },
-          {
-           "type": "object",
-           "properties": {
-            "error": {
-             "type": "string",
-             "const": "Solo disponible para dispositivos WhatsApp Cloud API."
-            }
-           },
-           "required": [
-            "error"
-           ]
+          "message": {
+           "type": "string"
           }
+         },
+         "required": [
+          "error",
+          "message"
          ]
         }
        }
@@ -35327,11 +35602,23 @@
       }
      },
      "502": {
-      "description": "Meta no respondió. Vuelve a intentarlo.",
+      "description": "Meta no respondió (`provider_error`). Vuelve a intentarlo.",
       "content": {
        "application/json": {
         "schema": {
-         "type": "string"
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string"
+          },
+          "message": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "error",
+          "message"
+         ]
         }
        }
       }
@@ -35347,7 +35634,7 @@
   "/api/v1/devices/{device}/username/suggestions": {
    "get": {
     "operationId": "deviceUsername.suggestions",
-    "description": "**Lectura** · requiere **Números de WhatsApp → Ver**.\n\nLas sugerencias que da Meta para ese número. Solo para números oficiales.",
+    "description": "**Lectura** · requiere **Números de WhatsApp → Ver**.\n\nLas sugerencias que da Meta para ese número. Solo para números oficiales. Si Meta rechaza la\nconsulta, la respuesta lleva el mismo código HTTP que dio Meta, `error` `meta_error` y el\nmotivo de Meta en `message`.",
     "summary": "Ver nombres de usuario sugeridos",
     "tags": [
      "Números"
@@ -35446,35 +35733,22 @@
       "$ref": "#/components/responses/AccountsModelNotFoundException"
      },
      "422": {
-      "description": "El número no es oficial o no está conectado.",
+      "description": "El número no es oficial (`device_not_meta`) o todavía no está conectado a Meta (`device_not_ready`).",
       "content": {
        "application/json": {
         "schema": {
-         "anyOf": [
-          {
-           "type": "object",
-           "properties": {
-            "error": {
-             "type": "string",
-             "const": "El dispositivo no tiene credenciales Meta configuradas."
-            }
-           },
-           "required": [
-            "error"
-           ]
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string"
           },
-          {
-           "type": "object",
-           "properties": {
-            "error": {
-             "type": "string",
-             "const": "Solo disponible para dispositivos WhatsApp Cloud API."
-            }
-           },
-           "required": [
-            "error"
-           ]
+          "message": {
+           "type": "string"
           }
+         },
+         "required": [
+          "error",
+          "message"
          ]
         }
        }
@@ -35515,11 +35789,23 @@
       }
      },
      "502": {
-      "description": "Meta no respondió. Vuelve a intentarlo.",
+      "description": "Meta no respondió (`provider_error`). Vuelve a intentarlo.",
       "content": {
        "application/json": {
         "schema": {
-         "type": "string"
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string"
+          },
+          "message": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "error",
+          "message"
+         ]
         }
        }
       }
@@ -35904,7 +36190,7 @@
    },
    "post": {
     "operationId": "webhookSubscription.store",
-    "description": "**Escritura** · requiere **Avisos (webhooks) → Administrar**.\n\nCon una clave de API, cada tipo de `events` exige además el permiso\n**Números de WhatsApp → Ver**, **Contactos y conversaciones → Ver** o\n**Grupos y campañas → Ver**, según su área; si falta, 422.",
+    "description": "**Escritura** · requiere **Avisos (webhooks) → Administrar**.\n\nCon una clave de API, cada tipo de `events` exige además el permiso\n**Números de WhatsApp → Ver**, **Contactos y conversaciones → Ver** o\n**Grupos y campañas → Ver**, según su área; si falta, 422.\n\nHay un tope de 50 suscripciones por workspace (por cuenta, si no usas workspaces), sea\ncual sea su estado: con 50, crear otra responde `422` con `error`\n`webhooks_limit_reached`.\n\nNo acepta `Idempotency-Key`: reintentar una creación que sí llegó crea otra suscripción,\ncon otro secreto.",
     "summary": "Crear un webhook",
     "tags": [
      "Webhooks"
@@ -37099,7 +37385,7 @@
     ],
     "responses": {
      "200": {
-      "description": "`WhatsAppBusinessAccountResource`",
+      "description": "La WABA, con sus números y su límite de mensajes.",
       "content": {
        "application/json": {
         "schema": {
@@ -38752,7 +39038,7 @@
    "post": {
     "operationId": "webhook.group_blocked",
     "summary": "group.blocked",
-    "description": "Un grupo quedó inoperable: sin administrador conectado, con el link de invitación inválido o suspendido por WhatsApp.",
+    "description": "Un grupo de una campaña quedó inoperable: sin administrador conectado, con el link de invitación inválido o suspendido por WhatsApp; un grupo que no es de una campaña no lo genera.",
     "tags": [
      "Webhooks"
     ],
@@ -38842,7 +39128,7 @@
    "post": {
     "operationId": "webhook.group_recovered",
     "summary": "group.recovered",
-    "description": "Un grupo que estaba bloqueado volvió a operar.",
+    "description": "Un grupo de una campaña que estaba bloqueado volvió a operar; un grupo que no es de una campaña no lo genera.",
     "tags": [
      "Webhooks"
     ],
@@ -39212,7 +39498,7 @@
    "post": {
     "operationId": "webhook.pipeline_finished",
     "summary": "pipeline.finished",
-    "description": "Terminó un pipeline de operaciones sobre grupos, con su resultado agregado y la clave de idempotencia del pedido que lo originó, cuando la hay.",
+    "description": "Terminó un pipeline de operaciones sobre los grupos de una campaña, con su resultado agregado y la clave de idempotencia del pedido que lo originó, cuando la hay; si después cambia el resultado de alguna de sus acciones (por ejemplo, por un reintento), sale otro, con otro `id` y los conteos nuevos.",
     "tags": [
      "Webhooks"
     ],
@@ -40413,7 +40699,7 @@
           "connection": "qr",
           "external_reference": "cliente-42"
          },
-         "connected_at": "2026-10-05T03:00:00+00:00",
+         "connected_at": "2026-10-05T03:00:00Z",
          "connect_link_id": 812,
          "workspace_id": 37
         }
@@ -40500,7 +40786,7 @@
           "connection": "qr",
           "external_reference": "cliente-42"
          },
-         "disconnected_at": "2026-10-05T03:00:00+00:00",
+         "disconnected_at": "2026-10-05T03:00:00Z",
          "reason": "qr_logged_out",
          "connect_link_id": 812,
          "workspace_id": 37
@@ -41366,7 +41652,7 @@
           "connection": "qr",
           "external_reference": "cliente-42"
          },
-         "deleted_at": "2026-10-05T03:00:00+00:00",
+         "deleted_at": "2026-10-05T03:00:00Z",
          "connect_link_id": 812,
          "workspace_id": 37
         }
@@ -41463,7 +41749,7 @@
          },
          "previous_state": "available",
          "state": "limited",
-         "changed_at": "2026-10-05T03:00:00+00:00",
+         "changed_at": "2026-10-05T03:00:00Z",
          "connect_link_id": null,
          "workspace_id": 37
         }
@@ -41548,7 +41834,7 @@
          },
          "previous": "GREEN",
          "current": "YELLOW",
-         "changed_at": "2026-10-05T03:00:00+00:00",
+         "changed_at": "2026-10-05T03:00:00Z",
          "connect_link_id": null,
          "workspace_id": 37
         }
@@ -41633,7 +41919,7 @@
          },
          "previous": "TIER_1K",
          "current": "TIER_10K",
-         "changed_at": "2026-10-05T03:00:00+00:00",
+         "changed_at": "2026-10-05T03:00:00Z",
          "connect_link_id": null,
          "workspace_id": 37
         }
@@ -41746,7 +42032,7 @@
          "status": "APPROVED",
          "verified_name": "Soporte Lucky Shrub",
          "rejection_reason": null,
-         "reviewed_at": "2026-10-05T03:00:00+00:00",
+         "reviewed_at": "2026-10-05T03:00:00Z",
          "connect_link_id": null,
          "workspace_id": 37
         }
@@ -43341,6 +43627,251 @@
      "status"
     ],
     "title": "ApiGroupActionAcceptedResource"
+   },
+   "ApiGroupActionResource": {
+    "type": "object",
+    "properties": {
+     "action_id": {
+      "type": "string",
+      "description": "Id de la acción: el `action_id` del `202`."
+     },
+     "type": {
+      "type": "string",
+      "description": "Tipo de acción.",
+      "enum": [
+       "create_group",
+       "add_participants",
+       "remove_participants",
+       "promote_admins",
+       "demote_admins",
+       "update_name",
+       "update_description",
+       "update_photo",
+       "update_settings",
+       "renew_invite_link",
+       "send_message",
+       "approve_join_requests",
+       "reject_join_requests"
+      ]
+     },
+     "status": {
+      "type": "string",
+      "description": "Estado de la acción.",
+      "enum": [
+       "queued",
+       "running",
+       "completed",
+       "failed"
+      ]
+     },
+     "device_id": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "description": "Número que ejecuta la acción; `null` si es de otro workspace que el de la key."
+     },
+     "group": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "Grupo de la acción; `null` si todavía no existe (una creación sin terminar) o es de otro workspace que el de la key.",
+      "properties": {
+       "uid": {
+        "type": "string"
+       },
+       "name": {
+        "type": [
+         "string",
+         "null"
+        ]
+       }
+      },
+      "required": [
+       "uid",
+       "name"
+      ]
+     },
+     "result": {
+      "description": "Resultado de una acción `completed`; `null` mientras está `queued` o `running` y cuando termina `failed`. Su forma depende de `type`: `{\"participants\": [...]}` (una lista, en el orden del pedido) para las acciones con lista de teléfonos; `{\"group\": {\"uid\", \"name\"}, \"invite_link\"}` para `create_group`; `{\"invite_link\"}` para `renew_invite_link`; `{\"message\": {\"uid\"}}` para `send_message`; `{}` para las demás. Es el mismo `result` del evento `group_action.completed`.",
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "participants": {
+          "type": "array",
+          "items": {
+           "type": "object",
+           "properties": {
+            "identity": {
+             "type": [
+              "string",
+              "null"
+             ]
+            },
+            "identity_type": {
+             "type": [
+              "string",
+              "null"
+             ]
+            },
+            "status": {
+             "type": "string",
+             "enum": [
+              "added",
+              "invited",
+              "removed",
+              "promoted",
+              "demoted",
+              "approved",
+              "rejected",
+              "failed"
+             ]
+            },
+            "reason": {
+             "type": [
+              "string",
+              "null"
+             ]
+            }
+           },
+           "required": [
+            "identity",
+            "identity_type",
+            "status",
+            "reason"
+           ]
+          }
+         }
+        },
+        "required": [
+         "participants"
+        ]
+       },
+       {
+        "type": "object",
+        "properties": {
+         "group": {
+          "type": "object",
+          "properties": {
+           "uid": {
+            "type": "string"
+           },
+           "name": {
+            "type": [
+             "string",
+             "null"
+            ]
+           }
+          },
+          "required": [
+           "uid",
+           "name"
+          ]
+         },
+         "invite_link": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "required": [
+         "group",
+         "invite_link"
+        ]
+       },
+       {
+        "type": "object",
+        "properties": {
+         "invite_link": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "required": [
+         "invite_link"
+        ]
+       },
+       {
+        "type": "object",
+        "properties": {
+         "message": {
+          "type": "object",
+          "properties": {
+           "uid": {
+            "type": [
+             "string",
+             "null"
+            ]
+           }
+          },
+          "required": [
+           "uid"
+          ]
+         }
+        },
+        "required": [
+         "message"
+        ]
+       },
+       {
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "reason": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Motivo de una acción `failed`; `null` en los demás estados. Vocabulario cerrado: la sección «Motivos» de «Acciones de grupo»."
+     },
+     "created_at": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "started_at": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "completed_at": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "failed_at": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "action_id",
+     "type",
+     "status",
+     "device_id",
+     "group",
+     "result",
+     "reason",
+     "created_at",
+     "started_at",
+     "completed_at",
+     "failed_at"
+    ],
+    "title": "ApiGroupActionResource"
    },
    "ApiGroupDescriptionRequest": {
     "type": "object",
@@ -47007,7 +47538,7 @@
        "integer",
        "null"
       ],
-      "description": "additive last-computed snapshot, always present\n(not nulled when overloaded=false). No state row => counts null, flags false."
+      "description": "En la última evaluación, cuántos grupos tenía el número; `null` si nunca se evaluó."
      },
      "overloaded_one_to_one_count": {
       "type": [
@@ -47026,7 +47557,7 @@
      },
      "overloaded_alert_level": {
       "type": "string",
-      "description": "additive, always present. No row => none / null."
+      "description": "El evento de número sobrecargado: `loud` (sin descartar), `latent` (descartado en este\nepisodio) o `none` (no está sobrecargado o nunca se evaluó)."
      },
      "overloaded_dismissed_at": {
       "type": [
@@ -53460,7 +53991,7 @@
   "generated_by": "scripts/generate.mjs",
   "note": "GENERATED: do not edit it. The portal's snapshot plus the pending layers.",
   "inputs": {
-   "spec/funnelchat.json": "3e5bc8ef01a2c74650a2581beb9bcfee4dd14252bec8ab52542fa3240ab60475",
+   "spec/funnelchat.json": "7db2ead826697c80fd8feef3f0ea556b5374dd3d2cb5e02f3cfe4584af79e33c",
    "spec/pending.json": "dd7b8cf6e5be45ddf1c0c00a9f4480cceec11b364adec083bbf989fa11944d9d",
    "spec/pending-sandbox.json": "32bcbfef902fbabd57e1626f4d97e964b89f3c561c7b0f0e21531c8576019aaf"
   },
@@ -53474,7 +54005,6 @@
    "GET /api/v1/devices/{device}/qr (respuestas: 200) [pending.json]",
    "GET /api/v1/templates (respuestas: 200) [pending.json]",
    "PUT /api/v1/webhooks/{id} (respuestas: 200) [pending.json]",
-   "GET /api/v1/groups/actions/{action} (respuestas: 200) [pending.json]",
    "webhook device.connected [pending.json]",
    "webhook device.disconnected [pending.json]",
    "webhook billing.payment_failed [pending.json]",

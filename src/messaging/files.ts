@@ -12,7 +12,7 @@
  *   extension is not supported needs a `file_name` with one (`422 errors.file_name`);
  * - a known but unsupported extension (`.zip`) without `file_type` is `415`, with each route's own body.
  */
-import { RawApiError, validationFailed } from '../http/errors.js';
+import { ApiError, validationFailed } from '../http/errors.js';
 import type { FieldErrors } from '../openapi/validate.js';
 
 export const SEND_FILE_TYPES = ['image', 'video', 'audio', 'document', 'sticker'] as const;
@@ -134,9 +134,6 @@ export function resolveFile(body: Record<string, unknown>, style: UnsupportedSty
   if (fileType !== null) return { file, type: fileType as SendFileType, fileName: fileName as string | null };
   const type = SUPPORTED_EXTENSIONS[extension];
   if (type) return { file, type, fileName: fileName as string | null };
-  const error = `Unsupported file type: ${extension}`;
-  throw new RawApiError(
-    415,
-    style === 'conversation' ? { error, supported_file_types: Object.keys(SUPPORTED_EXTENSIONS) } : { status: 'error', error },
-  );
+  const message = `Unsupported file type: ${extension}`;
+  throw new ApiError(415, 'bad_request', message, style === 'conversation' ? { supported_file_types: Object.keys(SUPPORTED_EXTENSIONS) } : {});
 }

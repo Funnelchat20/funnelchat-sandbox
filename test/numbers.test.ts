@@ -64,7 +64,7 @@ describe('a number by QR', () => {
     expect(delivery!.headers['x-funnelchat-signature']).toBe(signature(sub.secret, delivery!.raw, Number(t)));
     expect(delivery!.json.data).toEqual({
       device: { id: device.id, name: 'Tienda Ana', number: '5491155550101', connection: 'qr', external_reference: 'cliente-8841' },
-      connected_at: expect.stringMatching(/\+00:00$/),
+      connected_at: expect.stringMatching(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/),
       connect_link_id: null,
       workspace_id: 1,
     });

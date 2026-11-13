@@ -223,14 +223,14 @@ function sendTemplate(ctx: HandlerContext): HandlerResult {
   const device = ctx.app.store.devices.get(Number(ctx.path.device));
   // A number outside the account is refused by `ApiKeySendAcceptor`.
   if (!device) throw rejection('device_unavailable');
-  if (template.deviceId !== device.id) throw new RawApiError(422, { error: 'La plantilla no pertenece al número actual', error_code: 'template_waba_mismatch' });
+  if (template.deviceId !== device.id) throw new ApiError(422, 'template_waba_mismatch', 'La plantilla no pertenece al número actual');
   if (template.status !== 'APPROVED') throw fieldError('template', `La plantilla está ${template.status}: solo se envían plantillas aprobadas.`);
   assertUsable(b, device);
   const identity = byIdentity(b);
   const contactId = identity ? sendRecipient(ctx, b).id : Number(b.contact_id);
   const contact = ctx.app.store.contacts.get(contactId);
   // A contact of another workspace answers like one of another account (v1.19.21).
-  if (!contact || !sees(ctx.workspace, contact.workspaceId)) throw new RawApiError(404, { error: 'Contact not found' });
+  if (!contact || !sees(ctx.workspace, contact.workspaceId)) throw new ApiError(404, 'not_found', 'Contact not found');
   if (!device.connected) throw rejection('device_unavailable');
   const variables = (b.template_variables as { body?: unknown } | undefined)?.body;
   // A contact found by the body's phone or whatsapp_id is it by construction: nothing to confirm.
@@ -264,10 +264,10 @@ export const messageHandlers: HandlerTable = {
     let contact: Contact | null = null;
     if (!byIdentity(b)) {
       contact = ctx.app.store.contacts.get(Number(b.contact_id)) ?? null;
-      // `MessageController`: its own bodies, `{status: "error", error}`; a contact of another workspace, the same 404.
-      if (!contact || !sees(ctx.workspace, contact.workspaceId)) throw new RawApiError(404, { status: 'error', error: 'Contacto no encontrado.' });
+      // `MessageController`: `404 not_found`, which keeps its `status: "error"`; a contact of another workspace, the same 404.
+      if (!contact || !sees(ctx.workspace, contact.workspaceId)) throw new ApiError(404, 'not_found', 'Contacto no encontrado.', { status: 'error' });
     }
-    if (!ctx.app.store.devices.has(Number(b.device_id))) throw new RawApiError(403, { status: 'error', error: 'No autorizado' });
+    if (!ctx.app.store.devices.has(Number(b.device_id))) throw new ApiError(403, 'forbidden', 'No autorizado');
     return sendToContact(ctx, contact, 'direct');
   },
 
