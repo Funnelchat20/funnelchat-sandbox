@@ -27,7 +27,7 @@ describe('one workspace, as every account starts', () => {
     // accounts `EventWorkspaceRouting::stamp()`: the last key of `data`.
     expect(Object.keys(event!.json.data)).toEqual(['device', 'connected_at', 'connect_link_id', 'workspace_id']);
     expect(event!.json.data.workspace_id).toBe(1);
-    expect(event!.json.data.connected_at).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+00:00$/);
+    expect(event!.json.data.connected_at).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
   });
 });
 
@@ -112,7 +112,7 @@ describe('contacts, conversations and messages of another workspace', () => {
     expect(await b.as('POST', '/api/v1/contacts/2001/message', { device_id: 4, contact_id: 2001, text: 'x' })).toMatchObject({ status: 404, body: { error: 'not_found', message: 'No encontramos lo que pediste en esta cuenta.' } });
     expect(await b.as('POST', '/api/v1/message/send-message', { device_id: 4, contact_id: 2001, text: 'x' })).toMatchObject({
       status: 404,
-      body: { status: 'error', error: 'Contacto no encontrado.' },
+      body: { error: 'not_found', message: 'Contacto no encontrado.', status: 'error' },
     });
     expect((await b.as('GET', '/api/v1/templates')).body.data).toEqual([]);
   });

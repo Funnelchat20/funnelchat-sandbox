@@ -94,14 +94,14 @@ describe('the file of a send', () => {
     expect((await send(api, { file: 'https://cdn.example.com/a.pdf', file_type: 'document', file_name: 'mal/nombre.pdf' })).body.errors.file_name).toBeDefined();
   });
 
-  it('a known but unsupported extension is 415, with the body of each route', async () => {
+  it('a known but unsupported extension is 415 bad_request, with the list on the route of a contact', async () => {
     const api = await startSandbox();
     const conversation = await send(api, { file: 'https://cdn.example.com/a.zip' });
     expect(conversation.status).toBe(415);
-    expect(conversation.body).toEqual({ error: 'Unsupported file type: zip', supported_file_types: expect.arrayContaining(['jpg', 'pdf', 'webp']) });
+    expect(conversation.body).toEqual({ error: 'bad_request', message: 'Unsupported file type: zip', supported_file_types: expect.arrayContaining(['jpg', 'pdf', 'webp']) });
     const direct = await send(api, { file: 'https://cdn.example.com/a.zip' }, '/api/v1/message/send-message');
     expect(direct.status).toBe(415);
-    expect(direct.body).toEqual({ status: 'error', error: 'Unsupported file type: zip' });
+    expect(direct.body).toEqual({ error: 'bad_request', message: 'Unsupported file type: zip' });
   });
 
   it('client_reference is 1 to 64 visible ASCII characters', async () => {
@@ -142,14 +142,14 @@ describe('the MAC of the account', () => {
 });
 
 describe('the bodies of each route', () => {
-  it('send-message, send-template and the lookup answer their own shapes', async () => {
+  it('send-message, send-template and the lookup answer error and message', async () => {
     const api = await startSandbox();
-    expect(await api.call('POST', '/api/v1/message/send-message', { device_id: 4, contact_id: 999999, text: 'x' })).toMatchObject({ status: 404, body: { status: 'error', error: 'Contacto no encontrado.' } });
-    expect(await api.call('POST', '/api/v1/message/send-message', { device_id: 99, contact_id: 2001, text: 'x' })).toMatchObject({ status: 403, body: { status: 'error', error: 'No autorizado' } });
+    expect(await api.call('POST', '/api/v1/message/send-message', { device_id: 4, contact_id: 999999, text: 'x' })).toMatchObject({ status: 404, body: { error: 'not_found', message: 'Contacto no encontrado.', status: 'error' } });
+    expect(await api.call('POST', '/api/v1/message/send-message', { device_id: 99, contact_id: 2001, text: 'x' })).toMatchObject({ status: 403, body: { error: 'forbidden', message: 'No autorizado' } });
     expect(await api.call('POST', '/api/v1/devices/3/templates/999/send-template', { phone: '5491100000000', contact_id: 2001 })).toMatchObject({ status: 404, body: { error: 'template_not_found' } });
     expect(await api.call('POST', '/api/v1/devices/4/templates/45/send-template', { phone: '5491100000000', contact_id: 2001 })).toMatchObject({
       status: 422,
-      body: { error: 'La plantilla no pertenece al número actual', error_code: 'template_waba_mismatch' },
+      body: { error: 'template_waba_mismatch', message: 'La plantilla no pertenece al número actual' },
     });
     const missing = await api.call('POST', '/api/v1/devices/3/templates/45/send-template', { phone: '5491100000000', contact_id: 2001, template_variables: { body: [] } });
     expect(missing.body).toMatchObject({ error: 'template_unresolved_placeholder', placeholders: ['{{1}}'], count: 1 });

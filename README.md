@@ -2,7 +2,7 @@
 
 A local server that imitates the Funnelchat public API and sends signed webhooks, with no real effects: nothing goes out to WhatsApp, nothing is charged, everything stays in memory. Build and test your integration without an account.
 
-It comes from the spec the developer portal publishes, v0.6.15: the same operations and events (see [Pending of the spec](#pending-of-the-spec)). What it simulates with state follows production as it was checked on 06-11.
+It comes from the spec the developer portal publishes, v0.6.16: the same operations and events (see [Pending of the spec](#pending-of-the-spec)). What it simulates with state follows production as it was checked on 06-11.
 
 ## Try it in 3 minutes, without an account
 
@@ -129,7 +129,7 @@ npx funnelchat-sandbox
 ```
 
 ```
-funnelchat-sandbox 0.5.1 at http://127.0.0.1:4010
+funnelchat-sandbox 0.5.2 at http://127.0.0.1:4010
   API:    http://127.0.0.1:4010/api/v1/...   (Authorization: Bearer 1|fc_live_sandbox, or any well-formed key)
   panel:  http://127.0.0.1:4010/_sandbox
   example numbers: 3 (official, with the 24-hour window) and 4 (QR, no window); contact 2001; template 45
@@ -303,7 +303,17 @@ The official number (`3`) has no groups (the sandbox account is not in the offic
 | `429 rate_limited` | Too many requests, with `Retry-After` in seconds. |
 | `502 provider_error` | WhatsApp or Meta refused or did not answer. The sandbox never answers it. |
 
-Each operation adds its own codes (`window_closed`, `template_not_found`, `LINT`…), and a few routes of conversations keep a body of their own (see [The rules](#the-rules)).
+Each operation adds its own codes (`window_closed`, `template_not_found`, `LINT`…), and a few routes keep a key of their own next to `error` and `message` (see [The rules](#the-rules)). Some the sandbox answers, and others only production:
+
+| Status and `error` | Where | In the sandbox |
+|---|---|---|
+| `415 bad_request` | A send with a file of a known but not accepted extension (see [A file by URL](#a-file-by-url)). | Yes. |
+| `422 webhooks_limit_reached` | `POST /api/v1/webhooks` with 50 subscriptions in the workspace, whatever their status. | Yes. |
+| `402 plan_cap_reached` | `POST /api/v1/groups`, past the cap of official groups of the plan, with `feature`, `parameter`, `cap` and `used`. | No: the route answers shape only. |
+| `400 unsupported_provider` | `PUT /api/v1/devices/{device}` on a number that does not take that change. | No. |
+| `422 device_not_meta`, `422 device_not_ready`, `502 provider_error`, `meta_error` | The WhatsApp username of a number (`/api/v1/devices/{device}/username…`): the number is not official, is not connected to Meta yet, Meta did not answer, or Meta refused (`meta_error`, with Meta's HTTP status and its reason in `message`). | No: the routes answer shape only. |
+| `422 number_not_connected_to_meta`, `422 meta_rejected`, `502 meta_unavailable` | `DELETE /api/v1/devices/{device}/templates/{template}`: the number is not connected to Meta, Meta refused to delete the template (with Meta's code in `meta_code`, or `null`), or Meta did not answer. | No: nothing goes to Meta, and the sandbox's templates are of official numbers, so the delete answers `204`. |
+| `500 gate_misconfigured` | Any route, from the gate, next to `500 internal_error`. | No. |
 
 **What does not exist in the account** answers `404 not_found` with the message of each domain: in conversations (contacts, messages, tags, fields, forms) `{"error": "not_found", "message": "Objeto no encontrado."}`; in accounts (numbers) `"Object not found"`; in communities (a group by its uid) Laravel's `"No query results for model [App\\Modules\\Shared\\Models\\Group] <uid>"`. **What is in another workspace** answers the same `404 not_found`: `{"error": "not_found", "message": "No encontramos lo que pediste en esta cuenta."}` for a contact, a message or a number, and the same `404` as one that does not exist for links, subscriptions and groups.
 
@@ -382,7 +392,7 @@ On `POST /contacts/{contact}/message` and `POST /message/send-message`, `file` i
 | The URL does not say its format and you sent no `file_type` | `422 errors.file_type`: «Tu archivo viene de una URL que no indica su formato: envía file_type con uno de estos valores: image, video, audio, document o sticker.» |
 | `file_type: "document"`, the URL does not end in an accepted extension and `file_name` with an extension is missing | `422 errors.file_name`: «Para enviar un documento desde una URL que no termina en una de las extensiones admitidas, envía file_name con su extensión, por ejemplo factura.pdf.» |
 | `file` malformed or longer than 4096 characters | `422 errors.file` |
-| A known but not accepted extension (`.zip`) without `file_type` | `415`: `{"error": "Unsupported file type: zip", "supported_file_types": [...]}`; on `send-message`, `{"status": "error", "error": "Unsupported file type: zip"}` |
+| A known but not accepted extension (`.zip`) without `file_type` | `415`: `{"error": "bad_request", "message": "Unsupported file type: zip", "supported_file_types": [...]}`; on `send-message`, without `supported_file_types` |
 
 `file_type` (`image`, `video`, `audio`, `document` or `sticker`) always wins over the extension. The sandbox does not download the file.
 
@@ -403,7 +413,7 @@ They apply to every send with a key, in this order, as in the API. The first one
 
 An incoming message from the contact opens the window of that number and resets the brakes. The error messages are the API's. To turn a rule off: `--no-window`, `--no-antiblock`, `--no-rate-limit`.
 
-Some routes have bodies of their own, as in conversations: `send-message` answers `404 {"status": "error", "error": "Contacto no encontrado."}` and `403 {"status": "error", "error": "No autorizado"}`; a template that does not exist is `404 template_not_found`, one of another number `422 {"error": "La plantilla no pertenece al número actual", "error_code": "template_waba_mismatch"}`, and one with unfilled variables `422 template_unresolved_placeholder` with `placeholders` and `count`.
+Some routes have codes of their own, as in conversations: `send-message` answers `404 {"error": "not_found", "message": "Contacto no encontrado.", "status": "error"}` and `403 forbidden`; a template that does not exist is `404 template_not_found`, one of another number `422 template_waba_mismatch`, and one with unfilled variables `422 template_unresolved_placeholder` with `placeholders` and `count`.
 
 ### Forcing failures
 
@@ -590,7 +600,7 @@ You subscribe with the same routes the SDKs and the n8n trigger use (the unified
 
 | Route | What it does |
 |---|---|
-| `POST /api/v1/webhooks` | Creates a subscription. The answer (`201`) carries `secret` **only once**. |
+| `POST /api/v1/webhooks` | Creates a subscription. The answer (`201`) carries `secret` **only once**. Up to 50 per workspace, whatever their status: one more answers `422 webhooks_limit_reached`. |
 | `GET /api/v1/webhooks`, `GET /api/v1/webhooks/{id}` | Lists or shows them, without the secret. |
 | `PUT /api/v1/webhooks/{id}` | Changes `url`, `events`, `description`, `filters` and, optionally, `status` (`active` or `paused`). The secret does not change. |
 | `DELETE /api/v1/webhooks/{id}` | Deletes it (`204`). |
@@ -730,7 +740,7 @@ And at `http://localhost:4010/_sandbox` you see each request and each delivery w
 
 - **It sends nothing to WhatsApp** and charges nothing: the `sent`, `delivered` and `read` statuses are made up by the sandbox, with the delays you configure. In the real API, a message still `queued` after an hour reads as `status: null`; in the sandbox it always moves on.
 - **One account and every permission:** any well-formed key gets in, is never revoked and there is no `403 permission_denied`. Workspaces are created and their keys minted through `/_sandbox`, never deleted, and a number does not move between workspaces. API keys are not created here, and subscriptions are not filtered by the key's areas (the real API answers `422` on `events` if the key lacks the event's `{area}:read`). The only `403 route_not_available` is the send to a group with `--no-group-actions`.
-- **There are no daily call caps** (`429 daily_cap_exceeded`), no `503 gate_unavailable` and no balance: to test those cases, force the failure. Of the MAC there is the lockout (`429 mac_lockout_24h`); `429 mac_limit_reached` is only forced, and the real API also stores in the history an error row for every send stopped by the MAC, which the sandbox does not.
+- **There are no daily call caps** (`429 daily_cap_exceeded`), no `503 gate_unavailable` or `500 gate_misconfigured` and no balance: to test those cases, force the failure. Of the MAC there is the lockout (`429 mac_lockout_24h`); `429 mac_limit_reached` is only forced. A send the MAC stops stores nothing, as in production: no message and no `client_reference` in the contact's history.
 - **The state is memory only:** it is lost when the process stops or with `POST /_sandbox/reset`. So your receiver does not lose the secret, put the subscription in the configuration file.
 - **The shape-only routes** answer the shape of the spec, always the same: it does not match your data, a write keeps nothing and no event goes out. See [With state or shape only](#with-state-or-shape-only).
 - **The validation messages** are Laravel's in Spanish, built from the schema: they may not match the API's word for word (decide by the HTTP status and by `error`, not by `message`).
@@ -748,9 +758,9 @@ And at `http://localhost:4010/_sandbox` you see each request and each delivery w
 
 ## Pending of the spec
 
-The spec (`spec/funnelchat.json`) is the one the portal publishes, v0.6.15 (https://developers-portal.funnelchat.app/specs/funnelchat.json): only the operations and events the portal shows. **The sandbox offers only that:** a layer corrects shapes where the spec says otherwise than production answers, but never adds an operation or an event (the generator refuses it and says so). The corrections are in two layers, which the next regeneration drops on its own once the spec carries them:
+The spec (`spec/funnelchat.json`) is the one the portal publishes, v0.6.16 (https://developers-portal.funnelchat.app/specs/funnelchat.json): only the operations and events the portal shows. **The sandbox offers only that:** a layer corrects shapes where the spec says otherwise than production answers, but never adds an operation or an event (the generator refuses it and says so). The corrections are in two layers, which the next regeneration drops on its own once the spec carries them:
 
-- `spec/pending.json`: the pending layer of the Node SDK (`funnelchat-node` @ `bde8679`), with the corrections of 13-11 made here ahead of the SDK: `answers[].label` of `whatsapp_form.completed` is always a string, `message.type` of `message.received` accepts types the spec does not list yet, and its sources say what portal v0.6.14 shows (its note in `spec/procedencia.json` lists them). Guarded by JSON Pointer conditions: the send answers, `devices/{device}/qr`, the template list, `PUT webhooks/{id}`, `GET groups/actions/{action}`, and the shapes of the number, group, billing, form and message events.
+- `spec/pending.json`: the pending layer of the Node SDK (`funnelchat-node` @ `bde8679`), with the corrections of 13-11 made here ahead of the SDK: `answers[].label` of `whatsapp_form.completed` is always a string, `message.type` of `message.received` accepts types the spec does not list yet, and its sources say what portal v0.6.14 shows (its note in `spec/procedencia.json` lists them). Guarded by JSON Pointer conditions: the send answers, `devices/{device}/qr`, the template list, `PUT webhooks/{id}`, and the shapes of the number, group, billing, form and message events. Its entry for `GET groups/actions/{action}` no longer applies: the spec of v0.6.16 carries that answer, and `npm run generate` lists the entry so that the layer drops it.
 - `spec/pending-sandbox.json`: what the sandbox corrects on top of it, with its sources inside.
 
 The event catalog (`generated/catalog.json`) comes out of the merged spec, with the same command: see [Regenerating](#regenerating).
@@ -770,7 +780,7 @@ Everything generated comes from a single script:
 # With a new spec of the portal: always the one it publishes, only the operations and events the portal shows (the
 # tools are generated only from what the portal publishes). Download it, and say with --origin which version of the
 # portal it is, for example {"url": "https://developers-portal.funnelchat.app/specs/funnelchat.json",
-# "portal_version": "v0.6.15"}; it is the only place the version is written, and spec/procedencia.json keeps it:
+# "portal_version": "v0.6.16"}; it is the only place the version is written, and spec/procedencia.json keeps it:
 curl -sO https://developers-portal.funnelchat.app/specs/funnelchat.json
 npm run generate -- --spec funnelchat.json --origin <that JSON>
 
@@ -795,7 +805,7 @@ What it does:
 
 **A handler whose operation is not in the spec is not reached:** the route answers `404 route_not_found`, like a route the API does not have. After a regeneration, `GET /_sandbox/operations` says what has state and what answers [shape only](#with-state-or-shape-only).
 
-**The current spec** is the one the portal publishes, v0.6.15, at https://developers-portal.funnelchat.app/specs/funnelchat.json (sha256 `3e5bc8ef01a2c74650a2581beb9bcfee4dd14252bec8ab52542fa3240ab60475`), with the common error format of the API: 209 paths, 253 operations and 57 events (56 types: the 55 of the `events` enum and `webhook.test`, which two areas document), in 30 groups: 1 of «Primer uso», 9 of «Funciones de WhatsApp» and 20 of «Funciones de Funnelchat». The detail is in `spec/procedencia.json`.
+**The current spec** is the one the portal publishes, v0.6.16, at https://developers-portal.funnelchat.app/specs/funnelchat.json (sha256 `7db2ead826697c80fd8feef3f0ea556b5374dd3d2cb5e02f3cfe4584af79e33c`), with the common error format of the API: 209 paths, 253 operations and 57 events (56 types: the 55 of the `events` enum and `webhook.test`, which two areas document), in 30 groups: 1 of «Primer uso», 9 of «Funciones de WhatsApp» and 20 of «Funciones de Funnelchat». The detail is in `spec/procedencia.json`.
 
 ## Development
 
