@@ -12187,6 +12187,16 @@
     "tags": [
      "Puntaje"
     ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UpdateLeadScoreSettingsRequest"
+       }
+      }
+     }
+    },
     "responses": {
      "200": {
       "description": "OK",
@@ -38853,7 +38863,7 @@
    "post": {
     "operationId": "webhook.group_created",
     "summary": "group.created",
-    "description": "Se creó o se importó un grupo dentro de una campaña de la cuenta.",
+    "description": "Se creó o se importó un grupo dentro de una campaña de la cuenta; `source` vale `imported` si el grupo ya existía en WhatsApp y entró por una importación o una sincronización, y `created` en cualquier otro caso.",
     "tags": [
      "Webhooks"
     ],
@@ -38923,7 +38933,7 @@
           "type": "group"
          },
          "campaign": {
-          "uuid": "00000000-0000-4000-8000-000000000001",
+          "uuid": "xK9mQz",
           "name": "Campaña de ejemplo"
          },
          "source": "created",
@@ -39107,7 +39117,7 @@
           "name": "Grupo de ejemplo"
          },
          "campaign": {
-          "uuid": "00000000-0000-4000-8000-000000000001"
+          "uuid": "xK9mQz"
          },
          "reason": "admin_access_lost",
          "workspace_id": 37
@@ -39197,7 +39207,7 @@
           "name": "Grupo de ejemplo"
          },
          "campaign": {
-          "uuid": "00000000-0000-4000-8000-000000000001"
+          "uuid": "xK9mQz"
          },
          "reason": "access_restored",
          "workspace_id": 37
@@ -39381,7 +39391,7 @@
           "uid": "120363000000000001@g.us"
          },
          "participant": {
-          "identity": "+5491100000000",
+          "identity": "5491100000000",
           "identity_type": "phone",
           "name": "Ana Pérez"
          },
@@ -39475,7 +39485,7 @@
         "occurred_at": "2026-10-01T12:00:00Z",
         "data": {
          "campaign": {
-          "uuid": "00000000-0000-4000-8000-000000000009",
+          "uuid": "xK9mQz",
           "name": "Campaña de ejemplo"
          },
          "from": "active",
@@ -39563,7 +39573,7 @@
         "occurred_at": "2026-10-01T12:00:00Z",
         "data": {
          "campaign": {
-          "uuid": "00000000-0000-4000-8000-00000000000a"
+          "uuid": "xK9mQz"
          },
          "pipeline": {
           "uuid": "00000000-0000-4000-8000-00000000000b",
@@ -39670,7 +39680,7 @@
           "uuid": "00000000-0000-4000-8000-000000000004"
          },
          "participant": {
-          "identity": "+5491100000000",
+          "identity": "5491100000000",
           "identity_type": "phone",
           "name": null
          },
@@ -39765,7 +39775,7 @@
           "type": "group"
          },
          "campaign": {
-          "uuid": "00000000-0000-4000-8000-000000000001",
+          "uuid": "xK9mQz",
           "name": "Campaña de ejemplo"
          },
          "invite_link": "https://chat.whatsapp.com/EjemploNuevo0000000000001",
@@ -39860,7 +39870,7 @@
           "type": "group"
          },
          "campaign": {
-          "uuid": "00000000-0000-4000-8000-000000000001",
+          "uuid": "xK9mQz",
           "name": "Campaña de ejemplo"
          },
          "reason": "http_404",
@@ -40310,7 +40320,7 @@
   "mac.usage_100": {
    "post": {
     "summary": "mac.usage_100",
-    "description": "La cuenta agotó sus contactos activos mensuales del ciclo; se abre una gracia de 24 horas cuyo vencimiento viaja en `grace_expires_at`.",
+    "description": "La cuenta agotó sus contactos activos mensuales del ciclo; se abre una gracia de 24 horas cuyo vencimiento viaja en `grace_expires_at`. `workspace_id` es el workspace al que se rutea el evento, como en todos los eventos: el workspace con facturación propia cuyo pool se agotó, o el workspace por defecto cuando el pool es el de la cuenta.",
     "x-fc-status": "live",
     "parameters": [
      {
@@ -40378,7 +40388,7 @@
   "mac.usage_80": {
    "post": {
     "summary": "mac.usage_80",
-    "description": "La cuenta alcanzó el 80% de sus contactos activos mensuales del ciclo.",
+    "description": "La cuenta alcanzó el 80% de sus contactos activos mensuales del ciclo. `workspace_id` es el workspace al que se rutea el evento, como en todos los eventos: el workspace con facturación propia cuyo pool alcanzó el umbral, o el workspace por defecto cuando el pool es el de la cuenta.",
     "x-fc-status": "live",
     "parameters": [
      {
@@ -42219,10 +42229,10 @@
            "name": "Grupo de ejemplo"
           },
           "campaign": {
-           "uuid": "00000000-0000-4000-8000-000000000001"
+           "uuid": "xK9mQz"
           },
           "participant": {
-           "identity": "+5491100000000",
+           "identity": "5491100000000",
            "identity_type": "phone",
            "name": "Ana Pérez"
           }
@@ -42368,10 +42378,10 @@
            "name": "Grupo de ejemplo"
           },
           "campaign": {
-           "uuid": "00000000-0000-4000-8000-000000000001"
+           "uuid": "xK9mQz"
           },
           "participant": {
-           "identity": "+5491100000000",
+           "identity": "5491100000000",
            "identity_type": "phone",
            "name": "Ana Pérez"
           }
@@ -52245,6 +52255,224 @@
     ],
     "title": "UpdateKanbanStageRequest"
    },
+   "UpdateLeadScoreSettingsRequest": {
+    "type": "object",
+    "properties": {
+     "hot_threshold": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+     },
+     "warm_threshold": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+     },
+     "min_signals": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 20
+     },
+     "hysteresis": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 25
+     },
+     "decay_enabled": {
+      "type": "boolean"
+     },
+     "rules": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "id": {
+         "type": "string",
+         "maxLength": 64
+        },
+        "signal": {
+         "type": "string",
+         "enum": [
+          "tag_added",
+          "tag_removed",
+          "stage_advanced",
+          "broadcast_reply",
+          "message_reply",
+          "intent_keyword",
+          "group_join",
+          "group_leave",
+          "group_reaction",
+          "group_poll_vote",
+          "link_click",
+          "automation_completed"
+         ]
+        },
+        "mode": {
+         "type": "string",
+         "enum": [
+          "event",
+          "state"
+         ]
+        },
+        "points": {
+         "type": "integer",
+         "minimum": -100,
+         "maximum": 100
+        },
+        "daily_cap": {
+         "type": [
+          "integer",
+          "null"
+         ],
+         "minimum": 1
+        },
+        "unique_scope": {
+         "type": "string",
+         "enum": [
+          "none",
+          "contact",
+          "contact_scope"
+         ]
+        },
+        "enabled": {
+         "type": "boolean"
+        },
+        "disqualifies": {
+         "type": "boolean"
+        },
+        "on_release": {
+         "type": "string",
+         "enum": [
+          "restore",
+          "keep"
+         ]
+        },
+        "config": {
+         "type": "object",
+         "properties": {
+          "keywords": {
+           "type": "array",
+           "items": {
+            "type": "string",
+            "minLength": 1
+           },
+           "maxItems": 50
+          },
+          "broadcast_ids": {
+           "type": [
+            "array",
+            "null"
+           ],
+           "items": {
+            "type": "integer"
+           },
+           "maxItems": 100
+          },
+          "group_ids": {
+           "type": [
+            "array",
+            "null"
+           ],
+           "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+           },
+           "maxItems": 100
+          },
+          "flow_ids": {
+           "type": [
+            "array",
+            "null"
+           ],
+           "items": {
+            "type": "integer"
+           },
+           "maxItems": 100
+          },
+          "whalink_ids": {
+           "type": [
+            "array",
+            "null"
+           ],
+           "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+           },
+           "maxItems": 100
+          },
+          "tag_ids": {
+           "type": [
+            "array",
+            "null"
+           ],
+           "items": {
+            "type": "integer"
+           },
+           "maxItems": 100
+          },
+          "stage_ids": {
+           "type": [
+            "array",
+            "null"
+           ],
+           "items": {
+            "type": "integer"
+           },
+           "maxItems": 100
+          }
+         }
+        }
+       },
+       "required": [
+        "id",
+        "signal",
+        "mode",
+        "points",
+        "unique_scope",
+        "enabled",
+        "disqualifies",
+        "on_release"
+       ]
+      },
+      "maxItems": 30
+     },
+     "decay_steps": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "days": {
+         "type": "integer",
+         "minimum": 1,
+         "maximum": 365
+        },
+        "points": {
+         "type": "integer",
+         "minimum": -100,
+         "maximum": -1
+        }
+       },
+       "required": [
+        "days",
+        "points"
+       ]
+      },
+      "maxItems": 5
+     }
+    },
+    "required": [
+     "hot_threshold",
+     "warm_threshold",
+     "min_signals",
+     "hysteresis",
+     "decay_enabled",
+     "rules",
+     "decay_steps"
+    ],
+    "title": "UpdateLeadScoreSettingsRequest"
+   },
    "UpdateMessageTemplateRequest": {
     "type": "object",
     "properties": {
@@ -53991,8 +54219,8 @@
   "generated_by": "scripts/generate.mjs",
   "note": "GENERATED: do not edit it. The portal's snapshot plus the pending layers.",
   "inputs": {
-   "spec/funnelchat.json": "7db2ead826697c80fd8feef3f0ea556b5374dd3d2cb5e02f3cfe4584af79e33c",
-   "spec/pending.json": "dd7b8cf6e5be45ddf1c0c00a9f4480cceec11b364adec083bbf989fa11944d9d",
+   "spec/funnelchat.json": "19e91748ddfe19eef74886264ee984d360417596745e5a900a02a7a831b570a0",
+   "spec/pending.json": "665399018a4a5193038efd4471c4e8655b2fd05400eb9bd9b621627148f8be47",
    "spec/pending-sandbox.json": "32bcbfef902fbabd57e1626f4d97e964b89f3c561c7b0f0e21531c8576019aaf"
   },
   "snapshot_commit": null,

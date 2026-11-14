@@ -2,8 +2,8 @@
   "description": "Where each file of spec/ came from. Written by `npm run generate -- --spec <file>` or `-- --pending <file>`; do not edit it by hand. spec/pending-sandbox.json belongs to this repo: its sources are inside it.",
   "snapshot": {
     "file": "spec/funnelchat.json",
-    "sha256": "7db2ead826697c80fd8feef3f0ea556b5374dd3d2cb5e02f3cfe4584af79e33c",
-    "bytes": 888446,
+    "sha256": "19e91748ddfe19eef74886264ee984d360417596745e5a900a02a7a831b570a0",
+    "bytes": 891547,
     "source": {
       "repository": null,
       "path": null,
@@ -12,12 +12,12 @@
       "commit_date": null,
       "file_tracked_in_git": null,
       "tracked_files_clean": null,
-      "file_modified_at": "2026-11-13T23:32:56.295Z",
+      "file_modified_at": "2026-11-14T12:30:29.511Z",
       "url": "https://developers-portal.funnelchat.app/specs/funnelchat.json",
-      "portal_version": "v0.6.16",
-      "note": "The spec the developer portal publishes as v0.6.16: only the operations and events the portal shows. The sha256 is the one of the file the portal publishes in that version."
+      "portal_version": "v0.6.18",
+      "note": "The spec the developer portal publishes as v0.6.18: only the operations and events the portal shows. The sha256 is the one of the file the portal publishes in that version."
     },
-    "imported_at": "2026-11-13T23:34:13.652Z",
+    "imported_at": "2026-11-14T12:32:24.426Z",
     "spec": {
       "openapi": "3.1.0",
       "title": "Funnelchat API",
