@@ -2,7 +2,7 @@
 
 A local server that imitates the Funnelchat public API and sends signed webhooks, with no real effects: nothing goes out to WhatsApp, nothing is charged, everything stays in memory. Build and test your integration without an account.
 
-It comes from the spec the developer portal publishes, v0.6.18: the same operations and events (see [Pending of the spec](#pending-of-the-spec)). What it simulates with state follows production as it was checked on 06-11.
+It comes from the spec the developer portal publishes, v0.6.19: the same operations and events (see [Pending of the spec](#pending-of-the-spec)). What it simulates with state follows production as it was checked on 06-11.
 
 ## Try it in 3 minutes, without an account
 
@@ -129,7 +129,7 @@ npx funnelchat-sandbox
 ```
 
 ```
-funnelchat-sandbox 0.5.3 at http://127.0.0.1:4010
+funnelchat-sandbox 0.5.4 at http://127.0.0.1:4010
   API:    http://127.0.0.1:4010/api/v1/...   (Authorization: Bearer 1|fc_live_sandbox, or any well-formed key)
   panel:  http://127.0.0.1:4010/_sandbox
   example numbers: 3 (official, with the 24-hour window) and 4 (QR, no window); contact 2001; template 45
@@ -296,7 +296,7 @@ The official number (`3`) has no groups (the sandbox account is not in the offic
 | Status and `error` | When |
 |---|---|
 | `401 unauthenticated` | The API key is missing or is not valid. |
-| `402 payment_required` | The account's payment is overdue. The sandbox charges nothing, so it never answers it. |
+| `402 payment_required` | The payment of the account or of the workspace is overdue. The sandbox charges nothing, so it never answers it. |
 | `403 forbidden` | The key lacks the permission. The sandbox gives every permission (see [What it does not imitate](#what-it-does-not-imitate)). |
 | `404 not_found` | What you asked for does not exist in the account, or belongs to another account or workspace. |
 | `422 validation_failed` | A field does not pass, with `errors` per field. |
@@ -758,7 +758,7 @@ And at `http://localhost:4010/_sandbox` you see each request and each delivery w
 
 ## Pending of the spec
 
-The spec (`spec/funnelchat.json`) is the one the portal publishes, v0.6.18 (https://developers-portal.funnelchat.app/specs/funnelchat.json): only the operations and events the portal shows. **The sandbox offers only that:** a layer corrects shapes where the spec says otherwise than production answers, but never adds an operation or an event (the generator refuses it and says so). The corrections are in two layers, which the next regeneration drops on its own once the spec carries them:
+The spec (`spec/funnelchat.json`) is the one the portal publishes, v0.6.19 (https://developers-portal.funnelchat.app/specs/funnelchat.json): only the operations and events the portal shows. **The sandbox offers only that:** a layer corrects shapes where the spec says otherwise than production answers, but never adds an operation or an event (the generator refuses it and says so). The corrections are in two layers, which the next regeneration drops on its own once the spec carries them:
 
 - `spec/pending.json`: the pending layer of the Node SDK (`funnelchat-node` @ `bde8679`), with the corrections of 13-11 made here ahead of the SDK: `answers[].label` of `whatsapp_form.completed` is always a string, `message.type` of `message.received` accepts types the spec does not list yet, and its sources say what portal v0.6.14 shows (its note in `spec/procedencia.json` lists them). Guarded by JSON Pointer conditions: the send answers, `devices/{device}/qr`, the template list, `PUT webhooks/{id}`, and the shapes of the number, group, billing, form and message events. Its entry for `GET groups/actions/{action}` no longer applies: the spec of v0.6.16 carries that answer, and `npm run generate` lists the entry so that the layer drops it.
 - `spec/pending-sandbox.json`: what the sandbox corrects on top of it, with its sources inside.
@@ -780,7 +780,7 @@ Everything generated comes from a single script:
 # With a new spec of the portal: always the one it publishes, only the operations and events the portal shows (the
 # tools are generated only from what the portal publishes). Download it, and say with --origin which version of the
 # portal it is, for example {"url": "https://developers-portal.funnelchat.app/specs/funnelchat.json",
-# "portal_version": "v0.6.18"}; it is the only place the version is written, and spec/procedencia.json keeps it:
+# "portal_version": "v0.6.19"}; it is the only place the version is written, and spec/procedencia.json keeps it:
 curl -sO https://developers-portal.funnelchat.app/specs/funnelchat.json
 npm run generate -- --spec funnelchat.json --origin <that JSON>
 
@@ -805,7 +805,7 @@ What it does:
 
 **A handler whose operation is not in the spec is not reached:** the route answers `404 route_not_found`, like a route the API does not have. After a regeneration, `GET /_sandbox/operations` says what has state and what answers [shape only](#with-state-or-shape-only).
 
-**The current spec** is the one the portal publishes, v0.6.18, at https://developers-portal.funnelchat.app/specs/funnelchat.json (sha256 `19e91748ddfe19eef74886264ee984d360417596745e5a900a02a7a831b570a0`), with the common error format of the API: 209 paths, 253 operations and 57 events (56 types: the 55 of the `events` enum and `webhook.test`, which two areas document), in 30 groups: 1 of «Primer uso», 9 of «Funciones de WhatsApp» and 20 of «Funciones de Funnelchat». The detail is in `spec/procedencia.json`.
+**The current spec** is the one the portal publishes, v0.6.19, at https://developers-portal.funnelchat.app/specs/funnelchat.json (sha256 `3a5f39f1bd8d62c548810937c6aa35cc6fb6533444103939a88dfb80a7459593`), with the common error format of the API: 209 paths, 253 operations and 57 events (56 types: the 55 of the `events` enum and `webhook.test`, which two areas document), in 30 groups: 1 of «Primer uso», 9 of «Funciones de WhatsApp» and 20 of «Funciones de Funnelchat». The detail is in `spec/procedencia.json`.
 
 ## Development
 
