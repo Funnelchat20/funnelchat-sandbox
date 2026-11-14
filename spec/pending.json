@@ -1112,8 +1112,8 @@
                   "occurred_at": "2026-10-01T12:00:00Z",
                   "data": {
                     "group": { "uid": "120363000000000001@g.us", "name": "Grupo de ejemplo" },
-                    "campaign": { "uuid": "00000000-0000-4000-8000-000000000001" },
-                    "participant": { "identity": "+5491100000000", "identity_type": "phone", "name": "Ana Pérez" }
+                    "campaign": { "uuid": "xK9mQz" },
+                    "participant": { "identity": "5491100000000", "identity_type": "phone", "name": "Ana Pérez" }
                   }
                 }
               }
@@ -1196,8 +1196,8 @@
                   "occurred_at": "2026-10-01T12:00:00Z",
                   "data": {
                     "group": { "uid": "120363000000000001@g.us", "name": "Grupo de ejemplo" },
-                    "campaign": { "uuid": "00000000-0000-4000-8000-000000000001" },
-                    "participant": { "identity": "+5491100000000", "identity_type": "phone", "name": "Ana Pérez" }
+                    "campaign": { "uuid": "xK9mQz" },
+                    "participant": { "identity": "5491100000000", "identity_type": "phone", "name": "Ana Pérez" }
                   }
                 }
               }
