@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { signature } from '../src/webhooks/signature.js';
-import { API_KEY, startReceiver, startSandbox, subscribe, type Api } from './helpers.js';
+import { API_KEY, startReceiver, startSandbox, subscribe, type Api, OFFICIAL, QR, NO_DEVICE, NO_LINK, DEVICE_ID, LINK_ID } from './helpers.js';
 
 const DEVICE_EVENTS = ['device.connected', 'device.disconnected', 'device.deleted', 'device.health_changed'];
 
@@ -44,7 +44,7 @@ describe('a number by QR', () => {
     const created = await api.call('POST', '/api/v1/devices', { connection: 'qr', alias: 'Tienda Ana', external_reference: 'cliente-8841' });
     expect(created.status).toBe(201);
     const device = created.body.data;
-    expect(device).toMatchObject({ id: 5, alias: 'Tienda Ana', connected: 0, provider: 1, number: '', normalized_number: null, connection: 'qr', external_reference: 'cliente-8841' });
+    expect(device).toMatchObject({ id: expect.stringMatching(DEVICE_ID), alias: 'Tienda Ana', connected: 0, provider: 1, number: '', normalized_number: null, connection: 'qr', external_reference: 'cliente-8841' });
 
     const qr = await api.call('GET', `/api/v1/devices/${device.id}/qr`);
     // Every 5 seconds, as accounts since #1335, and never cached.
@@ -52,7 +52,7 @@ describe('a number by QR', () => {
     expect(qr.headers.get('cache-control')).toBe('no-store');
     const png = Buffer.from(qr.body.data.qr_code.replace(/^data:image\/png;base64,/, ''), 'base64');
     expect(png.subarray(1, 4).toString('ascii')).toBe('PNG');
-    expect((await api.call('GET', '/api/v1/devices/3/qr')).body).toMatchObject({ error: 'provider_unsupported' });
+    expect((await api.call('GET', `/api/v1/devices/${OFFICIAL}/qr`)).body).toMatchObject({ error: 'provider_unsupported' });
 
     // The scan.
     const scan = await api.call('POST', `/_sandbox/devices/${device.id}/connect`, { number: '+54 9 11 5555-0101' });
@@ -70,7 +70,7 @@ describe('a number by QR', () => {
     });
 
     const filtered = await api.call('GET', '/api/v1/devices?external_reference=cliente-8841');
-    expect(filtered.body.data.map((d: { id: number }) => d.id)).toEqual([device.id]);
+    expect(filtered.body.data.map((d: { id: string }) => d.id)).toEqual([device.id]);
     expect((await api.call('GET', '/api/v1/devices?external_reference=cliente-88')).body.data).toEqual([]);
 
     const renamed = await api.call('PUT', `/api/v1/devices/${device.id}`, { external_reference: 'cliente-9000' });
@@ -86,23 +86,25 @@ describe('a number by QR', () => {
 
   it('applies the quota (a phone counts once), keeps one unconnected QR number, and answers invalid_request', async () => {
     const api = await startSandbox({ numbers: { limit: 4 } });
-    expect((await api.call('POST', '/api/v1/devices', { connection: 'qr' })).status).toBe(201);
-    expect((await api.call('POST', '/api/v1/devices', { connection: 'qr' })).body).toMatchObject({ error: 'pending_number_exists', device_id: 5 });
-    await api.call('POST', '/_sandbox/devices/5/connect');
-    expect((await api.call('POST', '/api/v1/devices', { connection: 'qr' })).status).toBe(201);
+    const first = await api.call('POST', '/api/v1/devices', { connection: 'qr' });
+    expect(first.status).toBe(201);
+    expect((await api.call('POST', '/api/v1/devices', { connection: 'qr' })).body).toMatchObject({ error: 'pending_number_exists', device_id: first.body.data.id });
+    await api.call('POST', `/_sandbox/devices/${first.body.data.id}/connect`);
+    const second = await api.call('POST', '/api/v1/devices', { connection: 'qr' });
+    expect(second.status).toBe(201);
     const full = await api.call('POST', '/api/v1/devices', { connection: 'qr' });
-    expect(full).toMatchObject({ status: 403, body: { error: 'number_limit_reached', limit: 4, used: 4, pending_device_ids: [6] } });
+    expect(full).toMatchObject({ status: 403, body: { error: 'number_limit_reached', limit: 4, used: 4, pending_device_ids: [second.body.data.id] } });
     await api.call('POST', '/_sandbox/numbers', { included: false });
     expect((await api.call('POST', '/api/v1/devices', { connection: 'qr' })).body.error).toBe('numbers_not_included');
     const invalid = await api.call('POST', '/api/v1/devices', { connection: 'meta' });
     expect(invalid).toMatchObject({ status: 422, body: { error: 'invalid_request', errors: { connection: expect.any(Array) } } });
-    expect((await api.call('POST', '/api/v1/devices', { connection: 'qr', same_number_as: 99 })).body.error).toBe('invalid_reference_device');
+    expect((await api.call('POST', '/api/v1/devices', { connection: 'qr', same_number_as: NO_DEVICE })).body.error).toBe('invalid_reference_device');
   });
 
   it('same_number_as: only on a number in coexistence without QR, and it takes no place', async () => {
     const api = await startSandbox({ numbers: { limit: 3, metaConnect: true } });
-    expect((await api.call('POST', '/api/v1/devices', { connection: 'qr', same_number_as: 3 })).body.error).toBe('qr_requires_coexistence');
-    expect((await api.call('POST', '/api/v1/devices', { connection: 'qr', same_number_as: 4 })).body).toMatchObject({ error: 'method_already_present', device_id: 4 });
+    expect((await api.call('POST', '/api/v1/devices', { connection: 'qr', same_number_as: OFFICIAL })).body.error).toBe('qr_requires_coexistence');
+    expect((await api.call('POST', '/api/v1/devices', { connection: 'qr', same_number_as: QR })).body).toMatchObject({ error: 'method_already_present', device_id: QR });
 
     const link = await createLink(api, { type: 'meta', allowed_connection_types: ['coexistence'] });
     await start(link.url);
@@ -158,7 +160,7 @@ describe('sign-up links', () => {
     const created = await api.call('POST', '/api/v1/connect-links', { type: 'qr', external_reference: 'cliente-77', return_url: 'https://integrador.example/vuelta?x=1', expires_in_minutes: 60 });
     expect(created.headers.get('cache-control')).toBe('no-store');
     const link = created.body.data;
-    expect(link).toMatchObject({ id: 1, type: 'qr', status: 'pending', device_id: null, allowed_connection_types: null, provision_us_number: false, country: null, error_code: null, completed_at: null });
+    expect(link).toMatchObject({ id: expect.stringMatching(LINK_ID), type: 'qr', status: 'pending', device_id: null, allowed_connection_types: null, provision_us_number: false, country: null, error_code: null, completed_at: null });
     expect(link.url).toMatch(new RegExp(`^${api.url}/connect/[A-Za-z0-9_-]{43}$`));
     expect(Date.parse(link.expires_at) - Date.parse(link.created_at)).toBe(60 * 60 * 1000);
 
@@ -185,7 +187,7 @@ describe('sign-up links', () => {
     expect(done.status).toBe(303);
     const back = new URL(done.location!);
     const completed = (await api.call('GET', `/api/v1/connect-links/${link.id}`)).body.data;
-    expect(completed).toMatchObject({ status: 'completed', device_id: expect.any(Number), completed_at: expect.any(String) });
+    expect(completed).toMatchObject({ status: 'completed', device_id: expect.stringMatching(DEVICE_ID), completed_at: expect.any(String) });
     expect(Object.fromEntries(back.searchParams)).toEqual({ x: '1', connect_link_id: String(link.id), status: 'completed', device_id: String(completed.device_id) });
 
     const [event] = await receiver.waitFor(1);
@@ -239,8 +241,8 @@ describe('sign-up links', () => {
     expect(await fields({ type: 'meta' })).toEqual(['allowed_connection_types']);
     expect(await fields({ type: 'meta', allowed_connection_types: [] })).toEqual(['allowed_connection_types']);
     expect(await fields({ type: 'qr', allowed_connection_types: ['dedicated'], provision_us_number: false })).toEqual(['allowed_connection_types', 'provision_us_number']);
-    expect(await fields({ type: 'meta', allowed_connection_types: ['dedicated'], same_number_as: 3 })).toEqual(['same_number_as']);
-    expect(await fields({ type: 'qr', same_number_as: 3, device_id: 4 })).toEqual(['same_number_as']);
+    expect(await fields({ type: 'meta', allowed_connection_types: ['dedicated'], same_number_as: OFFICIAL })).toEqual(['same_number_as']);
+    expect(await fields({ type: 'qr', same_number_as: OFFICIAL, device_id: QR })).toEqual(['same_number_as']);
     // One or two distinct values, of the list.
     expect(await fields({ type: 'meta', allowed_connection_types: ['other'] })).toEqual(['allowed_connection_types.0']);
     expect(await fields({ type: 'meta', allowed_connection_types: ['dedicated', 'dedicated'] })).toEqual(['allowed_connection_types']);
@@ -253,9 +255,9 @@ describe('sign-up links', () => {
     expect((await post({ type: 'qr', allowed_connection_types: null, same_number_as: null, device_id: null })).status).toBe(201);
     expect((await post({ type: 'meta', allowed_connection_types: ['coexistence', 'dedicated'], provision_us_number: false })).status).toBe(201);
 
-    expect((await post({ type: 'meta', allowed_connection_types: ['dedicated'], device_id: 4 })).body.error).toBe('connection_type_mismatch');
-    expect((await post({ type: 'qr', device_id: 99 })).body.error).toBe('invalid_reference_device');
-    expect((await post({ type: 'qr', same_number_as: 99 })).body.error).toBe('invalid_reference_device');
+    expect((await post({ type: 'meta', allowed_connection_types: ['dedicated'], device_id: QR })).body.error).toBe('connection_type_mismatch');
+    expect((await post({ type: 'qr', device_id: NO_DEVICE })).body.error).toBe('invalid_reference_device');
+    expect((await post({ type: 'qr', same_number_as: NO_DEVICE })).body.error).toBe('invalid_reference_device');
 
     await api.call('POST', '/_sandbox/numbers', { meta_connect: false });
     expect(await post({ type: 'meta', allowed_connection_types: ['dedicated'] })).toMatchObject({ status: 503, body: { error: 'meta_connect_disabled' } });
@@ -297,7 +299,7 @@ describe('sign-up links', () => {
     };
     expect(await fields({ type: 'qr', country: 'BRA' })).toEqual(['country']);
     expect(await fields({ type: 'meta', allowed_connection_types: ['dedicated'], country: 'us' })).toEqual(['country']);
-    expect(await fields({ type: 'qr', device_id: 4, country: 'ar' })).toEqual(['country']);
+    expect(await fields({ type: 'qr', device_id: QR, country: 'ar' })).toEqual(['country']);
   });
 
   it('provision_us_number needs dedicated and no device_id (amendment v0.2)', async () => {
@@ -306,7 +308,7 @@ describe('sign-up links', () => {
     const coexistence = await post({ allowed_connection_types: ['coexistence'] });
     expect(coexistence).toMatchObject({ status: 422, body: { error: 'invalid_request', errors: { provision_us_number: expect.any(Array) } } });
     expect(Object.keys(coexistence.body.errors)).toEqual(['provision_us_number']);
-    expect((await post({ allowed_connection_types: ['dedicated'], device_id: 3 })).body.errors).toHaveProperty('provision_us_number');
+    expect((await post({ allowed_connection_types: ['dedicated'], device_id: OFFICIAL })).body.errors).toHaveProperty('provision_us_number');
     expect((await post({ allowed_connection_types: ['coexistence', 'dedicated'] })).status).toBe(201);
     expect((await post({ allowed_connection_types: ['coexistence'], provision_us_number: false })).status).toBe(201);
   });
@@ -366,7 +368,7 @@ describe('sign-up links', () => {
     const b = await createLink(api, { type: 'qr' });
     expect((await api.call('DELETE', `/api/v1/connect-links/${a.id}`))).toMatchObject({ status: 204, body: null });
     expect((await api.call('DELETE', `/api/v1/connect-links/${a.id}`))).toMatchObject({ status: 409, body: { error: 'link_not_pending' } });
-    expect((await api.call('DELETE', '/api/v1/connect-links/999')).status).toBe(404);
+    expect((await api.call('DELETE', `/api/v1/connect-links/${NO_LINK}`)).status).toBe(404);
     expect((await api.call('GET', `/api/v1/connect-links/${a.id}`)).body.data).toMatchObject({ status: 'revoked', error_code: 'revoked' });
     expect((await visit(a.url)).status).toBe(410);
 
@@ -374,11 +376,11 @@ describe('sign-up links', () => {
     expect((await api.call('GET', `/api/v1/connect-links/${b.id}`)).body.data).toMatchObject({ status: 'expired', error_code: 'link_expired' });
     expect((await start(b.url)).status).toBe(410);
 
-    expect((await api.call('GET', '/api/v1/connect-links')).body.data.map((l: { id: number }) => l.id)).toEqual([b.id, a.id]);
-    expect((await api.call('GET', '/api/v1/connect-links?status=revoked')).body.data.map((l: { id: number }) => l.id)).toEqual([a.id]);
+    expect((await api.call('GET', '/api/v1/connect-links')).body.data.map((l: { id: string }) => l.id)).toEqual([b.id, a.id]);
+    expect((await api.call('GET', '/api/v1/connect-links?status=revoked')).body.data.map((l: { id: string }) => l.id)).toEqual([a.id]);
     expect((await api.call('GET', '/api/v1/connect-links?external_reference=r-1')).body.meta.total).toBe(1);
 
-    for (let i = 0; i < 20; i++) await createLink(api, { type: 'qr', device_id: 4 });
+    for (let i = 0; i < 20; i++) await createLink(api, { type: 'qr', device_id: QR });
     // Each reconnection link revokes the earlier one of the same number: only one is open.
     expect((await api.call('GET', '/api/v1/connect-links?status=pending')).body.meta.total).toBe(1);
     for (let i = 0; i < 19; i++) await createLink(api, { type: 'qr' });
@@ -394,14 +396,14 @@ describe('sign-up links', () => {
     const api = await startSandbox({ numbers: { limit: 2 } });
     const receiver = await startReceiver();
     await subscribe(api, receiver.url, ['device.connected', 'device.disconnected']);
-    await api.call('POST', '/_sandbox/devices/4/disconnect');
-    const link = await createLink(api, { type: 'qr', device_id: 4 });
-    expect(link.device_id).toBe(4);
+    await api.call('POST', `/_sandbox/devices/${QR}/disconnect`);
+    const link = await createLink(api, { type: 'qr', device_id: QR });
+    expect(link.device_id).toBe(QR);
     await start(link.url);
-    expect((await api.call('GET', '/api/v1/devices/4')).body.connected).toBe(1);
+    expect((await api.call('GET', `/api/v1/devices/${QR}`)).body.connected).toBe(1);
     const [off, on] = await receiver.waitFor(2);
-    expect(off!.json.data).toMatchObject({ reason: 'qr_logged_out', device: { id: 4, connection: 'qr' }, connect_link_id: null });
-    expect(on!.json.data).toMatchObject({ connect_link_id: link.id, device: { id: 4 } });
+    expect(off!.json.data).toMatchObject({ reason: 'qr_logged_out', device: { id: QR, connection: 'qr' }, connect_link_id: null });
+    expect(on!.json.data).toMatchObject({ connect_link_id: link.id, device: { id: QR } });
     expect((await api.call('GET', '/api/v1/devices')).body.meta.total).toBe(2);
   });
 });
@@ -441,16 +443,16 @@ describe('device events', () => {
     const api = await startSandbox();
     const receiver = await startReceiver();
     await subscribe(api, receiver.url, DEVICE_EVENTS);
-    await api.call('POST', '/_sandbox/devices/3/disconnect', { reason: 'shadow_ban_protection' });
-    expect((await api.call('POST', '/_sandbox/devices/3/disconnect', { reason: 'nope' })).status).toBe(422);
-    await api.call('POST', '/_sandbox/devices/3/health', { state: 'limited' });
-    const same = await api.call('POST', '/_sandbox/devices/3/health', { state: 'limited' });
+    await api.call('POST', `/_sandbox/devices/${OFFICIAL}/disconnect`, { reason: 'shadow_ban_protection' });
+    expect((await api.call('POST', `/_sandbox/devices/${OFFICIAL}/disconnect`, { reason: 'nope' })).status).toBe(422);
+    await api.call('POST', `/_sandbox/devices/${OFFICIAL}/health`, { state: 'limited' });
+    const same = await api.call('POST', `/_sandbox/devices/${OFFICIAL}/health`, { state: 'limited' });
     expect(same.body.event).toBeNull();
-    expect((await api.call('POST', '/_sandbox/devices/4/health', { state: 'limited' })).status).toBe(422);
+    expect((await api.call('POST', `/_sandbox/devices/${QR}/health`, { state: 'limited' })).status).toBe(422);
     const [off, health] = await receiver.waitFor(2);
-    expect(off!.json.data).toMatchObject({ reason: 'shadow_ban_protection', device: { id: 3, connection: 'dedicated', external_reference: null }, connect_link_id: null });
-    expect(health!.json).toMatchObject({ type: 'device.health_changed', data: { previous_state: 'available', state: 'limited', device: { id: 3 } } });
-    expect((await api.call('GET', '/api/v1/devices/3')).body.health.state).toBe('limited');
+    expect(off!.json.data).toMatchObject({ reason: 'shadow_ban_protection', device: { id: OFFICIAL, connection: 'dedicated', external_reference: null }, connect_link_id: null });
+    expect(health!.json).toMatchObject({ type: 'device.health_changed', data: { previous_state: 'available', state: 'limited', device: { id: OFFICIAL } } });
+    expect((await api.call('GET', `/api/v1/devices/${OFFICIAL}`)).body.health.state).toBe('limited');
   });
 
   it('the catalog emits the new shapes by default, connect_link_id included', async () => {

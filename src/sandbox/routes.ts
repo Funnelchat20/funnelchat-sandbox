@@ -27,9 +27,9 @@ import {
 } from '../numbers/numbers.js';
 import { FAILURE_REASONS, REJECTIONS, failureFor, parseForced } from '../messaging/rules.js';
 import { connectLinkResource, contactResource, deliveryResource, deviceResource, publicMessage } from '../state/resources.js';
-import type { ArmedFailure, Contact, Group, HealthState, TemplateStatus } from '../state/store.js';
+import { EXAMPLE_DEVICE, type ArmedFailure, type Contact, type Group, type HealthState, type TemplateStatus } from '../state/store.js';
 import { createWorkspace, mintKey, PERMISSION, workspaceView } from '../state/workspaces.js';
-import { digits, isRecord, iso8601, toE164 } from '../util.js';
+import { digits, isRecord, iso8601, toE164, asId } from '../util.js';
 import { catalog, catalogEntry, emittedData } from '../webhooks/catalog.js';
 import { panelHtml } from './panel.js';
 
@@ -58,14 +58,14 @@ function deepMerge(base: unknown, override: unknown): unknown {
 }
 
 function contactOf(app: SandboxApp, id: unknown): Contact {
-  const contact = app.store.contacts.get(Number(id));
+  const contact = app.store.contacts.get(asId(id));
   if (!contact) throw notFound('The contact does not exist in the sandbox.');
   return contact;
 }
 
 function deviceOf(app: SandboxApp, id: unknown) {
-  const device = app.store.devices.get(Number(id ?? 3));
-  if (!device) throw fieldError('device_id', `There is no number ${id} in the sandbox: the example ones are 3 (official) and 4 (QR).`);
+  const device = app.store.devices.get(asId(id ?? EXAMPLE_DEVICE.official));
+  if (!device) throw fieldError('device_id', `There is no number ${id} in the sandbox: the example ones are ${EXAMPLE_DEVICE.official} (official) and ${EXAMPLE_DEVICE.qr} (QR).`);
   return device;
 }
 
@@ -137,7 +137,7 @@ function macState(app: SandboxApp): Record<string, unknown> {
   return { lockout: mac.lockout, active_contact_ids: [...mac.activeContacts], inactive_contact_ids: [...mac.inactiveContacts] };
 }
 
-function idsOf(value: unknown, field: string, app: SandboxApp): number[] {
+function idsOf(value: unknown, field: string, app: SandboxApp): string[] {
   if (value === undefined) return [];
   if (!Array.isArray(value)) throw fieldError(field, `${field} must be a list of contact ids.`);
   return value.map((id) => contactOf(app, id).id);
@@ -197,7 +197,7 @@ function inboundMessage(app: SandboxApp, req: SandboxRequest): SandboxResponse {
 /** A group of the sandbox by `group_id`, or by `group.uid` / `uid`; the example group (`120363000000000000@g.us`) otherwise. */
 function groupFor(app: SandboxApp, b: Record<string, unknown>): Group | undefined {
   if (b.group_id !== undefined) {
-    const group = app.store.groups.get(Number(b.group_id));
+    const group = app.store.groups.get(asId(b.group_id));
     if (!group) throw notFound('There is no such group in the sandbox. See GET /_sandbox/groups.');
     return group;
   }
@@ -385,10 +385,10 @@ const ROUTES: Route[] = [
   },
   {
     method: 'POST',
-    pattern: /^\/_sandbox\/contacts\/(\d+)\/tags$/,
+    pattern: /^\/_sandbox\/contacts\/([A-Za-z0-9_]+)\/tags$/,
     handle: (app, req, [id]) => {
       const contact = contactOf(app, id);
-      const tag = app.store.tags.get(Number(obj(req.body).tag_id));
+      const tag = app.store.tags.get(asId(obj(req.body).tag_id));
       if (!tag) throw fieldError('tag_id', 'The tag does not exist in the sandbox.');
       if (contact.tags.has(tag.id)) return { status: 200, body: { contact: contactResource(app.store, contact), event: null } };
       contact.tags.set(tag.id, new Date());
@@ -398,10 +398,10 @@ const ROUTES: Route[] = [
   },
   {
     method: 'DELETE',
-    pattern: /^\/_sandbox\/contacts\/(\d+)\/tags\/(\d+)$/,
+    pattern: /^\/_sandbox\/contacts\/([A-Za-z0-9_]+)\/tags\/([A-Za-z0-9_]+)$/,
     handle: (app, _req, [id, tagId]) => {
       const contact = contactOf(app, id);
-      const tag = app.store.tags.get(Number(tagId));
+      const tag = app.store.tags.get(asId(tagId));
       if (!tag || !contact.tags.delete(tag.id)) throw notFound('The contact does not have that tag.');
       const event = app.webhooks.emit('contact.tag_removed', { contact: eventContact(contact), tag: { id: tag.id, name: tag.name }, source: 'manual' }, { workspaceId: contact.workspaceId });
       return { status: 200, body: { contact: contactResource(app.store, contact), event: emitted(event) } };
@@ -414,7 +414,7 @@ const ROUTES: Route[] = [
     pattern: /^\/_sandbox\/groups$/,
     handle: (app, req) => {
       const b = obj(req.body);
-      const device = deviceOf(app, b.device_id ?? 4);
+      const device = deviceOf(app, b.device_id ?? EXAMPLE_DEVICE.qr);
       if (device.kind !== 'qr') throw fieldError('device_id', 'Only QR numbers have groups in the sandbox: the account is not in the beta of official groups.');
       if (!device.connected || device.number === null) throw fieldError('device_id', 'The number is not connected: connect it first (POST /_sandbox/devices/{id}/connect).');
       if (typeof b.name !== 'string' || b.name.trim() === '') throw fieldError('name', 'name must be the name of the group.');
@@ -437,9 +437,9 @@ const ROUTES: Route[] = [
   { method: 'POST', pattern: /^\/_sandbox\/groups\/participant-left$/, handle: (app, req) => participantEvent(app, req, 'group_participant.left') },
   {
     method: 'POST',
-    pattern: /^\/_sandbox\/messages\/(\d+)\/status$/,
+    pattern: /^\/_sandbox\/messages\/([A-Za-z0-9_]+)\/status$/,
     handle: (app, req, [id]) => {
-      const message = app.store.messages.get(Number(id));
+      const message = app.store.messages.get(asId(id));
       if (!message || !message.own) throw notFound('There is no sent message with that id.');
       const b = obj(req.body);
       const status = String(b.status ?? '');
@@ -530,7 +530,7 @@ const ROUTES: Route[] = [
     // `connect` is the scan of the QR (or the end of the Meta sign-up): it takes `number`, a fake one otherwise.
     // `disconnect` takes `reason` (qr_logged_out for QR and unknown for official numbers by default).
     method: 'POST',
-    pattern: /^\/_sandbox\/devices\/(\d+)\/(connect|disconnect)$/,
+    pattern: /^\/_sandbox\/devices\/([A-Za-z0-9_]+)\/(connect|disconnect)$/,
     handle: (app, req, [id, action]) => {
       const device = deviceOf(app, id);
       const b = obj(req.body);
@@ -549,7 +549,7 @@ const ROUTES: Route[] = [
   },
   {
     method: 'POST',
-    pattern: /^\/_sandbox\/devices\/(\d+)\/health$/,
+    pattern: /^\/_sandbox\/devices\/([A-Za-z0-9_]+)\/health$/,
     handle: (app, req, [id]) => {
       const device = deviceOf(app, id);
       if (device.kind !== 'cloud') throw fieldError('device_id', 'Only official numbers have a health state.');
@@ -581,9 +581,9 @@ const ROUTES: Route[] = [
   },
   {
     method: 'POST',
-    pattern: /^\/_sandbox\/templates\/(\d+)\/status$/,
+    pattern: /^\/_sandbox\/templates\/([A-Za-z0-9_]+)\/status$/,
     handle: (app, req, [id]) => {
-      const template = app.store.templates.get(Number(id));
+      const template = app.store.templates.get(asId(id));
       if (!template) throw notFound('The template does not exist in the sandbox.');
       const b = obj(req.body);
       const statuses: TemplateStatus[] = ['PENDING', 'APPROVED', 'REJECTED', 'PAUSED', 'DISABLED'];

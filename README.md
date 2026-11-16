@@ -2,7 +2,7 @@
 
 A local server that imitates the Funnelchat public API and sends signed webhooks, with no real effects: nothing goes out to WhatsApp, nothing is charged, everything stays in memory. Build and test your integration without an account.
 
-It comes from the spec the developer portal publishes, v0.6.19: the same operations and events (see [Pending of the spec](#pending-of-the-spec)). What it simulates with state follows production as it was checked on 06-11.
+It comes from the spec the developer portal publishes, v0.7.0: the same operations and events (see [Pending of the spec](#pending-of-the-spec)). What it simulates with state follows production as it was checked on 06-11.
 
 ## Try it in 3 minutes, without an account
 
@@ -24,27 +24,27 @@ API=http://localhost:4010/api/v1
 ```bash
 curl -s -X POST $API/devices -H "Authorization: Bearer $FUNNELCHAT_API_KEY" \
   -H 'Content-Type: application/json' -d '{"connection": "qr"}'
-# {"data": {"id": 5, "connected": 0, "connection": "qr", …}}
-curl -s $API/devices/5/qr -H "Authorization: Bearer $FUNNELCHAT_API_KEY"
+# {"data": {"id": "dev_Ac7Ku7iIZDXJTjdCu0UB1mX", "connected": 0, "connection": "qr", …}}
+curl -s $API/devices/dev_Ac7Ku7iIZDXJTjdCu0UB1mX/qr -H "Authorization: Bearer $FUNNELCHAT_API_KEY"
 # {"data": {"connected": false, "qr_code": "data:image/png;base64,…", "expires_in": 5}}: show it, ask again every 5 s
-curl -s -X POST http://localhost:4010/_sandbox/devices/5/connect
-# device.connected: number 5 is connected
+curl -s -X POST http://localhost:4010/_sandbox/devices/dev_Ac7Ku7iIZDXJTjdCu0UB1mX/connect
+# device.connected: the number is connected
 ```
 
-**2. Send a message.** One call, by phone, through number 5: if the phone is not a contact yet, it becomes one.
+**2. Send a message.** One call, by phone, through that number: if the phone is not a contact yet, it becomes one.
 
 ```bash
 curl -s -X POST $API/message/send-message -H "Authorization: Bearer $FUNNELCHAT_API_KEY" \
   -H 'Content-Type: application/json' \
-  -d '{"device_id": 5, "phone": "5491155550000", "text": "Hola, Ana", "client_reference": "pedido-8841"}'
-# {"message": {"id": 9001, "contact_id": 2002, "status": "queued", "client_reference": "pedido-8841", …}}
+  -d '{"device_id": "dev_Ac7Ku7iIZDXJTjdCu0UB1mX", "phone": "5491155550000", "text": "Hola, Ana", "client_reference": "pedido-8841"}'
+# {"message": {"id": "msg_AyJUGabeXUAk9dbBuWegw4B", "contact_id": "ctc_ABsza6Ialu1BCUyPFZ8WJvV", "status": "queued", "client_reference": "pedido-8841", …}}
 ```
 
 **3. Know when it was read.** Within six seconds the message goes `sent` → `delivered` → `read`. Watch it at [http://localhost:4010/_sandbox](http://localhost:4010/_sandbox), under **Events** (every `message.status_changed`, delivered or not), or read the message:
 
 ```bash
-curl -s $API/contacts/2002/messages/9001 -H "Authorization: Bearer $FUNNELCHAT_API_KEY"   # 2002: the contact_id of the answer
-# {"id": 9001, "status": "read", …}
+curl -s $API/contacts/ctc_ABsza6Ialu1BCUyPFZ8WJvV/messages/msg_AyJUGabeXUAk9dbBuWegw4B -H "Authorization: Bearer $FUNNELCHAT_API_KEY"   # the contact_id and the id of the answer
+# {"id": "msg_AyJUGabeXUAk9dbBuWegw4B", "status": "read", …}
 ```
 
 In your code, subscribe a webhook to `message.status_changed` and verify its signature (see [Webhooks](#webhooks) and [End to end](#end-to-end)). That is the whole first use; against Funnelchat it is the same calls with your key and `https://api.funnelchat.com` instead of `http://localhost:4010`.
@@ -55,25 +55,25 @@ A contact writes to one of your numbers: the sandbox creates the contact if it i
 
 ```bash
 curl -s -X POST http://localhost:4010/_sandbox/inbound/message -H 'Content-Type: application/json' \
-  -d '{"phone": "5491155550000", "device_id": 5, "text": "¿Tienen stock?"}'
+  -d '{"phone": "5491155550000", "device_id": "dev_Ac7Ku7iIZDXJTjdCu0UB1mX", "text": "¿Tienen stock?"}'
 ```
 
-On an official number (`3`) this also opens the 24-hour window: free text only goes out within it, after that only [templates](#sending-a-message).
+On an official number (`dev_Sandbox0Oficial00000000`) this also opens the 24-hour window: free text only goes out within it, after that only [templates](#sending-a-message).
 
 ### Groups
 
-Groups start from your number's live list: `GET /api/v1/devices/{device}/groups` reads the groups the number is in on WhatsApp (QR numbers), and `device_id` says which ones the account already has. The sandbox's QR number `4` is in two: `120363000000000000@g.us` («Grupo de ejemplo», already in the account) and `120363000000000001@g.us` («Clientes VIP», not yet).
+Groups start from your number's live list: `GET /api/v1/devices/{device}/groups` reads the groups the number is in on WhatsApp (QR numbers), and `device_id` says which ones the account already has. The sandbox's QR number `dev_Sandbox0QR0000000000000` is in two: `120363000000000000@g.us` («Grupo de ejemplo», already in the account) and `120363000000000001@g.us` («Clientes VIP», not yet).
 
 ```bash
-curl -s "$API/devices/4/groups" -H "Authorization: Bearer $FUNNELCHAT_API_KEY"
-# {"data": [{"uid": "120363000000000000@g.us", "name": "Grupo de ejemplo", "device_id": 4, …}, {"uid": "120363000000000001@g.us", "name": "Clientes VIP", "device_id": "", …}], "meta": {…}}
+curl -s "$API/devices/dev_Sandbox0QR0000000000000/groups" -H "Authorization: Bearer $FUNNELCHAT_API_KEY"
+# {"data": [{"uid": "120363000000000000@g.us", "name": "Grupo de ejemplo", "device_id": "dev_Sandbox0QR0000000000000", …}, {"uid": "120363000000000001@g.us", "name": "Clientes VIP", "device_id": "", …}], "meta": {…}}
 ```
 
 **Follow a group** to know who joins and leaves: `POST /api/v1/groups/{uid}/import` with `device_id` imports it to the account, as the panel does (`201`, or `200` if it already was there, with `is_admin` read from WhatsApp). From then on it is in `GET /api/v1/groups` and `GET /api/v1/groups/{uid}`, and announces `group_participant.joined` and `group_participant.left` (`group`, `campaign`, `null` without one, and `participant`, whose `identity` is the phone in digits). It needs the permission **Grupos y campañas → Administrar grupos** (`403 import_permission_required`), only QR numbers (`422 provider_unsupported`), and each number imports up to 5 groups per minute (`429 import_rate_limited`, with `Retry-After`).
 
 ```bash
 curl -s -X POST "$API/groups/120363000000000001@g.us/import" -H "Authorization: Bearer $FUNNELCHAT_API_KEY" \
-  -H 'Content-Type: application/json' -d '{"device_id": 4}'
+  -H 'Content-Type: application/json' -d '{"device_id": "dev_Sandbox0QR0000000000000"}'
 # 201 {"data": {"uid": "120363000000000001@g.us", "name": "Clientes VIP", "imported": true, "is_admin": true}}
 curl -s -X POST http://localhost:4010/_sandbox/groups/participant-joined -H 'Content-Type: application/json' \
   -d '{"uid": "120363000000000001@g.us", "participant": {"phone": "5491155550000", "name": "Ana"}}'
@@ -84,7 +84,7 @@ curl -s -X POST http://localhost:4010/_sandbox/groups/participant-joined -H 'Con
 
 ```bash
 curl -s -X POST "$API/groups/120363000000000000@g.us/messages" -H "Authorization: Bearer $FUNNELCHAT_API_KEY" \
-  -H 'Content-Type: application/json' -d '{"device_id": 4, "type": "text", "text": "Hola a todos"}'
+  -H 'Content-Type: application/json' -d '{"device_id": "dev_Sandbox0QR0000000000000", "type": "text", "text": "Hola a todos"}'
 # 202 {"action_id": "…", "status": "queued"}
 ```
 
@@ -102,6 +102,26 @@ curl -s -X POST http://localhost:4010/_sandbox/workspaces -H 'Content-Type: appl
 ```
 
 With that key, `GET /api/v1/devices` is empty until you connect a number there, and its events go out with `"workspace_id": 2`. `POST /_sandbox/keys` (`{"workspace_id": 2}`) gives another key, `GET /_sandbox/workspaces` lists them, and the configuration file can create workspaces with fixed keys (see [Options](#options)).
+
+## Migrating to 0.6.0: opaque ids
+
+0.6.0 follows the portal's v0.7.0, where **the ids of the public API are opaque**, with a direct cut and no transition. It is the only breaking change, and it breaks every client that held an id as a number.
+
+An id is now a text with the prefix of its type: `ctc_ABsza6Ialu1BCUyPFZ8WJvV` (three letters, `_`, 23 letters and digits; `^xxx_[A-Za-z0-9]{23}$`). The portal's «Identificadores» page has the table of prefixes (`dev_` numbers, `ctc_` contacts, `msg_` messages, `tag_` tags, `fld_` custom fields, `tpl_` templates, `lnk_` sign-up links, `dlv_` webhook deliveries, `frm_` and `frv_` forms and their versions, `frs_` form responses, `grp_` groups…). What was already opaque or comes from Meta stays as it was (the `uid` of a group, the `uuid` of a campaign, the `uid` of a message, the WABA ids), and so does `workspace_id`, which is still an integer.
+
+What to change in your integration:
+
+- **Keep them as text** (a `string` column, not `int`) and use them as they arrive. Do not build them, do not parse them and do not convert them: nothing in them means anything.
+- An integer, or an id of another type, answers like a record that does not exist: `404` in a path, `422` in a body or a query. The ids you stored from an earlier version of the sandbox are not valid.
+- The example records have fixed ids (see [What is inside](#what-is-inside)); the ones you create get a new random id, in every session.
+- Lists that came «by id» (newest first) keep the order of creation: do not sort them by id.
+- In the sandbox, `/_sandbox/*` takes the same ids: `device_id`, `contact_id`, `group_id`, `tag_id`, `active_contact_ids`…
+- `POST /api/v1/contacts/{contact}/message/form` takes `form_id` with the `frv_` id of the form, as the spec says.
+
+```diff
+- "device_id": 3, "contact_id": 2001
++ "device_id": "dev_Sandbox0Oficial00000000", "contact_id": "ctc_Sandbox0Contacto0000000"
+```
 
 ## Reference
 
@@ -129,10 +149,10 @@ npx funnelchat-sandbox
 ```
 
 ```
-funnelchat-sandbox 0.5.4 at http://127.0.0.1:4010
+funnelchat-sandbox 0.6.0 at http://127.0.0.1:4010
   API:    http://127.0.0.1:4010/api/v1/...   (Authorization: Bearer 1|fc_live_sandbox, or any well-formed key)
   panel:  http://127.0.0.1:4010/_sandbox
-  example numbers: 3 (official, with the 24-hour window) and 4 (QR, no window); contact 2001; template 45
+  example numbers: dev_Sandbox0Oficial00000000 (official, with the 24-hour window) and dev_Sandbox0QR0000000000000 (QR, no window); contact ctc_Sandbox0Contacto0000000; template tpl_Sandbox0Bienvenida00000
 ```
 
 **From the source:**
@@ -249,13 +269,13 @@ Every session starts with this:
 
 | What | Id | What for |
 |---|---|---|
-| Official number (WhatsApp Cloud API) | `3` | It has the 24-hour window and the pace, and it is the only one that takes forms. `provider: 2`. |
-| QR number | `4` | No window and no pace. `provider: 1`. |
-| Contact «Contacto de ejemplo» | `2001` | Phone `5491100000000`. |
-| Tag «Cliente» | `4001` | |
-| Template `bienvenida`, approved, of number 3 | `45` | One variable: «Hola {{1}}, gracias por escribirnos…». |
-| Group «Grupo de ejemplo» of number 4 | `7001`, `120363000000000000@g.us` | In the account. Number 4 is its admin; contact 2001, a participant. |
-| Group «Clientes VIP» of number 4 | `120363000000000001@g.us` | Only on WhatsApp, to follow (import). Number 4 is its admin. |
+| Official number (WhatsApp Cloud API) | `dev_Sandbox0Oficial00000000` | It has the 24-hour window and the pace, and it is the only one that takes forms. `provider: 2`. |
+| QR number | `dev_Sandbox0QR0000000000000` | No window and no pace. `provider: 1`. |
+| Contact «Contacto de ejemplo» | `ctc_Sandbox0Contacto0000000` | Phone `5491100000000`. |
+| Tag «Cliente» | `tag_Sandbox0Cliente00000000` | |
+| Template `bienvenida`, approved, of the official number | `tpl_Sandbox0Bienvenida00000` | One variable: «Hola {{1}}, gracias por escribirnos…». |
+| Group «Grupo de ejemplo» of the QR number | `grp_Sandbox0Grupo0000000000`, `120363000000000000@g.us` | In the account. The QR number is its admin; the example contact, a participant. |
+| Group «Clientes VIP» of the QR number | `120363000000000001@g.us` | Only on WhatsApp, to follow (import). The QR number is its admin. |
 | Workspace «Principal» | `1` | The default one: every key belongs to it unless it was minted for another. |
 
 `POST /_sandbox/reset` goes back to this and cancels everything that was scheduled.
@@ -272,7 +292,7 @@ Every session starts with this:
 }
 ```
 
-The official number (`3`) has no groups (the sandbox account is not in the official groups beta); the QR one (`4`) does, and has no templates. `health` is `null` on the QR number.
+The official number has no groups (the sandbox account is not in the official groups beta); the QR one does, and has no templates. `health` is `null` on the QR number.
 
 **Polls and events** (`/message/poll`, `/message/event`) are closed to API keys in production (`403 route_not_available`) and the published spec does not carry them, so here they are not routes: `404 route_not_found`.
 
@@ -353,17 +373,17 @@ The panel (`/_sandbox`) counts them and marks each shape-only call of **Last req
 **By phone, without `contact_id`** (conversations v1.19.21): `POST /api/v1/message/send-message` and `POST /api/v1/devices/{device}/templates/{template}/send-template` take `phone` instead of `contact_id`. The contact of that phone is found, or created in the key's workspace (with the `422`s of `update-or-create` for a phone that is not one), and the answer's `message.contact_id` says which. The contact stays created even if a rule (the window, the brakes, the MAC, a disconnected number) then stops the send. A phone of a contact of another workspace answers `404` and creates nothing. `whatsapp_id` (Meta's BSUID, `US.13491208655302741918`) works instead of `phone` only with an official number; with a QR number, together with `phone` or without the shape of a BSUID, it is a `422` on `whatsapp_id`. With `contact_id`, a `phone` or `whatsapp_id` in the body must be that contact's: `422 recipient_mismatch`, on `send-message` too.
 
 ```bash
-curl -s http://localhost:4010/api/v1/contacts/2001/message \
+curl -s http://localhost:4010/api/v1/contacts/ctc_Sandbox0Contacto0000000/message \
   -H 'Authorization: Bearer 1|fc_live_sandbox' -H 'Content-Type: application/json' \
-  -d '{"device_id": 4, "contact_id": 2001, "phone": "5491100000000", "text": "¡Hola!", "client_reference": "pedido-8841"}'
+  -d '{"device_id": "dev_Sandbox0QR0000000000000", "contact_id": "ctc_Sandbox0Contacto0000000", "phone": "5491100000000", "text": "¡Hola!", "client_reference": "pedido-8841"}'
 ```
 
 ```json
 {
   "message": {
-    "id": 9001,
-    "contact_id": 2001,
-    "device_id": 4,
+    "id": "msg_AyJUGabeXUAk9dbBuWegw4B",
+    "contact_id": "ctc_Sandbox0Contacto0000000",
+    "device_id": "dev_Sandbox0QR0000000000000",
     "direction": "outbound",
     "type": "text",
     "status": "queued",
@@ -448,7 +468,7 @@ If you cannot send headers (from n8n, for example), arm the next failures before
 
 ```bash
 curl -s http://localhost:4010/_sandbox/failures -H 'Content-Type: application/json' \
-  -d '{"mode": "fail", "code": "131047", "count": 1, "contact_id": 2001}'
+  -d '{"mode": "fail", "code": "131047", "count": 1, "contact_id": "ctc_Sandbox0Contacto0000000"}'
 curl -s http://localhost:4010/_sandbox/failures -H 'Content-Type: application/json' \
   -d '{"mode": "edge", "code": "origin_unreachable", "applied": true, "count": 1}'
 ```
@@ -457,12 +477,12 @@ curl -s http://localhost:4010/_sandbox/failures -H 'Content-Type: application/js
 
 ## WhatsApp forms
 
-The routes of conversations, with state. A form is a family (`family_id`, the one you send) with versions (`id`, the one you edit). Only official numbers take them: with the QR one, `422 NUMBER_NOT_ELIGIBLE`.
+The routes of conversations, with state. A form is a family (`family_id`, `frm_…`) with versions (`id`, `frv_…`, the one you edit and the one you send). Only official numbers take them: with the QR one, `422 NUMBER_NOT_ELIGIBLE`.
 
 | Route | What it does |
 |---|---|
 | `GET /api/v1/forms/templates` | The five templates to start from: `blank`, `lead`, `appointment`, `nps`, `signup`. |
-| `POST /api/v1/forms` | `{"device_id": 3, "template_key": "lead"}` (optional `device_ids`): a draft. `201` with `data`, `lint` and `numbers`. |
+| `POST /api/v1/forms` | `{"device_id": "dev_Sandbox0Oficial00000000", "template_key": "lead"}` (optional `device_ids`): a draft. `201` with `data`, `lint` and `numbers`. |
 | `GET /api/v1/forms`, `GET /api/v1/forms/{id}` | The list (one row per form, with `sends` and `responses`) and one version with `lint`, `versions` and `numbers`. |
 | `PUT /api/v1/forms/{id}` | Saves `definition` (and, optionally, `name`). Published: `409 PUBLISHED`. |
 | `DELETE /api/v1/forms/{id}` | A draft (`204`). Published: `409 PUBLISHED`. |
@@ -470,7 +490,7 @@ The routes of conversations, with state. A form is a family (`family_id`, the on
 | `POST /api/v1/forms/{id}/versions` | A new draft version (`201`), or `200` with `created: false` if there was one already. |
 | `GET`, `POST /api/v1/forms/{id}/numbers`, `DELETE …/numbers/{deviceId}`, `POST …/numbers/retry` | The numbers of the form. The primary one cannot be removed: `422 PRIMARY_NUMBER`. |
 | `GET /api/v1/forms/families/{familyId}/definition`, `…/versions`, `…/responses`, `…/responses/{runId}` | The current definition, the versions and the responses. |
-| `POST /api/v1/contacts/{contact}/message/form` | `{"form_id": <family_id>, "device_id": 3}` (optional `text`, `button_text`, `client_reference`): `200` with the queued message, `type: "whatsapp_form"`. |
+| `POST /api/v1/contacts/{contact}/message/form` | `{"form_id": "frv_…", "device_id": "dev_…"}` (optional `text`, `button_text`, `client_reference`): `200` with the queued message, `type: "whatsapp_form"`. |
 
 The send follows the order of conversations: `device_unavailable`, `404 form_not_found`, `422 number_not_eligible`, `422 form_not_published`, `422 form_not_on_number`, `422 recipient_unreachable`, `422 window_closed`, and then the pace, the brakes and the MAC. An incoming message opens the window.
 
@@ -478,7 +498,7 @@ The send follows the order of conversations: `device_unavailable`, `404 form_not
 
 ```bash
 curl -s http://localhost:4010/_sandbox/forms/complete -H 'Content-Type: application/json' \
-  -d '{"message_id": 9002, "answers": {"nombre": "Ana", "volumen": "op_mas_de_quinientos"}}'
+  -d '{"message_id": "msg_Ath9bJ3RpAYPhnX0EfcLtHJ", "answers": {"nombre": "Ana", "volumen": "op_mas_de_quinientos"}}'
 ```
 
 It emits `whatsapp_form.completed` once per send, with `form` (`id` is the `family_id`, `version_id` the version sent), `message_id`, `contact_id`, `device_id` and `answers` (`{key, label, value}`, one per question, in order). What you do not send in `answers` takes an example value; options go by their id. `run_id` also works, or `contact_id` (the last pending send to that contact).
@@ -503,7 +523,7 @@ starts the same way. To test it, turn it on with `--meta-connect`, `"numbers": {
 | `GET /api/v1/devices?external_reference=…` | Only the numbers with exactly that reference. `PUT /api/v1/devices/{device}` changes it (`null` clears it). |
 | `DELETE /api/v1/devices/{device}` | `200` with an empty body: deletes it, frees its place and emits `device.deleted`. |
 | `POST /api/v1/connect-links` | A sign-up link, `201 {"data": <link>}` with `Cache-Control: no-store`. The `url` with the token is only in this answer. |
-| `GET /api/v1/connect-links`, `GET …/{link}` | The links without their token, newest first, paginated, filtered by `status` and `external_reference`. The `id` is an integer. `status`: `pending`, `completed`, `failed`, `expired` (`error_code: link_expired`) or `revoked` (`error_code: revoked`). |
+| `GET /api/v1/connect-links`, `GET …/{link}` | The links without their token, newest first, paginated, filtered by `status` and `external_reference`. The `id` is an opaque id (`lnk_…`). `status`: `pending`, `completed`, `failed`, `expired` (`error_code: link_expired`) or `revoked` (`error_code: revoked`). |
 | `DELETE /api/v1/connect-links/{link}` | Revokes a `pending` link: `204`, `409 link_not_pending` otherwise, `404` if it does not exist. |
 
 **The body of a link**, by `type`:
@@ -554,8 +574,8 @@ A number by QR, its code and the scan (the scan is a sandbox route):
 KEY='Authorization: Bearer 1|fc_live_sandbox'
 curl -s -X POST localhost:4010/api/v1/devices -H "$KEY" -H 'Content-Type: application/json' \
   -H 'Idempotency-Key: alta-cliente-8841' -d '{"connection": "qr", "external_reference": "cliente-8841"}'
-curl -s localhost:4010/api/v1/devices/5/qr -H "$KEY"          # {"data": {"connected": false, "qr_code": "data:image/png;base64,…", "expires_in": 5}}
-curl -s -X POST localhost:4010/_sandbox/devices/5/connect      # device.connected
+curl -s localhost:4010/api/v1/devices/dev_Ac7Ku7iIZDXJTjdCu0UB1mX/qr -H "$KEY"          # {"data": {"connected": false, "qr_code": "data:image/png;base64,…", "expires_in": 5}}
+curl -s -X POST localhost:4010/_sandbox/devices/dev_Ac7Ku7iIZDXJTjdCu0UB1mX/connect      # device.connected
 ```
 
 A sign-up link and its page (`meta` links need the Meta sign-up on: `npx funnelchat-sandbox --meta-connect`):
@@ -563,9 +583,9 @@ A sign-up link and its page (`meta` links need the Meta sign-up on: `npx funnelc
 ```bash
 curl -s -X POST localhost:4010/api/v1/connect-links -H "$KEY" -H 'Content-Type: application/json' \
   -d '{"type": "meta", "allowed_connection_types": ["coexistence", "dedicated"], "external_reference": "cliente-8841", "return_url": "https://your-app.example/connected"}'
-# {"data": {"id": 1, "type": "meta", "status": "pending", "url": "http://localhost:4010/connect/<token>", …}}
+# {"data": {"id": "lnk_AEF0eLF7bcRyfgK70NSWVdy", "type": "meta", "status": "pending", "url": "http://localhost:4010/connect/<token>", …}}
 curl -si -X POST 'http://localhost:4010/connect/<token>/start' -d connection=coexistence
-# 303 Location: https://your-app.example/connected?connect_link_id=1&status=completed&device_id=6
+# 303 Location: https://your-app.example/connected?connect_link_id=lnk_AEF0eLF7bcRyfgK70NSWVdy&status=completed&device_id=dev_Ac7Ku7iIZDXJTjdCu0UB1mX
 ```
 
 **The page** is a test page. Opening `GET /connect/{token}` does not use the link, as in production, so a
@@ -624,10 +644,10 @@ X-Funnelchat-Delivery: 7c9e6679-7425-40de-944b-e07fc1f90ae7
   "version": 1,
   "occurred_at": "2026-10-22T12:00:00Z",
   "data": {
-    "message": { "id": 9002, "type": "text", "text": "Hola, quiero más información", "media": null },
-    "contact": { "id": 2001, "name": "Contacto de ejemplo", "phone": "+5491100000000" },
+    "message": { "id": "msg_Ath9bJ3RpAYPhnX0EfcLtHJ", "type": "text", "text": "Hola, quiero más información", "media": null },
+    "contact": { "id": "ctc_Sandbox0Contacto0000000", "name": "Contacto de ejemplo", "phone": "+5491100000000" },
     "receiver": { "phone": "+5491100000001" },
-    "device_id": 3,
+    "device_id": "dev_Sandbox0Oficial00000000",
     "workspace_id": 1
   }
 }
@@ -646,18 +666,18 @@ These routes take no key: they belong to the sandbox, not to the API.
 
 | Route | What it simulates |
 |---|---|
-| `POST /_sandbox/inbound/message` | A contact writes to you: `{"phone": "5491100000000", "device_id": 3, "text": "Hola"}` (or `contact_id`; optional `name`, `type`, `file` and `occurred_at`). If the phone is new it creates the contact (`contact.created`); then it emits `message.received` and opens the 24-hour window of that number. |
-| `POST /_sandbox/groups`, `GET /_sandbox/groups` | A group of a connected QR number, in the number's workspace: `{"device_id": 5, "name": "Clientes", "participants": [{"phone": "5491155550000", "name": "Ana"}]}`. In the account unless `"imported": false` (only on WhatsApp, to import); the number is its admin unless `"admin": false`. |
-| `POST /_sandbox/groups/participant-joined`, `…/participant-left` | Someone joins or leaves a group: `{"group_id": 7001, "participant": {"phone": "…", "name": "…"}}` (or `"uid"`; the example group without either). The group's participants change and the event goes to its workspace. A `group` the sandbox does not have (`{"group": {"uid": "…@g.us", "name": "…"}}`) goes out from the catalog's example. |
+| `POST /_sandbox/inbound/message` | A contact writes to you: `{"phone": "5491100000000", "device_id": "dev_Sandbox0Oficial00000000", "text": "Hola"}` (or `contact_id`; optional `name`, `type`, `file` and `occurred_at`). If the phone is new it creates the contact (`contact.created`); then it emits `message.received` and opens the 24-hour window of that number. |
+| `POST /_sandbox/groups`, `GET /_sandbox/groups` | A group of a connected QR number, in the number's workspace: `{"device_id": "dev_Ac7Ku7iIZDXJTjdCu0UB1mX", "name": "Clientes", "participants": [{"phone": "5491155550000", "name": "Ana"}]}`. In the account unless `"imported": false` (only on WhatsApp, to import); the number is its admin unless `"admin": false`. |
+| `POST /_sandbox/groups/participant-joined`, `…/participant-left` | Someone joins or leaves a group: `{"group_id": "grp_Sandbox0Grupo0000000000", "participant": {"phone": "…", "name": "…"}}` (or `"uid"`; the example group without either). The group's participants change and the event goes to its workspace. A `group` the sandbox does not have (`{"group": {"uid": "…@g.us", "name": "…"}}`) goes out from the catalog's example. |
 | `POST /_sandbox/forms/complete` | The contact completes a sent form: emits `whatsapp_form.completed` (see [WhatsApp forms](#whatsapp-forms)). |
-| `POST /_sandbox/mac`, `GET /_sandbox/mac` | The account's MAC: `{"lockout": true, "active_contact_ids": [2001], "inactive_contact_ids": []}`. With `lockout`, sends to contacts that are not active answer `429 mac_lockout_24h`; an inactive contact always gets it. |
-| `POST /_sandbox/contacts/{id}/tags` with `{"tag_id": 4001}`, `DELETE /_sandbox/contacts/{id}/tags/{tag}` | Someone tags the contact in the panel: `contact.tag_added` and `contact.tag_removed`. |
+| `POST /_sandbox/mac`, `GET /_sandbox/mac` | The account's MAC: `{"lockout": true, "active_contact_ids": ["ctc_Sandbox0Contacto0000000"], "inactive_contact_ids": []}`. With `lockout`, sends to contacts that are not active answer `429 mac_lockout_24h`; an inactive contact always gets it. |
+| `POST /_sandbox/contacts/{id}/tags` with `{"tag_id": "tag_Sandbox0Cliente00000000"}`, `DELETE /_sandbox/contacts/{id}/tags/{tag}` | Someone tags the contact in the panel: `contact.tag_added` and `contact.tag_removed`. |
 | `POST /_sandbox/devices/{id}/disconnect`, `…/connect` | The number disconnects (`{"reason": "disconnected_by_user"}`, any of the list; `qr_logged_out` for QR and `unknown` for official ones by default) or connects, which is the scan of a QR (`{"number": "5491155550101"}`, a fake one otherwise): `device.disconnected` and `device.connected`. Disconnected, sends answer `422 device_unavailable`. |
 | `POST /_sandbox/devices/{id}/health` | The health of an official number changes: `{"state": "limited"}` (`available`, `limited`, `blocked`, `unknown`) emits `device.health_changed`, only if it changed. |
 | `POST /_sandbox/numbers`, `GET /_sandbox/numbers` | The quota of the account: `{"limit": 3, "included": true, "trial": false, "meta_connect": true, "links_per_minute": 10}` (`meta_connect` turns the Meta sign-up on or off). `GET` also says how many places are in use and which QR numbers are pending. |
 | `POST /_sandbox/templates/{id}/status` | Meta approves or rejects a template: `{"status": "REJECTED", "reason": "…"}` emits `template.status_changed`. |
 | `POST /_sandbox/events/{type}` | Any event of the catalog, with its example; what you send in `{"data": {…}}` overrides it, and `{"workspace_id": 2}` sends it to that workspace (the default one otherwise). `GET /_sandbox/events` lists them. The example is the one of the catalog, the spec's. |
-| `POST /_sandbox/window` | Opens or closes the window by hand: `{"contact_id": 2001, "device_id": 3, "open": false}`. |
+| `POST /_sandbox/window` | Opens or closes the window by hand: `{"contact_id": "ctc_Sandbox0Contacto0000000", "device_id": "dev_Sandbox0Oficial00000000", "open": false}`. |
 | `POST /_sandbox/workspaces`, `GET /_sandbox/workspaces` | A [workspace](#workspaces) with a key that only sees it: `{"name": "Cliente B"}` answers `201 {workspace, key}`. `POST /_sandbox/keys` with `{"workspace_id": 2}` mints another key (of the default workspace without `workspace_id`); with `"permissions": [...]` it has only those (the sandbox checks just `communities:operate`, to import a group). |
 | `POST /_sandbox/reset` | Back to the initial state. |
 | `GET /_sandbox/state`, `/_sandbox/requests`, `/_sandbox/deliveries`, `/_sandbox/emitted` | The state, the last requests (`simulated: "shape-only"` on the ones answered [shape only](#with-state-or-shape-only)), the last deliveries with what your server answered, and every event emitted, delivered or not (with how many subscriptions got it). |
@@ -722,16 +742,16 @@ app.listen(3000, async () => {
 ```bash
 # A contact writes to your official number:
 curl -s http://localhost:4010/_sandbox/inbound/message -H 'Content-Type: application/json' \
-  -d '{"phone": "5491100000000", "device_id": 3, "text": "Hola, ¿tienen stock?"}'
+  -d '{"phone": "5491100000000", "device_id": "dev_Sandbox0Oficial00000000", "text": "Hola, ¿tienen stock?"}'
 ```
 
 On the receiver's console:
 
 ```
-sent 9002 queued
-status 9002 sent respuesta-9001
-status 9002 delivered respuesta-9001
-status 9002 read respuesta-9001
+sent msg_Ath9bJ3RpAYPhnX0EfcLtHJ queued
+status msg_Ath9bJ3RpAYPhnX0EfcLtHJ sent respuesta-9001
+status msg_Ath9bJ3RpAYPhnX0EfcLtHJ delivered respuesta-9001
+status msg_Ath9bJ3RpAYPhnX0EfcLtHJ read respuesta-9001
 ```
 
 And at `http://localhost:4010/_sandbox` you see each request and each delivery with what your receiver answered.
@@ -758,7 +778,7 @@ And at `http://localhost:4010/_sandbox` you see each request and each delivery w
 
 ## Pending of the spec
 
-The spec (`spec/funnelchat.json`) is the one the portal publishes, v0.6.19 (https://developers-portal.funnelchat.app/specs/funnelchat.json): only the operations and events the portal shows. **The sandbox offers only that:** a layer corrects shapes where the spec says otherwise than production answers, but never adds an operation or an event (the generator refuses it and says so). The corrections are in two layers, which the next regeneration drops on its own once the spec carries them:
+The spec (`spec/funnelchat.json`) is the one the portal publishes, v0.7.0 (https://developers-portal.funnelchat.app/specs/funnelchat.json): only the operations and events the portal shows. **The sandbox offers only that:** a layer corrects shapes where the spec says otherwise than production answers, but never adds an operation or an event (the generator refuses it and says so). The corrections are in two layers, which the next regeneration drops on its own once the spec carries them:
 
 - `spec/pending.json`: the pending layer of the Node SDK (`funnelchat-node` @ `bde8679`), with the corrections of 13-11 made here ahead of the SDK: `answers[].label` of `whatsapp_form.completed` is always a string, `message.type` of `message.received` accepts types the spec does not list yet, and its sources say what portal v0.6.14 shows (its note in `spec/procedencia.json` lists them). Guarded by JSON Pointer conditions: the send answers, `devices/{device}/qr`, the template list, `PUT webhooks/{id}`, and the shapes of the number, group, billing, form and message events. Its entry for `GET groups/actions/{action}` no longer applies: the spec of v0.6.16 carries that answer, and `npm run generate` lists the entry so that the layer drops it.
 - `spec/pending-sandbox.json`: what the sandbox corrects on top of it, with its sources inside.
@@ -771,6 +791,7 @@ What `spec/pending-sandbox.json` still corrects:
 |---|---|
 | `data.workspace_id` in every event (accounts v1.5.97, Q35) | The events of the spec do not carry it yet |
 | `null` in `allowed_connection_types` and `provision_us_number` of `POST /api/v1/connect-links` | A correction: accounts' rules depend on `type`, and Laravel's `prohibited` lets `null` through |
+| The ids of the events and shapes of the SDK's layer (`idPatches`: `device_id`, `contact.id`, `message_id`, `connect_link_id`, the form's…) as opaque ids | That layer was written before the portal's v0.7.0 and still types them as numbers; the entries apply only while it does, and the generator reports them once it is updated |
 
 ## Regenerating
 
@@ -780,7 +801,7 @@ Everything generated comes from a single script:
 # With a new spec of the portal: always the one it publishes, only the operations and events the portal shows (the
 # tools are generated only from what the portal publishes). Download it, and say with --origin which version of the
 # portal it is, for example {"url": "https://developers-portal.funnelchat.app/specs/funnelchat.json",
-# "portal_version": "v0.6.19"}; it is the only place the version is written, and spec/procedencia.json keeps it:
+# "portal_version": "v0.7.0"}; it is the only place the version is written, and spec/procedencia.json keeps it:
 curl -sO https://developers-portal.funnelchat.app/specs/funnelchat.json
 npm run generate -- --spec funnelchat.json --origin <that JSON>
 
@@ -805,7 +826,7 @@ What it does:
 
 **A handler whose operation is not in the spec is not reached:** the route answers `404 route_not_found`, like a route the API does not have. After a regeneration, `GET /_sandbox/operations` says what has state and what answers [shape only](#with-state-or-shape-only).
 
-**The current spec** is the one the portal publishes, v0.6.19, at https://developers-portal.funnelchat.app/specs/funnelchat.json (sha256 `3a5f39f1bd8d62c548810937c6aa35cc6fb6533444103939a88dfb80a7459593`), with the common error format of the API: 209 paths, 253 operations and 57 events (56 types: the 55 of the `events` enum and `webhook.test`, which two areas document), in 30 groups: 1 of «Primer uso», 9 of «Funciones de WhatsApp» and 20 of «Funciones de Funnelchat». The detail is in `spec/procedencia.json`.
+**The current spec** is the one the portal publishes, v0.7.0, at https://developers-portal.funnelchat.app/specs/funnelchat.json (sha256 `fadcd73731cba99d0b49adfec7b5799d7318fe99944c88282a444362d869e576`), with the common error format of the API: 209 paths, 253 operations and 57 events (56 types: the 55 of the `events` enum and `webhook.test`, which two areas document), in 30 groups: 1 of «Primer uso», 9 of «Funciones de WhatsApp» and 20 of «Funciones de Funnelchat». The detail is in `spec/procedencia.json`.
 
 ## Development
 

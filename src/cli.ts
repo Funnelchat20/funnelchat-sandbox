@@ -4,6 +4,7 @@
  */
 import { ConfigError, DEFAULT_CONFIG_FILE, DEFAULT_PORT, parseArgs, resolveConfig } from './config.js';
 import { createSandbox } from './server.js';
+import { EXAMPLE_DEVICE, EXAMPLE_ID } from './state/store.js';
 import { VERSION } from './version.js';
 
 const HELP = `funnelchat-sandbox ${VERSION}
@@ -50,7 +51,7 @@ async function main(): Promise<void> {
   if (configFile) console.log(`configuration: ${configFile}`);
   console.log(`  API:    ${url}/api/v1/...   (Authorization: Bearer 1|fc_live_sandbox, or any well-formed key)`);
   console.log(`  panel:  ${url}/_sandbox`);
-  console.log('  example numbers: 3 (official, with the 24-hour window) and 4 (QR, no window); contact 2001; template 45');
+  console.log(`  example numbers: ${EXAMPLE_DEVICE.official} (official, with the 24-hour window) and ${EXAMPLE_DEVICE.qr} (QR, no window); contact ${EXAMPLE_ID.contact}; template ${EXAMPLE_ID.template}`);
   for (const s of sandbox.app.store.subscriptions.values()) {
     console.log(`  subscription from the configuration: ${s.id} → ${s.url} (${s.events.join(', ')})`);
   }

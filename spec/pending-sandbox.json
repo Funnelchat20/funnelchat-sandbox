@@ -1,14 +1,15 @@
 {
   "x-fc-pending": {
     "title": "Pending of the spec: what the sandbox corrects",
-    "description": "What the sandbox corrects in the shapes of the portal's spec (spec/funnelchat.json, the one the developer portal publishes) and that the pending layer of the Node SDK (spec/pending.json) does not: `data.workspace_id` in every event, and `null` in the conditionally prohibited fields of `POST /connect-links`. Like every layer, it only corrects shapes: it never adds an operation or an event the published spec does not carry (the tools offer only what the portal publishes; the user's decision of 11-11). scripts/generate.mjs applies it after spec/pending.json and only while the spec lacks it: when it has it, it says which entries can be deleted.",
+    "description": "What the sandbox corrects in the shapes of the portal's spec (spec/funnelchat.json, the one the developer portal publishes) and that the pending layer of the Node SDK (spec/pending.json) does not: `data.workspace_id` in every event, and `null` in the conditionally prohibited fields of `POST /connect-links`. Like every layer, it only corrects shapes: it never adds an operation or an event the published spec does not carry (the tools offer only what the portal publishes; the user's decision of 11-11). scripts/generate.mjs applies it after spec/pending.json and only while the spec lacks it: when it has it, it says which entries can be deleted. `idPatches` types as opaque ids (`xxx_` and 23 characters) the ids that the SDK's layer, written before the portal's v0.7.0, still types as numbers.",
     "rules": {
       "paths": "Ninguna: una capa no suma operaciones que la especificación publicada no trae (scripts/generate.mjs las rechaza y avisa).",
       "responsePatches": "Un parche reemplaza respuestas de una operación de la instantánea solo mientras esa operación cumple la condición de `while`.",
       "webhookPatches": "Un parche fija propiedades de `data` de un evento (esquema y ejemplo) mientras el evento cumple `while`, o mientras su `data` no trae `whileMissing`.",
       "components.schemas": "Los esquemas de esta capa empiezan con `PendingSandbox` para no chocar con los de la instantánea ni con los de spec/pending.json.",
       "operationPatches": "Un parche suma propiedades al cuerpo de una operación de la instantánea mientras esa operación cumple `while` (si lo tiene) y le falta alguna; con `replace: true` reemplaza propiedades que la instantánea ya tiene (una corrección, se aplica siempre).",
-      "parameterPatches": "Un parche suma parámetros a una operación de la instantánea, solo los que todavía no tiene (por nombre y lugar)."
+      "parameterPatches": "Un parche suma parámetros a una operación de la instantánea, solo los que todavía no tiene (por nombre y lugar).",
+      "idPatches": "Un parche vuelve id opaco una propiedad de `data` de un evento (`event`) o de un esquema (`schema`) mientras siga tipada como número: cuando la capa que corrige se actualiza, el generador lo avisa para borrarlo."
     },
     "sources": {
       "accounts-workspaces": "accounts v1.5.97, en producción desde el 04-11 (platform-gate v0.9.1): cada API key es de un workspace y solo ve y crea ahí; un evento llega solo a las suscripciones de su workspace y todo aviso público lleva `data.workspace_id` = el workspace al que se ruteó, como última clave de `data`. Los ejemplos del catálogo de accounts usan 37. conversations v1.19.7 y communities v2.35.5 confinan sus rutas igual.",
@@ -71,6 +72,128 @@
           "description": "`type: meta` only: offer a US number of the Funnelchat pool."
         }
       }
+    }
+  ],
+  "idPatches": [
+    {
+      "event": "device.connected",
+      "property": "connect_link_id",
+      "prefix": "lnk",
+      "x-fc-pending": "opaque-ids"
+    },
+    {
+      "event": "device.disconnected",
+      "property": "connect_link_id",
+      "prefix": "lnk",
+      "x-fc-pending": "opaque-ids"
+    },
+    {
+      "event": "device.deleted",
+      "property": "connect_link_id",
+      "prefix": "lnk",
+      "x-fc-pending": "opaque-ids"
+    },
+    {
+      "event": "device.health_changed",
+      "property": "connect_link_id",
+      "prefix": "lnk",
+      "x-fc-pending": "opaque-ids"
+    },
+    {
+      "event": "device.quality_changed",
+      "property": "connect_link_id",
+      "prefix": "lnk",
+      "x-fc-pending": "opaque-ids"
+    },
+    {
+      "event": "device.messaging_limit_changed",
+      "property": "connect_link_id",
+      "prefix": "lnk",
+      "x-fc-pending": "opaque-ids"
+    },
+    {
+      "event": "device.display_name_reviewed",
+      "property": "connect_link_id",
+      "prefix": "lnk",
+      "x-fc-pending": "opaque-ids"
+    },
+    {
+      "event": "message.received",
+      "property": "device_id",
+      "prefix": "dev",
+      "x-fc-pending": "opaque-ids"
+    },
+    {
+      "event": "message.received",
+      "property": "message.id",
+      "prefix": "msg",
+      "x-fc-pending": "opaque-ids"
+    },
+    {
+      "event": "message.received",
+      "property": "contact.id",
+      "prefix": "ctc",
+      "x-fc-pending": "opaque-ids"
+    },
+    {
+      "event": "message.status_changed",
+      "property": "message_id",
+      "prefix": "msg",
+      "x-fc-pending": "opaque-ids"
+    },
+    {
+      "event": "message.status_changed",
+      "property": "contact_id",
+      "prefix": "ctc",
+      "x-fc-pending": "opaque-ids"
+    },
+    {
+      "event": "message.status_changed",
+      "property": "device_id",
+      "prefix": "dev",
+      "x-fc-pending": "opaque-ids"
+    },
+    {
+      "event": "whatsapp_form.completed",
+      "property": "message_id",
+      "prefix": "msg",
+      "x-fc-pending": "opaque-ids"
+    },
+    {
+      "event": "whatsapp_form.completed",
+      "property": "contact_id",
+      "prefix": "ctc",
+      "x-fc-pending": "opaque-ids"
+    },
+    {
+      "event": "whatsapp_form.completed",
+      "property": "device_id",
+      "prefix": "dev",
+      "x-fc-pending": "opaque-ids"
+    },
+    {
+      "event": "whatsapp_form.completed",
+      "property": "form.id",
+      "prefix": "frm",
+      "x-fc-pending": "opaque-ids"
+    },
+    {
+      "event": "whatsapp_form.completed",
+      "property": "form.version_id",
+      "prefix": "frv",
+      "x-fc-pending": "opaque-ids"
+    },
+    {
+      "schema": "PendingWebhookDevice",
+      "property": "id",
+      "prefix": "dev",
+      "x-fc-pending": "opaque-ids"
+    },
+    {
+      "schema": "PendingGroupAction",
+      "property": "device_id",
+      "prefix": "dev",
+      "x-fc-pending": "opaque-ids"
     }
   ],
   "parameterPatches": [],

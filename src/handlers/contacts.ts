@@ -19,7 +19,7 @@ import {
 } from '../state/resources.js';
 import type { Contact } from '../state/store.js';
 import { sees, type WorkspaceScope } from '../state/workspaces.js';
-import { digits, iso8601, toE164 } from '../util.js';
+import { digits, iso8601, toE164, asId } from '../util.js';
 
 /**
  * conversations' `abort(404)` for a record or a number outside the key's workspace (`EnsureRecordInWorkspace`,
@@ -29,7 +29,7 @@ export const outsideWorkspace = () => notFound();
 
 /** A contact by id; with `scope`, one of another workspace answers `outsideWorkspace()`. */
 export function getContact(app: SandboxApp, id: unknown, scope?: WorkspaceScope): Contact {
-  const contact = app.store.contacts.get(Number(id));
+  const contact = app.store.contacts.get(asId(id));
   // The model binding of conversations (`bootstrap/app.php`): `404 not_found`, "Objeto no encontrado.".
   if (!contact) throw objectNotFound();
   if (scope && !sees(scope, contact.workspaceId)) throw outsideWorkspace();
@@ -76,7 +76,7 @@ export function createContact(app: SandboxApp, input: NewContact): Contact {
     favorite: false,
     unreadMessages: 0,
     manuallyUnread: false,
-    deviceId: input.deviceId === undefined || input.deviceId === null ? null : Number(input.deviceId),
+    deviceId: input.deviceId === undefined || input.deviceId === null ? null : asId(input.deviceId),
     adviserId: null,
     pausedAt: null,
     tags: new Map(),
@@ -118,13 +118,15 @@ export function sendRecipient(ctx: HandlerContext, b: Record<string, unknown>): 
     return existing ? inScope(existing) : createContact(app, { workspaceId: ctx.workspace.id, phone });
   }
   const whatsappId = String(b.whatsapp_id);
-  const existing = [...app.store.contacts.values()].sort((x, y) => x.id - y.id).find((c) => c.whatsappId === whatsappId);
+  const existing = [...app.store.contacts.values()].find((c) => c.whatsappId === whatsappId);
   return existing ? inScope(existing) : createContact(app, { workspaceId: ctx.workspace.id, whatsappId });
 }
 
 function sortContacts(list: Contact[], orderBy: unknown, direction: unknown): Contact[] {
   const key = typeof orderBy === 'string' ? orderBy : 'id';
   const desc = direction === undefined ? key === 'id' || key.endsWith('_at') : direction === 'desc';
+  // Ids are opaque, so «by id» is the order of creation: the position in the store.
+  const rank = new Map(list.map((c, i) => [c.id, i]));
   const value = (c: Contact): string | number => {
     switch (key) {
       case 'name':
@@ -142,24 +144,24 @@ function sortContacts(list: Contact[], orderBy: unknown, direction: unknown): Co
       case 'updated_at':
         return c.updatedAt.getTime();
       default:
-        return c.id;
+        return rank.get(c.id) ?? 0;
     }
   };
   return [...list].sort((a, b) => {
     const va = value(a);
     const vb = value(b);
-    const cmp = va < vb ? -1 : va > vb ? 1 : a.id - b.id;
+    const cmp = va < vb ? -1 : va > vb ? 1 : 0;
     return desc ? -cmp : cmp;
   });
 }
 
-function idList(value: unknown): number[] {
+function idList(value: unknown): string[] {
   if (value === undefined || value === null || value === '') return [];
   const list = Array.isArray(value) ? value : String(value).split(',');
-  return list.map(Number).filter((n) => Number.isInteger(n));
+  return list.filter((id): id is string => typeof id === 'string' && id !== '');
 }
 
-function matchesMode(has: (id: number) => boolean, ids: number[], mode: unknown): boolean {
+function matchesMode(has: (id: string) => boolean, ids: string[], mode: unknown): boolean {
   if (ids.length === 0) return true;
   if (mode === 'all') return ids.every(has);
   if (mode === 'exclude') return !ids.some(has);
@@ -197,7 +199,7 @@ function applyContactUpdate(contact: Contact, b: Record<string, unknown>): void 
   if (typeof b.favorite === 'boolean') contact.favorite = b.favorite;
   if (typeof b.manually_unread === 'boolean') contact.manuallyUnread = b.manually_unread;
   if (typeof b.unread_messages === 'number') contact.unreadMessages = Math.max(0, b.unread_messages);
-  if (typeof b.device_id === 'number') contact.deviceId = b.device_id;
+  if (typeof b.device_id === 'string') contact.deviceId = b.device_id;
   contact.updatedAt = new Date();
 }
 
@@ -210,7 +212,7 @@ function applyConversationUpdate(app: SandboxApp, contact: Contact, b: Record<st
   }
   if ('adviser_id' in b) {
     const previous = contact.adviserId;
-    contact.adviserId = b.adviser_id === null || b.adviser_id === undefined ? null : Number(b.adviser_id);
+    contact.adviserId = b.adviser_id === null || b.adviser_id === undefined ? null : asId(b.adviser_id);
     if (contact.adviserId !== null && contact.adviserId !== previous) {
       app.webhooks.emit(
         'conversation.assigned',
@@ -237,8 +239,8 @@ const truthy = (v: unknown) => v === true || v === 'true' || v === '1' || v === 
 function conversationFilter(app: SandboxApp, q: Record<string, unknown>): (c: Contact) => boolean {
   return (c) =>
     hasMessages(app, c) &&
-    (q.contactId === undefined || c.id === Number(q.contactId)) &&
-    (q.deviceId === undefined || [...app.store.messages.values()].some((m) => m.contactId === c.id && m.deviceId === Number(q.deviceId))) &&
+    (q.contactId === undefined || c.id === asId(q.contactId)) &&
+    (q.deviceId === undefined || [...app.store.messages.values()].some((m) => m.contactId === c.id && m.deviceId === asId(q.deviceId))) &&
     (q.activeConversation === undefined || c.activeConversation === truthy(q.activeConversation)) &&
     (q.unreadMessages === undefined || (c.unreadMessages > 0 || c.manuallyUnread) === truthy(q.unreadMessages)) &&
     (q.favorites === undefined || !truthy(q.favorites) || c.favorite) &&
@@ -262,7 +264,7 @@ export const contactHandlers: HandlerTable = {
     const b = body(ctx);
     if (!b.phone && !b.whatsapp_id) throw fieldError('phone', 'El campo phone es obligatorio cuando whatsapp_id no está presente.');
     if (b.deviceId !== undefined && b.deviceId !== null) {
-      const device = ctx.app.store.devices.get(Number(b.deviceId));
+      const device = ctx.app.store.devices.get(asId(b.deviceId));
       if (!device) throw fieldError('deviceId', 'El valor seleccionado en deviceId no es válido.');
       if (!sees(ctx.workspace, device.workspaceId)) throw outsideWorkspace();
     }
@@ -350,9 +352,9 @@ export const contactHandlers: HandlerTable = {
     const now = new Date();
     return ok(
       items.map((item) => {
-        const field = ctx.app.store.customFields.get(Number(item.customFieldId));
+        const field = ctx.app.store.customFields.get(asId(item.customFieldId));
         if (!field) return { message: 'No autorizado: el campo personalizado no pertenece al usuario autenticado.', status: 403 };
-        const contact = ctx.app.store.contacts.get(Number(item.contactId));
+        const contact = ctx.app.store.contacts.get(asId(item.contactId));
         if (!contact) return { message: 'No autorizado: el contacto no pertenece al usuario autenticado.', status: 403 };
         const current = contact.customFields.get(field.id);
         contact.customFields.set(field.id, { value: String(item.value ?? ''), createdAt: current?.createdAt ?? now, updatedAt: now });
@@ -365,11 +367,11 @@ export const contactHandlers: HandlerTable = {
   'POST /api/v1/contacts/detach-custom-field': (ctx) => {
     const items = Array.isArray(ctx.body) ? (ctx.body as Record<string, unknown>[]) : [];
     const messages = items.map((item) => {
-      const contact = ctx.app.store.contacts.get(Number(item.contactId));
-      if (!contact || !ctx.app.store.customFields.has(Number(item.customFieldId))) {
+      const contact = ctx.app.store.contacts.get(asId(item.contactId));
+      if (!contact || !ctx.app.store.customFields.has(asId(item.customFieldId))) {
         return 'No autorizado: el contacto o el campo personalizado no pertenece al usuario autenticado.';
       }
-      contact.customFields.delete(Number(item.customFieldId));
+      contact.customFields.delete(asId(item.customFieldId));
       return 'Custom field value detached successfully.';
     });
     return ok({ messages });
@@ -377,7 +379,7 @@ export const contactHandlers: HandlerTable = {
 
   'GET /api/v1/contacts/{contact}/meta-window': (ctx) => {
     const contact = getContact(ctx.app, ctx.path.contact, ctx.workspace);
-    const device = ctx.app.store.devices.get(Number(ctx.query.device_id));
+    const device = ctx.app.store.devices.get(asId(ctx.query.device_id));
     // A number outside the account answers "closed" without saying whether it exists, like the API; one of another
     // workspace, 404.
     if (!device) return ok({ is_open: false, meta_device_id: null, expires_at: null });
@@ -399,7 +401,8 @@ export const contactHandlers: HandlerTable = {
     const direction = ctx.query.orderBy === 'asc' ? 1 : -1;
     const list = visibleContacts(ctx)
       .filter(conversationFilter(ctx.app, ctx.query))
-      .sort((a, b) => direction * (lastMessageAt(ctx.app, a) - lastMessageAt(ctx.app, b)) || b.id - a.id);
+      .reverse()
+      .sort((a, b) => direction * (lastMessageAt(ctx.app, a) - lastMessageAt(ctx.app, b)));
     return ok(cursorPaginate(list, listContext(ctx), (c) => contactResource(ctx.app.store, c)));
   },
   'GET /api/v1/conversations/count/unread': (ctx) => ok(count(ctx, (c) => c.unreadMessages > 0 || c.manuallyUnread)),
@@ -418,7 +421,7 @@ export const contactHandlers: HandlerTable = {
     return ok({ message: 'Todas las conversaciones han sido marcadas como leídas', updated_count: updated });
   },
   'POST /api/v1/conversations/mark-all-unread': (ctx) => {
-    const ids: Record<string, number> = {};
+    const ids: Record<string, string> = {};
     for (const c of visibleContacts(ctx)) {
       if (hasMessages(ctx.app, c) && !(c.unreadMessages > 0 || c.manuallyUnread)) {
         c.manuallyUnread = true;
@@ -439,7 +442,7 @@ export const contactHandlers: HandlerTable = {
       .sort((a, b) => {
         const va = key === 'name' ? a.name.toLowerCase() : a[key].getTime();
         const vb = key === 'name' ? b.name.toLowerCase() : b[key].getTime();
-        const cmp = va < vb ? -1 : va > vb ? 1 : a.id - b.id;
+        const cmp = va < vb ? -1 : va > vb ? 1 : 0;
         return desc ? -cmp : cmp;
       });
     return ok(paginate(list, listContext(ctx), (t) => tagResource(ctx.app.store, t)));
@@ -514,13 +517,13 @@ function pick(source: Record<string, unknown>, keys: string[]): Record<string, u
 }
 
 function getTag(ctx: HandlerContext) {
-  const tag = ctx.app.store.tags.get(Number(ctx.path.tag));
+  const tag = ctx.app.store.tags.get(asId(ctx.path.tag));
   if (!tag) throw objectNotFound();
   return tag;
 }
 
 function getCustomField(ctx: HandlerContext) {
-  const field = ctx.app.store.customFields.get(Number(ctx.path.customField));
+  const field = ctx.app.store.customFields.get(asId(ctx.path.customField));
   if (!field) throw objectNotFound();
   return field;
 }

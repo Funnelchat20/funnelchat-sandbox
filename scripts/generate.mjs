@@ -220,7 +220,11 @@ function requestSchema(merged, op) {
  *     the snapshot (for example, Laravel's conditional `prohibited` letting `null` through), applied every time;
  *   - `webhookPatches`: set properties of an event's `data` (schema and example), while the event meets
  *     `while` or while its `data` lacks `whileMissing`. `type: "*"` patches every event;
- *   - `webhooks`: an event that replaces the portal's and brings no example keeps the portal's example.
+ *   - `webhooks`: an event that replaces the portal's and brings no example keeps the portal's example;
+ *   - `idPatches`: a property that still types an id as a number (a shape of the SDK's layer, written before the ids
+ *     became opaque) becomes the opaque id of its type, in the schema of an event's `data` or of a component, and in
+ *     the example. It applies only while the property is a number: when the layer it corrects is updated, the entry
+ *     is reported so it can be deleted.
  */
 function mergeLayer(merged, layer, layerName, report) {
   // `paths` and `webhooks` entries only stand for what the snapshot already has (obsolete, or a correction of an
@@ -403,6 +407,79 @@ function mergeLayer(merged, layer, layerName, report) {
   }
 }
 
+/** The sample of an opaque id of a prefix: the first example the published spec gives for that pattern. */
+function sampleId(merged, prefix) {
+  const wanted = `^${prefix}_[A-Za-z0-9]{23}$`;
+  let found = null;
+  const visit = (node) => {
+    if (found || !node || typeof node !== 'object') return;
+    if (node.pattern === wanted && Array.isArray(node.examples) && node.examples.length) found = node.examples[0];
+    for (const value of Object.values(node)) visit(value);
+  };
+  visit(merged.paths);
+  return found ?? `${prefix}_${'Ejemplo'.padEnd(23, '0')}`;
+}
+
+function opaqueIdSchema(prefix, nullable, sample) {
+  return {
+    type: nullable ? ['string', 'null'] : 'string',
+    description: `Id opaco: un texto que empieza con \`${prefix}_\`. Se usa tal como llega; no se arma ni se interpreta.`,
+    pattern: `^${prefix}_[A-Za-z0-9]{23}$`,
+    examples: [sample],
+  };
+}
+
+const isNumberSchema = (schema) => {
+  const types = Array.isArray(schema?.type) ? schema.type : [schema?.type];
+  return types.includes('integer') || types.includes('number');
+};
+
+/** The object schema that holds the dotted `property` (`message.id`), and the last name, inside `root`. */
+function holderOf(root, property) {
+  const names = property.split('.');
+  let node = root;
+  for (const name of names.slice(0, -1)) node = node?.properties?.[name];
+  return { holder: node?.properties, name: names.at(-1) };
+}
+
+function applyIdPatches(merged, layer, layerName, report) {
+  for (const patch of layer.idPatches ?? []) {
+    const where = patch.event ? `webhook ${patch.event}` : `schema ${patch.schema}`;
+    const label = `${where} (ids: ${patch.property}) [${layerName}]`;
+    const sample = sampleId(merged, patch.prefix);
+    let touched = 0;
+    let found = 0;
+    const fix = (root, example) => {
+      const { holder, name } = holderOf(root, patch.property);
+      if (!holder?.[name]) return;
+      found++;
+      if (!isNumberSchema(holder[name])) return;
+      const nullable = Array.isArray(holder[name].type) && holder[name].type.includes('null');
+      holder[name] = { ...opaqueIdSchema(patch.prefix, nullable, sample), 'x-fc-pending': patch['x-fc-pending'] };
+      touched++;
+      if (example && typeof example === 'object') {
+        const names = patch.property.split('.');
+        let node = example;
+        for (const key of names.slice(0, -1)) node = node?.[key];
+        if (node && typeof node === 'object' && typeof node[names.at(-1)] === 'number') node[names.at(-1)] = sample;
+      }
+    };
+    if (patch.event) {
+      for (const key of Object.keys(merged.webhooks).filter((k) => eventTypeOfKey(k) === patch.event)) {
+        const content = merged.webhooks[key].post?.requestBody?.content?.['application/json'];
+        const data = content?.schema?.properties?.data;
+        if (data) fix(data, content.example?.data);
+      }
+    } else {
+      const schema = merged.components.schemas[patch.schema];
+      if (schema) fix(schema, null);
+    }
+    if (found === 0) report.missing.push(label);
+    else if (touched === 0) report.superseded.push(label);
+    else report.applied.push(label);
+  }
+}
+
 function merge(spec, layers) {
   const merged = structuredClone(spec);
   merged.components ??= {};
@@ -410,7 +487,10 @@ function merge(spec, layers) {
   merged.paths ??= {};
   merged.webhooks ??= {};
   const report = { applied: [], superseded: [], missing: [], refused: [] };
-  for (const [name, layer] of layers) mergeLayer(merged, layer, name, report);
+  for (const [name, layer] of layers) {
+    mergeLayer(merged, layer, name, report);
+    applyIdPatches(merged, layer, name, report);
+  }
   return { merged, report };
 }
 

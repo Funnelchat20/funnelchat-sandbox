@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { matchRoute, successResponse } from '../src/openapi/spec.js';
 import { conforms } from '../src/openapi/validate.js';
-import { startSandbox } from './helpers.js';
+import { startSandbox, OFFICIAL, QR, CONTACT, TEMPLATE, NO_DEVICE, NO_CONTACT, NOTE, TAG } from './helpers.js';
 
 describe('the API key', () => {
   it('answers 401 unauthenticated without a key, like the API', async () => {
@@ -26,9 +26,9 @@ describe('the API key', () => {
     const api = await startSandbox();
     const res = await api.call('GET', '/api/v1/devices', undefined, { Authorization: 'Bearer 987|fc_live_cualquierCosa123' });
     expect(res.status).toBe(200);
-    expect(res.body.data.map((d: { id: number; provider: number }) => [d.id, d.provider])).toEqual([
-      [3, 2],
-      [4, 1],
+    expect(res.body.data.map((d: { id: string; provider: number }) => [d.id, d.provider])).toEqual([
+      [OFFICIAL, 2],
+      [QR, 1],
     ]);
   });
 });
@@ -45,7 +45,7 @@ describe('routes', () => {
   it('a path parameter that does not fit is 404, like a model binding', async () => {
     const api = await startSandbox();
     expect((await api.call('GET', '/api/v1/contacts/abc')).status).toBe(404);
-    expect((await api.call('GET', '/api/v1/contacts/999999')).body).toEqual({ error: 'not_found', message: 'Objeto no encontrado.' });
+    expect((await api.call('GET', `/api/v1/contacts/${NO_CONTACT}`)).body).toEqual({ error: 'not_found', message: 'Objeto no encontrado.' });
     expect((await api.call('GET', '/api/v1/webhooks/not-a-uuid')).status).toBe(404);
   });
 
@@ -61,7 +61,7 @@ describe('the routes without a handler: shape only', () => {
     expect(first.headers.get('x-sandbox-simulated')).toBe('shape-only');
     expect(conforms(schemaOf('GET', '/api/v1/kanban-settings'), first.body)).toBe(true);
     expect((await api.call('GET', '/api/v1/kanban-settings')).body).toEqual(first.body);
-    expect((await api.call('DELETE', '/api/v1/contacts/2001/notes/1')).status).toBe(204);
+    expect((await api.call('DELETE', `/api/v1/contacts/${CONTACT}/notes/${NOTE}`)).status).toBe(204);
     // A route with a handler is not marked.
     expect((await api.call('GET', '/api/v1/devices')).headers.get('x-sandbox-simulated')).toBeNull();
     const listed = (await api.call('GET', '/_sandbox/operations')).body.data;
@@ -100,7 +100,7 @@ describe('the routes without a handler: shape only', () => {
 describe('validation against the spec', () => {
   it('answers 422 validation_failed with errors per field and Laravel messages', async () => {
     const api = await startSandbox();
-    const res = await api.call('POST', '/api/v1/contacts/2001/message', { text: 'hola' });
+    const res = await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { text: 'hola' });
     expect(res.status).toBe(422);
     expect(res.body).toEqual({
       error: 'validation_failed',
@@ -116,19 +116,18 @@ describe('validation against the spec', () => {
       name: ['El campo name no debe tener más de 254 caracteres.'],
       color: ['El campo color debe ser una cadena de caracteres.'],
     });
-    const asText = await api.call('POST', '/api/v1/contacts/2001/message', { device_id: '4', contact_id: '2001', text: 'hola' });
-    expect(asText.status).toBe(200);
-    expect(asText.body.message.device_id).toBe(4);
-    const notNumber = await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 'cuatro', contact_id: 2001, text: 'hola' });
-    expect(notNumber.body.errors.device_id).toEqual(['El campo device_id debe ser un número entero.']);
+    // The ids are text: an integer, even one that was a real id before, is not an id.
+    const asNumber = await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: 4, contact_id: 2001, text: 'hola' });
+    expect(asNumber.status).toBe(422);
+    expect(asNumber.body.errors.device_id).toBeDefined();
   });
 
   it('validates the query: required, limits and enums', async () => {
     const api = await startSandbox();
-    expect((await api.call('GET', '/api/v1/contacts/2001/meta-window')).body.errors).toEqual({ device_id: ['El campo device_id es obligatorio.'] });
+    expect((await api.call('GET', `/api/v1/contacts/${CONTACT}/meta-window`)).body.errors).toEqual({ device_id: ['El campo device_id es obligatorio.'] });
     expect((await api.call('GET', '/api/v1/contacts?perPage=500')).body.errors).toEqual({ perPage: ['El campo perPage no debe ser mayor que 100.'] });
     expect((await api.call('GET', '/api/v1/contacts?tag_mode=todos')).body.errors).toEqual({ tag_mode: ['El valor seleccionado en tag_mode no es válido.'] });
-    expect((await api.call('GET', '/api/v1/contacts?tag_ids[]=1&tag_mode=any')).status).toBe(200);
+    expect((await api.call('GET', `/api/v1/contacts?tag_ids[]=${TAG}&tag_mode=any`)).status).toBe(200);
   });
 
   it('a body that is not JSON is 400 invalid_json', async () => {
@@ -147,52 +146,52 @@ describe('validation against the spec', () => {
 describe('the rules of the real API', () => {
   it('an official number needs the 24-hour window for free text; a QR number does not', async () => {
     const api = await startSandbox();
-    const closed = await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 3, contact_id: 2001, text: 'hola' });
+    const closed = await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: OFFICIAL, contact_id: CONTACT, text: 'hola' });
     expect(closed.status).toBe(422);
     expect(closed.body.error).toBe('window_closed');
-    expect((await api.call('GET', '/api/v1/contacts/2001/meta-window?device_id=3')).body).toEqual({ is_open: false, meta_device_id: null, expires_at: null });
+    expect((await api.call('GET', `/api/v1/contacts/${CONTACT}/meta-window?device_id=${OFFICIAL}`)).body).toEqual({ is_open: false, meta_device_id: null, expires_at: null });
     // A QR number has no window (conversations v1.19.7).
-    expect((await api.call('GET', '/api/v1/contacts/2001/meta-window?device_id=4')).body).toEqual({ is_open: true, meta_device_id: null, expires_at: null });
+    expect((await api.call('GET', `/api/v1/contacts/${CONTACT}/meta-window?device_id=${QR}`)).body).toEqual({ is_open: true, meta_device_id: null, expires_at: null });
 
-    expect((await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 4, contact_id: 2001, text: 'hola' })).status).toBe(200);
+    expect((await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: QR, contact_id: CONTACT, text: 'hola' })).status).toBe(200);
 
-    await api.call('POST', '/_sandbox/inbound/message', { contact_id: 2001, device_id: 3 });
-    expect((await api.call('GET', '/api/v1/contacts/2001/meta-window?device_id=3')).body).toEqual({
+    await api.call('POST', '/_sandbox/inbound/message', { contact_id: CONTACT, device_id: OFFICIAL });
+    expect((await api.call('GET', `/api/v1/contacts/${CONTACT}/meta-window?device_id=${OFFICIAL}`)).body).toEqual({
       is_open: true,
       meta_device_id: '100000000000003',
       expires_at: expect.stringMatching(/\+00:00$/),
     });
-    expect((await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 3, contact_id: 2001, text: 'hola' })).status).toBe(200);
+    expect((await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: OFFICIAL, contact_id: CONTACT, text: 'hola' })).status).toBe(200);
 
     // An incoming message from 25 hours ago does not open it.
-    await api.call('POST', '/_sandbox/window', { contact_id: 2001, device_id: 3, open: false });
-    await api.call('POST', '/_sandbox/inbound/message', { contact_id: 2001, device_id: 3, occurred_at: new Date(Date.now() - 25 * 3600_000).toISOString() });
-    expect((await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 3, contact_id: 2001, text: 'otra' })).body.error).toBe('window_closed');
+    await api.call('POST', '/_sandbox/window', { contact_id: CONTACT, device_id: OFFICIAL, open: false });
+    await api.call('POST', '/_sandbox/inbound/message', { contact_id: CONTACT, device_id: OFFICIAL, occurred_at: new Date(Date.now() - 25 * 3600_000).toISOString() });
+    expect((await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: OFFICIAL, contact_id: CONTACT, text: 'otra' })).body.error).toBe('window_closed');
   });
 
   it('--no-window turns the window off', async () => {
     const api = await startSandbox({ rules: { window: false } });
-    expect((await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 3, contact_id: 2001, text: 'hola' })).status).toBe(200);
+    expect((await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: OFFICIAL, contact_id: CONTACT, text: 'hola' })).status).toBe(200);
   });
 
   it('recipient_mismatch when phone is not the contact of the route', async () => {
     const api = await startSandbox();
-    const res = await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 4, contact_id: 2001, phone: '5491199999999', text: 'hola' });
+    const res = await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: QR, contact_id: CONTACT, phone: '5491199999999', text: 'hola' });
     expect(res.status).toBe(422);
     expect(res.body.error).toBe('recipient_mismatch');
-    expect((await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 4, contact_id: 2001, phone: '+54 9 11 0000-0000', text: 'hola' })).status).toBe(200);
+    expect((await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: QR, contact_id: CONTACT, phone: '+54 9 11 0000-0000', text: 'hola' })).status).toBe(200);
   });
 
   it('recipient_unsupported for a group contact', async () => {
     const api = await startSandbox();
     const group = await api.call('POST', '/api/v1/contacts', { whatsapp_id: '120363000000000001@g.us', name: 'Grupo' });
-    const res = await api.call('POST', `/api/v1/contacts/${group.body.id}/message`, { device_id: 4, contact_id: group.body.id, text: 'hola' });
+    const res = await api.call('POST', `/api/v1/contacts/${group.body.id}/message`, { device_id: QR, contact_id: group.body.id, text: 'hola' });
     expect(res.body.error).toBe('recipient_unsupported');
   });
 
   it('antiblock: a third identical content, and a sixth message without an answer', async () => {
     const api = await startSandbox();
-    const send = (text: string) => api.call('POST', '/api/v1/contacts/2001/message', { device_id: 4, contact_id: 2001, text });
+    const send = (text: string) => api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: QR, contact_id: CONTACT, text });
     expect((await send('igual')).status).toBe(200);
     expect((await send('igual')).status).toBe(200);
     expect((await send('igual')).body.error).toBe('antiblock_duplicate_content');
@@ -201,19 +200,19 @@ describe('the rules of the real API', () => {
     expect((await send('cinco')).status).toBe(200);
     expect((await send('seis')).body.error).toBe('antiblock_unanswered_limit');
     // The contact answers: the brakes start over.
-    await api.call('POST', '/_sandbox/inbound/message', { contact_id: 2001, device_id: 4 });
+    await api.call('POST', '/_sandbox/inbound/message', { contact_id: CONTACT, device_id: QR });
     expect((await send('seis')).status).toBe(200);
   });
 
   it('rate_limited with Retry-After after 10 messages per minute to the same contact on an official number', async () => {
     const api = await startSandbox({ rules: { antiblock: false } });
-    await api.call('POST', '/_sandbox/inbound/message', { contact_id: 2001, device_id: 3 });
+    await api.call('POST', '/_sandbox/inbound/message', { contact_id: CONTACT, device_id: OFFICIAL });
     // Per calendar minute: start away from its end, so the eleven sends fall in the same minute.
     while (new Date().getSeconds() >= 57) await new Promise((r) => setTimeout(r, 200));
     for (let i = 0; i < 10; i++) {
-      expect((await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 3, contact_id: 2001, text: `m${i}` })).status).toBe(200);
+      expect((await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: OFFICIAL, contact_id: CONTACT, text: `m${i}` })).status).toBe(200);
     }
-    const res = await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 3, contact_id: 2001, text: 'once' });
+    const res = await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: OFFICIAL, contact_id: CONTACT, text: 'once' });
     expect(res.status).toBe(429);
     expect(res.body.error).toBe('rate_limited');
     // What is left of the minute: max(1, 60 - now % 60).
@@ -221,26 +220,26 @@ describe('the rules of the real API', () => {
     expect(Number(res.headers.get('retry-after'))).toBeGreaterThanOrEqual(left - 1);
     expect(Number(res.headers.get('retry-after'))).toBeLessThanOrEqual(Math.max(1, left));
     // A QR number has no pace.
-    for (let i = 0; i < 12; i++) expect((await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 4, contact_id: 2001, text: `q${i}` })).status).toBe(200);
+    for (let i = 0; i < 12; i++) expect((await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: QR, contact_id: CONTACT, text: `q${i}` })).status).toBe(200);
   });
 
   it('device_unavailable when the number is disconnected, before the window', async () => {
     const api = await startSandbox();
-    await api.call('POST', '/_sandbox/devices/3/disconnect');
-    const res = await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 3, contact_id: 2001, text: 'hola' });
+    await api.call('POST', `/_sandbox/devices/${OFFICIAL}/disconnect`);
+    const res = await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: OFFICIAL, contact_id: CONTACT, text: 'hola' });
     expect(res.body.error).toBe('device_unavailable');
   });
 
   it('a number outside the account is a validation error on device_id', async () => {
     const api = await startSandbox();
-    expect((await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 99, contact_id: 2001, text: 'hola' })).body.errors).toEqual({
+    expect((await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: NO_DEVICE, contact_id: CONTACT, text: 'hola' })).body.errors).toEqual({
       device_id: ['El valor seleccionado en device_id no es válido.'],
     });
   });
 
   it('a template with a missing variable is 422 template_unresolved_placeholder', async () => {
     const api = await startSandbox();
-    const res = await api.call('POST', '/api/v1/devices/3/templates/45/send-template', { phone: '5491100000000', contact_id: 2001 });
+    const res = await api.call('POST', `/api/v1/devices/${OFFICIAL}/templates/${TEMPLATE}/send-template`, { phone: '5491100000000', contact_id: CONTACT });
     expect(res.status).toBe(422);
     expect(res.body).toMatchObject({ error: 'template_unresolved_placeholder', placeholders: ['{{1}}'] });
   });

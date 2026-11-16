@@ -5,6 +5,7 @@
  * stops or on `POST /_sandbox/reset`.
  */
 import { randomBytes } from 'node:crypto';
+import { fixedId, newId, type IdPrefix } from '../util.js';
 
 export type PublicStatus = 'queued' | 'sent' | 'delivered' | 'read' | 'failed';
 
@@ -34,7 +35,7 @@ export interface Workspace {
 }
 
 export interface Device {
-  id: number;
+  id: string;
   /** The workspace the number is in; `null` counts as the default one. */
   workspaceId: number | null;
   alias: string;
@@ -53,7 +54,7 @@ export interface Device {
   /** Official numbers only (`null` for QR). */
   health: HealthState | null;
   /** The sign-up link that connected it last: `connect_link_id` of every `device.*` event. */
-  lastConnectLinkId: number | null;
+  lastConnectLinkId: string | null;
   wabaId: string | null;
   phoneNumberId: string | null;
   firstConnectedAt: Date | null;
@@ -64,7 +65,7 @@ export type ConnectLinkStatus = 'pending' | 'completed' | 'failed' | 'expired' |
 
 /** A sign-up link (contract A1 `connect-links`): it creates (or reconnects) a number when the page completes. */
 export interface ConnectLink {
-  id: number;
+  id: string;
   /** The workspace of the key that created it: the number it creates lands there. */
   workspaceId: number | null;
   type: 'meta' | 'qr';
@@ -76,10 +77,10 @@ export interface ConnectLink {
   /** `qr` only, without `device_id`: the country of the phone (two letters, lower case), where the session opens. */
   country: string | null;
   /** Reconnects this number; otherwise `null` until the link completes, then the number it created. */
-  deviceId: number | null;
+  deviceId: string | null;
   reconnect: boolean;
   /** `qr` only: adds QR to this number in coexistence. Not part of the public resource. */
-  sameNumberAs: number | null;
+  sameNumberAs: string | null;
   externalReference: string | null;
   returnUrl: string | null;
   errorCode: string | null;
@@ -100,7 +101,7 @@ export interface IdempotentAnswer {
 }
 
 export interface Contact {
-  id: number;
+  id: string;
   /** The workspace the contact is in; `null` counts as the default one. */
   workspaceId: number | null;
   name: string | null;
@@ -115,19 +116,19 @@ export interface Contact {
   favorite: boolean;
   unreadMessages: number;
   manuallyUnread: boolean;
-  deviceId: number | null;
-  adviserId: number | null;
+  deviceId: string | null;
+  adviserId: string | null;
   pausedAt: Date | null;
-  tags: Map<number, Date>;
-  customFields: Map<number, { value: string; createdAt: Date; updatedAt: Date }>;
+  tags: Map<string, Date>;
+  customFields: Map<string, { value: string; createdAt: Date; updatedAt: Date }>;
   createdAt: Date;
   updatedAt: Date;
 }
 
 export interface Message {
-  id: number;
-  contactId: number;
-  deviceId: number | null;
+  id: string;
+  contactId: string;
+  deviceId: string | null;
   own: boolean;
   /** Public type name (`text`, `image`, `template`, `contact`, `note`…). */
   type: string;
@@ -139,14 +140,14 @@ export interface Message {
   uid: string;
   /** Sent with an API key: it has the queued → sent → delivered → read lifecycle and emits its states. */
   viaApi: boolean;
-  templateId: number | null;
+  templateId: string | null;
   reactions: { emoji: string; own: boolean }[];
   createdAt: Date;
   updatedAt: Date;
 }
 
 export interface Tag {
-  id: number;
+  id: string;
   name: string;
   color: string | null;
   createdAt: Date;
@@ -154,7 +155,7 @@ export interface Tag {
 }
 
 export interface CustomField {
-  id: number;
+  id: string;
   name: string;
   type: number;
   createdAt: Date;
@@ -170,13 +171,13 @@ export interface GroupParticipant {
 
 /** A WhatsApp group of a number of the account (communities `groups`). */
 export interface Group {
-  id: number;
+  id: string;
   /** The WhatsApp id of the group, `120363…@g.us`: the `{group}` of the routes and `group.uid` of the events. */
   uid: string;
   name: string;
   description: string;
   /** The number that is in the group (a QR number: the sandbox account has no official groups). */
-  deviceId: number;
+  deviceId: string;
   /**
    * In the account (communities `groups`): listed by `GET /groups` and announcing who joins and leaves. `false`: a
    * group of the number on WhatsApp only, seen by `GET /devices/{device}/groups` until it is imported.
@@ -198,8 +199,8 @@ export interface GroupAction {
   uuid: string;
   type: 'send_message';
   status: GroupActionStatus;
-  deviceId: number;
-  groupId: number;
+  deviceId: string;
+  groupId: string;
   /** The workspace of the key that called (`call_context.workspace_id`). */
   workspaceId: number;
   result: Record<string, unknown> | null;
@@ -213,7 +214,7 @@ export interface GroupAction {
 export type TemplateStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'PAUSED' | 'DISABLED';
 
 export interface Template {
-  id: number;
+  id: string;
   /** The workspace it belongs to; `null` counts as the default one. */
   workspaceId: number | null;
   uid: string;
@@ -225,7 +226,7 @@ export interface Template {
   type: string;
   status: TemplateStatus;
   languageCode: string;
-  deviceId: number;
+  deviceId: string;
   file: string | null;
   params: string[] | null;
   buttons: { text?: string; type?: string; url?: string; phone_number?: string }[] | null;
@@ -256,7 +257,7 @@ export interface Subscription {
 }
 
 export interface Delivery {
-  id: number;
+  id: string;
   subscriptionId: string;
   eventId: string;
   eventType: string;
@@ -276,8 +277,8 @@ export interface Delivery {
 
 /** One version of a WhatsApp form (conversations `whatsapp_forms`); its family is the stable form. */
 export interface FormVersion {
-  id: number;
-  familyId: number;
+  id: string;
+  familyId: string;
   /** Unique per number; a new version is `<label>__v<n>`. */
   name: string;
   category: string;
@@ -285,9 +286,9 @@ export interface FormVersion {
   version: number;
   definition: Record<string, unknown>;
   /** The number it was created with (`primary`). */
-  deviceId: number;
+  deviceId: string;
   /** The other numbers (`whatsapp_form_copies`). */
-  copies: Map<number, { status: 'draft' | 'publishing' | 'published' | 'failed'; error: string | null }>;
+  copies: Map<string, { status: 'draft' | 'publishing' | 'published' | 'failed'; error: string | null }>;
   metaFlowId: string | null;
   publishedAt: Date | null;
   createdAt: Date;
@@ -295,19 +296,19 @@ export interface FormVersion {
 }
 
 export interface FormFamily {
-  id: number;
+  id: string;
   /** The published version a send uses. */
-  currentVersionId: number | null;
+  currentVersionId: string | null;
 }
 
 /** One send of a form to a contact, and its answers (conversations `whatsapp_form_runs`). */
 export interface FormRun {
-  id: number;
-  familyId: number;
-  versionId: number;
-  contactId: number;
-  deviceId: number;
-  messageId: number;
+  id: string;
+  familyId: string;
+  versionId: string;
+  contactId: string;
+  deviceId: string;
+  messageId: string;
   status: 'pending' | 'completed';
   answers: Record<string, unknown> | null;
   sentAt: Date;
@@ -347,7 +348,7 @@ export interface ArmedFailure {
   mode: 'reject' | 'fail' | 'edge';
   code: string;
   remaining: number;
-  contactId: number | null;
+  contactId: string | null;
   /** `edge` only: the call reached the domain and was applied; only the answer was lost. */
   applied?: boolean;
 }
@@ -365,6 +366,26 @@ class Sequence {
   }
 }
 
+/** The source of the opaque ids of one type: `<prefix>_<23 base62 characters>`. */
+class OpaqueIds {
+  constructor(readonly prefix: IdPrefix) {}
+  next(): string {
+    return newId(this.prefix);
+  }
+}
+
+/** The ids of the two example numbers: they are fixed so the docs and the first calls can name them. */
+export const EXAMPLE_DEVICE = { official: fixedId('dev', 'Sandbox0Oficial'), qr: fixedId('dev', 'Sandbox0QR') } as const;
+
+/** The ids of the other example records (contact, tag, template and the two groups): fixed, like the numbers'. */
+export const EXAMPLE_ID = {
+  contact: fixedId('ctc', 'Sandbox0Contacto'),
+  tag: fixedId('tag', 'Sandbox0Cliente'),
+  template: fixedId('tpl', 'Sandbox0Bienvenida'),
+  group: fixedId('grp', 'Sandbox0Grupo'),
+  liveGroup: fixedId('grp', 'Sandbox0ClientesVIP'),
+} as const;
+
 export class Store {
   workspaces = new Map<number, Workspace>();
   /**
@@ -373,23 +394,23 @@ export class Store {
    */
   keys = new Map<string, { workspaceId: number; permissions: string[] | null }>();
   /** When each number imported a group in the last minute: communities' 5 per minute. */
-  groupImports = new Map<number, number[]>();
-  devices = new Map<number, Device>();
-  contacts = new Map<number, Contact>();
-  messages = new Map<number, Message>();
-  tags = new Map<number, Tag>();
-  customFields = new Map<number, CustomField>();
-  templates = new Map<number, Template>();
+  groupImports = new Map<string, number[]>();
+  devices = new Map<string, Device>();
+  contacts = new Map<string, Contact>();
+  messages = new Map<string, Message>();
+  tags = new Map<string, Tag>();
+  customFields = new Map<string, CustomField>();
+  templates = new Map<string, Template>();
   subscriptions = new Map<string, Subscription>();
   deliveries: Delivery[] = [];
   requests: RequestLogEntry[] = [];
   events: EmittedEvent[] = [];
   failures: ArmedFailure[] = [];
-  forms = new Map<number, FormVersion>();
-  formFamilies = new Map<number, FormFamily>();
-  formRuns = new Map<number, FormRun>();
-  connectLinks = new Map<number, ConnectLink>();
-  groups = new Map<number, Group>();
+  forms = new Map<string, FormVersion>();
+  formFamilies = new Map<string, FormFamily>();
+  formRuns = new Map<string, FormRun>();
+  connectLinks = new Map<string, ConnectLink>();
+  groups = new Map<string, Group>();
   groupActions = new Map<string, GroupAction>();
   /** When each `POST /connect-links` arrived in the last minute: the per-minute limit. */
   linkAttempts: number[] = [];
@@ -402,12 +423,12 @@ export class Store {
   /** Last inbound message per `contactId:deviceId`: the 24-hour window. */
   lastInbound = new Map<string, Date>();
   /** API-key sends per contact since its last inbound message: the antiblock counters. */
-  unanswered = new Map<number, { at: Date; hash: string }[]>();
+  unanswered = new Map<string, { at: Date; hash: string }[]>();
   /** Recent API-key sends per number and per `deviceId:contactId`: the pace. */
   pace = new Map<string, number[]>();
 
   /** The MAC state of the account (`POST /_sandbox/mac`): the 24-hour lockout, and contacts active or inactive in the cycle. */
-  mac = { lockout: false, activeContacts: new Set<number>(), inactiveContacts: new Set<number>() };
+  mac = { lockout: false, activeContacts: new Set<string>(), inactiveContacts: new Set<string>() };
 
   /** Salt of the deterministic event ids: new on every reset, so ids never repeat across sessions. */
   eventSalt = randomBytes(16).toString('hex');
@@ -415,21 +436,25 @@ export class Store {
   readonly ids = {
     workspace: new Sequence(1),
     apiKey: new Sequence(101),
-    contact: new Sequence(2001),
-    message: new Sequence(9001),
-    tag: new Sequence(4001),
-    customField: new Sequence(5001),
-    template: new Sequence(45),
-    delivery: new Sequence(1),
+    contact: new OpaqueIds('ctc'),
+    message: new OpaqueIds('msg'),
+    tag: new OpaqueIds('tag'),
+    customField: new OpaqueIds('fld'),
+    template: new OpaqueIds('tpl'),
+    delivery: new OpaqueIds('dlv'),
     request: new Sequence(1),
     failure: new Sequence(1),
-    note: new Sequence(1),
-    formFamily: new Sequence(8001),
-    formVersion: new Sequence(8101),
-    formRun: new Sequence(1),
-    device: new Sequence(5),
-    connectLink: new Sequence(1),
-    group: new Sequence(7001),
+    note: new OpaqueIds('not'),
+    formFamily: new OpaqueIds('frm'),
+    formVersion: new OpaqueIds('frv'),
+    formRun: new OpaqueIds('frs'),
+    device: new OpaqueIds('dev'),
+    /** The place of a number among the ones created: its default alias and the Meta ids of an official one (the example numbers are 3 and 4). */
+    deviceOrdinal: new Sequence(5),
+    connectLink: new OpaqueIds('lnk'),
+    group: new OpaqueIds('grp'),
+    /** The number inside the `uid` of the groups the sandbox creates (`120363…@g.us`): the example groups take the first two. */
+    groupUid: new Sequence(7003),
   };
 
   constructor(readonly historyLimit = 200) {}
@@ -465,11 +490,11 @@ export class Store {
     return undefined;
   }
 
-  contactMessages(contactId: number): Message[] {
+  contactMessages(contactId: string): Message[] {
     return [...this.messages.values()].filter((m) => m.contactId === contactId);
   }
 
-  windowOpen(contactId: number, deviceId: number, now = new Date()): boolean {
+  windowOpen(contactId: string, deviceId: string, now = new Date()): boolean {
     const last = this.lastInbound.get(`${contactId}:${deviceId}`);
     return last !== undefined && now.getTime() - last.getTime() < 24 * 60 * 60 * 1000;
   }
@@ -480,8 +505,8 @@ export function seed(store: Store, now = new Date()): void {
   const workspaceId = store.ids.workspace.next();
   store.workspaces.set(workspaceId, { id: workspaceId, name: 'Principal', isDefault: true, createdAt: now });
 
-  store.devices.set(3, {
-    id: 3,
+  store.devices.set(EXAMPLE_DEVICE.official, {
+    id: EXAMPLE_DEVICE.official,
     workspaceId,
     alias: 'Número oficial de ejemplo',
     number: '5491100000001',
@@ -498,8 +523,8 @@ export function seed(store: Store, now = new Date()): void {
     firstConnectedAt: now,
     createdAt: now,
   });
-  store.devices.set(4, {
-    id: 4,
+  store.devices.set(EXAMPLE_DEVICE.qr, {
+    id: EXAMPLE_DEVICE.qr,
     workspaceId,
     alias: 'Número QR de ejemplo',
     number: '5491100000002',
@@ -517,7 +542,7 @@ export function seed(store: Store, now = new Date()): void {
     createdAt: now,
   });
 
-  const contactId = store.ids.contact.next();
+  const contactId = EXAMPLE_ID.contact;
   store.contacts.set(contactId, {
     id: contactId,
     workspaceId,
@@ -541,13 +566,13 @@ export function seed(store: Store, now = new Date()): void {
     updatedAt: now,
   });
 
-  const groupId = store.ids.group.next();
+  const groupId = EXAMPLE_ID.group;
   store.groups.set(groupId, {
     id: groupId,
     uid: '120363000000000000@g.us',
     name: 'Grupo de ejemplo',
     description: '',
-    deviceId: 4,
+    deviceId: EXAMPLE_DEVICE.qr,
     workspaceId,
     participants: [
       { phone: '5491100000002', name: null, admin: true },
@@ -559,13 +584,13 @@ export function seed(store: Store, now = new Date()): void {
     updatedAt: now,
   });
   // A group number 4 is the admin of on WhatsApp but the account has not imported (followed) yet.
-  const liveId = store.ids.group.next();
+  const liveId = EXAMPLE_ID.liveGroup;
   store.groups.set(liveId, {
     id: liveId,
     uid: '120363000000000001@g.us',
     name: 'Clientes VIP',
     description: '',
-    deviceId: 4,
+    deviceId: EXAMPLE_DEVICE.qr,
     workspaceId,
     participants: [
       { phone: '5491100000002', name: null, admin: true },
@@ -577,10 +602,10 @@ export function seed(store: Store, now = new Date()): void {
     updatedAt: now,
   });
 
-  const tagId = store.ids.tag.next();
+  const tagId = EXAMPLE_ID.tag;
   store.tags.set(tagId, { id: tagId, name: 'Cliente', color: '#2E7D32', createdAt: now, updatedAt: now });
 
-  const templateId = store.ids.template.next();
+  const templateId = EXAMPLE_ID.template;
   store.templates.set(templateId, {
     id: templateId,
     workspaceId,
@@ -593,7 +618,7 @@ export function seed(store: Store, now = new Date()): void {
     type: 'text',
     status: 'APPROVED',
     languageCode: 'es',
-    deviceId: 3,
+    deviceId: EXAMPLE_DEVICE.official,
     file: null,
     params: ['Lucía'],
     buttons: null,

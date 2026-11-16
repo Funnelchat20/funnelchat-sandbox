@@ -3,7 +3,7 @@
  * v2.35.5): each key sees and creates only in its workspace, and every event says which workspace it belongs to.
  */
 import { describe, expect, it } from 'vitest';
-import { startReceiver, startSandbox, subscribe, type Api } from './helpers.js';
+import { startReceiver, startSandbox, subscribe, type Api, OFFICIAL, QR, CONTACT, TEMPLATE, NO_MESSAGE } from './helpers.js';
 
 /** A second workspace and its key, through the sandbox's own route. */
 async function secondWorkspace(api: Api): Promise<{ id: number; key: string; as: (method: string, path: string, body?: unknown) => ReturnType<Api['call']> }> {
@@ -39,8 +39,8 @@ describe('a key of another workspace', () => {
     const subA = await subscribe(api, receiver.url, ['device.connected']);
 
     expect((await b.as('GET', '/api/v1/devices')).body.data).toEqual([]);
-    expect(await b.as('GET', '/api/v1/devices/3')).toMatchObject({ status: 404, body: { error: 'not_found', message: 'No encontramos lo que pediste en esta cuenta.' } });
-    expect((await b.as('DELETE', '/api/v1/devices/4')).status).toBe(404);
+    expect(await b.as('GET', `/api/v1/devices/${OFFICIAL}`)).toMatchObject({ status: 404, body: { error: 'not_found', message: 'No encontramos lo que pediste en esta cuenta.' } });
+    expect((await b.as('DELETE', `/api/v1/devices/${QR}`)).status).toBe(404);
     expect((await b.as('GET', '/api/v1/webhooks')).body).toEqual([]);
     expect((await b.as('GET', `/api/v1/webhooks/${subA.id}`)).status).toBe(404);
     expect((await b.as('DELETE', `/api/v1/webhooks/${subA.id}`)).status).toBe(404);
@@ -49,7 +49,7 @@ describe('a key of another workspace', () => {
     expect((await b.as('GET', '/api/v1/connect-links')).body.data).toEqual([]);
     expect((await b.as('GET', `/api/v1/connect-links/${linkA.body.data.id}`)).status).toBe(404);
     // A number it does not see is not a valid reference.
-    expect(await b.as('POST', '/api/v1/connect-links', { type: 'qr', device_id: 4 })).toMatchObject({ status: 422, body: { error: 'invalid_reference_device' } });
+    expect(await b.as('POST', '/api/v1/connect-links', { type: 'qr', device_id: QR })).toMatchObject({ status: 422, body: { error: 'invalid_reference_device' } });
   });
 
   it('what it creates lands in its workspace, and only its subscriptions get those events', async () => {
@@ -63,9 +63,9 @@ describe('a key of another workspace', () => {
 
     const device = await b.as('POST', '/api/v1/devices', { connection: 'qr' });
     const id = device.body.data.id;
-    expect((await b.as('GET', '/api/v1/devices')).body.data.map((d: { id: number }) => d.id)).toEqual([id]);
+    expect((await b.as('GET', '/api/v1/devices')).body.data.map((d: { id: string }) => d.id)).toEqual([id]);
     expect((await api.call('GET', `/api/v1/devices/${id}`)).status).toBe(404);
-    expect((await api.call('GET', '/api/v1/devices')).body.data.map((d: { id: number }) => d.id)).toEqual([3, 4]);
+    expect((await api.call('GET', '/api/v1/devices')).body.data.map((d: { id: string }) => d.id)).toEqual([OFFICIAL, QR]);
 
     await api.call('POST', `/_sandbox/devices/${id}/connect`);
     const [connected] = await receiverB.waitFor(1);
@@ -101,16 +101,16 @@ describe('contacts, conversations and messages of another workspace', () => {
   it('a key of B neither lists nor reaches the contacts and messages of the default workspace: conversations answers 404 not_found', async () => {
     const api = await startSandbox();
     const b = await secondWorkspace(api);
-    await api.call('POST', '/_sandbox/inbound/message', { contact_id: 2001, device_id: 4, text: 'Hola' });
+    await api.call('POST', '/_sandbox/inbound/message', { contact_id: CONTACT, device_id: QR, text: 'Hola' });
 
     expect((await b.as('GET', '/api/v1/contacts')).body.data).toEqual([]);
     expect((await b.as('GET', '/api/v1/conversations')).body.data).toEqual([]);
     expect((await b.as('GET', '/api/v1/conversations/count/all')).body).toEqual({ count: 0 });
-    expect(await b.as('GET', '/api/v1/contacts/2001')).toMatchObject({ status: 404, body: { error: 'not_found', message: 'No encontramos lo que pediste en esta cuenta.' } });
-    expect(await b.as('GET', '/api/v1/contacts/2001/messages/9001')).toMatchObject({ status: 404, body: { error: 'not_found', message: 'No encontramos lo que pediste en esta cuenta.' } });
-    expect(await b.as('GET', '/api/v1/contacts/2001/messages')).toMatchObject({ status: 404, body: { error: 'not_found', message: 'Contacto no encontrado.' } });
-    expect(await b.as('POST', '/api/v1/contacts/2001/message', { device_id: 4, contact_id: 2001, text: 'x' })).toMatchObject({ status: 404, body: { error: 'not_found', message: 'No encontramos lo que pediste en esta cuenta.' } });
-    expect(await b.as('POST', '/api/v1/message/send-message', { device_id: 4, contact_id: 2001, text: 'x' })).toMatchObject({
+    expect(await b.as('GET', `/api/v1/contacts/${CONTACT}`)).toMatchObject({ status: 404, body: { error: 'not_found', message: 'No encontramos lo que pediste en esta cuenta.' } });
+    expect(await b.as('GET', `/api/v1/contacts/${CONTACT}/messages/${NO_MESSAGE}`)).toMatchObject({ status: 404, body: { error: 'not_found', message: 'No encontramos lo que pediste en esta cuenta.' } });
+    expect(await b.as('GET', `/api/v1/contacts/${CONTACT}/messages`)).toMatchObject({ status: 404, body: { error: 'not_found', message: 'Contacto no encontrado.' } });
+    expect(await b.as('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: QR, contact_id: CONTACT, text: 'x' })).toMatchObject({ status: 404, body: { error: 'not_found', message: 'No encontramos lo que pediste en esta cuenta.' } });
+    expect(await b.as('POST', '/api/v1/message/send-message', { device_id: QR, contact_id: CONTACT, text: 'x' })).toMatchObject({
       status: 404,
       body: { error: 'not_found', message: 'Contacto no encontrado.', status: 'error' },
     });
@@ -122,7 +122,7 @@ describe('contacts, conversations and messages of another workspace', () => {
     const b = await secondWorkspace(api);
     const created = await b.as('POST', '/api/v1/contacts', { name: 'Ana', phone: '5491155550000' });
     expect(created.status).toBe(201);
-    expect((await b.as('GET', '/api/v1/contacts')).body.data.map((c: { id: number }) => c.id)).toEqual([created.body.id]);
+    expect((await b.as('GET', '/api/v1/contacts')).body.data.map((c: { id: string }) => c.id)).toEqual([created.body.id]);
     expect((await api.call('GET', `/api/v1/contacts/${created.body.id}`)).status).toBe(404);
     // `ContactService::firstOrCreate`: the same phone again is the same contact, `200`.
     const again = await b.as('POST', '/api/v1/contacts', { phone: '5491155550000' });
@@ -133,7 +133,7 @@ describe('contacts, conversations and messages of another workspace', () => {
     const api = await startSandbox();
     const b = await secondWorkspace(api);
     const contact = await b.as('POST', '/api/v1/contacts', { phone: '5491155550000' });
-    expect(await b.as('POST', `/api/v1/contacts/${contact.body.id}/message`, { device_id: 4, contact_id: contact.body.id, text: 'x' })).toMatchObject({
+    expect(await b.as('POST', `/api/v1/contacts/${contact.body.id}/message`, { device_id: QR, contact_id: contact.body.id, text: 'x' })).toMatchObject({
       status: 404,
       body: { error: 'not_found', message: 'No encontramos lo que pediste en esta cuenta.' },
     });
@@ -156,19 +156,19 @@ describe('contacts, conversations and messages of another workspace', () => {
 describe('sending by phone, without contact_id (conversations v1.19.21)', () => {
   it('finds or creates the contact in the key\'s workspace; another workspace\'s phone is 404; whatsapp_id only on an official number', async () => {
     const api = await startSandbox();
-    const sent = await api.call('POST', '/api/v1/message/send-message', { device_id: 4, phone: '+54 9 11 5555-0100', text: 'Hola' });
+    const sent = await api.call('POST', '/api/v1/message/send-message', { device_id: QR, phone: '+54 9 11 5555-0100', text: 'Hola' });
     expect(sent.status).toBe(200);
     const contactId = sent.body.message.contact_id as number;
     expect((await api.call('GET', `/api/v1/contacts/${contactId}`)).body.phone).toBe('5491155550100');
     // The same phone again is the same contact.
-    expect((await api.call('POST', '/api/v1/message/send-message', { device_id: 4, phone: '5491155550100', text: 'Otra vez' })).body.message.contact_id).toBe(contactId);
-    const template = await api.call('POST', '/api/v1/devices/3/templates/45/send-template', { phone: '5491155550100', template_variables: { body: ['Ana'] } });
+    expect((await api.call('POST', '/api/v1/message/send-message', { device_id: QR, phone: '5491155550100', text: 'Otra vez' })).body.message.contact_id).toBe(contactId);
+    const template = await api.call('POST', `/api/v1/devices/${OFFICIAL}/templates/${TEMPLATE}/send-template`, { phone: '5491155550100', template_variables: { body: ['Ana'] } });
     expect(template.body.message.contact_id).toBe(contactId);
 
     const b = await secondWorkspace(api);
-    expect(await b.as('POST', '/api/v1/message/send-message', { device_id: 4, phone: '5491155550100', text: 'x' })).toMatchObject({ status: 404 });
-    expect((await api.call('POST', '/api/v1/message/send-message', { device_id: 4, whatsapp_id: 'US.13491208655302741918', text: 'x' })).body.errors.whatsapp_id).toBeDefined();
-    expect((await api.call('POST', '/api/v1/message/send-message', { device_id: 4, contact_id: 2001, phone: '5491155550100', text: 'x' })).body.error).toBe('recipient_mismatch');
+    expect(await b.as('POST', '/api/v1/message/send-message', { device_id: QR, phone: '5491155550100', text: 'x' })).toMatchObject({ status: 404 });
+    expect((await api.call('POST', '/api/v1/message/send-message', { device_id: QR, whatsapp_id: 'US.13491208655302741918', text: 'x' })).body.errors.whatsapp_id).toBeDefined();
+    expect((await api.call('POST', '/api/v1/message/send-message', { device_id: QR, contact_id: CONTACT, phone: '5491155550100', text: 'x' })).body.error).toBe('recipient_mismatch');
   });
 });
 
@@ -202,7 +202,7 @@ describe('configuration', () => {
     const api = await startSandbox({ workspaces: [{ name: 'Cliente B', keys: ['7|fc_live_clienteB'] }] });
     const res = await api.call('POST', '/api/v1/devices', { connection: 'qr' }, { Authorization: 'Bearer 7|fc_live_clienteB' });
     expect(res.status).toBe(201);
-    expect((await api.call('GET', '/api/v1/devices')).body.data.map((d: { id: number }) => d.id)).toEqual([3, 4]);
+    expect((await api.call('GET', '/api/v1/devices')).body.data.map((d: { id: string }) => d.id)).toEqual([OFFICIAL, QR]);
     const workspaces = await api.call('GET', '/_sandbox/workspaces');
     expect(workspaces.body.data[1]).toEqual({ id: 2, name: 'Cliente B', is_default: false, keys: ['7|fc_live_clienteB'] });
   });

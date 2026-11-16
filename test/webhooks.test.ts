@@ -7,7 +7,7 @@ import type { AddressInfo } from 'node:net';
 import { describe, expect, it, onTestFinished } from 'vitest';
 import { spec } from '../src/openapi/spec.js';
 import { conforms } from '../src/openapi/validate.js';
-import { startReceiver, startSandbox, subscribe, until } from './helpers.js';
+import { startReceiver, startSandbox, subscribe, until, OFFICIAL, CONTACT, DELIVERY_ID } from './helpers.js';
 
 /** The `data` schema of an event in the spec the sandbox serves. */
 const eventData = (type: string): any => (spec.webhooks[type]?.post?.requestBody?.content?.['application/json']?.schema as any).properties.data;
@@ -107,7 +107,7 @@ describe('the events, as the spec the sandbox serves types them', () => {
     const api = await startSandbox();
     const receiver = await startReceiver();
     await subscribe(api, receiver.url, ['message.received']);
-    await api.call('POST', '/_sandbox/inbound/message', { contact_id: 2001, device_id: 3, type: 'a_new_type', text: 'Hola' });
+    await api.call('POST', '/_sandbox/inbound/message', { contact_id: CONTACT, device_id: OFFICIAL, type: 'a_new_type', text: 'Hola' });
     const [d] = await receiver.waitFor(1);
     expect(d!.json.data.message.type).toBe('a_new_type');
     expect(conforms(eventData('message.received'), d!.json.data)).toBe(true);
@@ -127,7 +127,7 @@ describe('the test delivery and the history', () => {
     const sub = await subscribe(api, receiver.url, ['message.received']);
     const res = await api.call('POST', `/api/v1/webhooks/${sub.id}/test`);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ succeeded: false, response_status: 500, error: 'non_2xx', duration_ms: expect.any(Number), delivery_id: expect.any(Number) });
+    expect(res.body).toEqual({ succeeded: false, response_status: 500, error: 'non_2xx', duration_ms: expect.any(Number), delivery_id: expect.stringMatching(DELIVERY_ID) });
     expect(receiver.received).toHaveLength(1);
     expect(receiver.received[0]!.json.data).toEqual({ subscription: sub.id, sent_at: expect.stringMatching(/Z$/), workspace_id: 1 });
     // No retries for a test.

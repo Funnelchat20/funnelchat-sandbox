@@ -49,7 +49,7 @@ function statusInt(message: Message, device: Device | undefined): number | null 
  */
 export function contactResource(store: Store, contact: Contact, mode: 'list' | 'show' = 'list'): Record<string, unknown> {
   const show = mode === 'show';
-  const messages = store.contactMessages(contact.id).sort((a, b) => b.id - a.id);
+  const messages = store.contactMessages(contact.id).reverse();
   const last = messages[0];
   return {
     id: contact.id,
@@ -160,7 +160,7 @@ export function contactCustomFieldResource(
   };
 }
 
-export function templateResource(template: Template, currentDeviceId?: number): Record<string, unknown> {
+export function templateResource(template: Template, currentDeviceId?: string): Record<string, unknown> {
   return {
     id: template.id,
     name: template.name,

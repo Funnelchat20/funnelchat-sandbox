@@ -22,7 +22,7 @@ import { ApiError, RawApiError } from '../http/errors.js';
 import { paginate } from '../http/paginate.js';
 import type { Device, Group, GroupAction } from '../state/store.js';
 import { sees, type WorkspaceScope } from '../state/workspaces.js';
-import { iso8601, randomAlnum } from '../util.js';
+import { asId, iso8601, randomAlnum } from '../util.js';
 
 /** The group action routes behind the kill switch (communities `ApiRouteCatalog::GROUP_ACTION_KEYS`) that the sandbox serves. */
 export const GROUP_ACTION_ROUTES = new Set(['POST /api/v1/groups/{group}/messages', 'GET /api/v1/groups/actions/{action}']);
@@ -139,7 +139,7 @@ const deviceNotConnected = () => groupError(422, 'device_not_connected', 'El nú
 
 /** communities `ApiGroupActionTargetResolver::findDevice()` (and `resolveImportDevice()`, which also wants it connected). */
 function importDevice(ctx: HandlerContext, deviceId: unknown, connected: boolean): Device {
-  const device = ctx.app.store.devices.get(Number(deviceId));
+  const device = ctx.app.store.devices.get(asId(deviceId));
   if (!device || !sees(ctx.workspace, device.workspaceId)) throw groupError(404, 'device_not_found', 'No encontramos ese número en tu cuenta.');
   if (connected && (!device.connected || device.number === null)) throw deviceNotConnected();
   return device;
@@ -349,7 +349,7 @@ export const groupHandlers: HandlerTable = {
       // Every group of the sandbox is a common group (`type` 1), enabled (`status` 0) and without a campaign.
       .filter(() => q.type === undefined || String(q.type) === '1')
       .filter(() => q.status === undefined || String(q.status) === '0')
-      .filter((g) => q.deviceId === undefined || g.deviceId === Number(q.deviceId))
+      .filter((g) => q.deviceId === undefined || g.deviceId === asId(q.deviceId))
       .sort((a, b) => {
         const va = value(a);
         const vb = value(b);
@@ -399,7 +399,7 @@ export const groupHandlers: HandlerTable = {
 
   // The number's groups on WhatsApp, live (`GroupMinResource`): `device_id` only for one the account already has.
   'GET /api/v1/devices/{device}/groups': (ctx) => {
-    const device = ctx.app.store.devices.get(Number(ctx.path.device));
+    const device = ctx.app.store.devices.get(asId(ctx.path.device));
     if (!device || !sees(ctx.workspace, device.workspaceId)) throw new RawApiError(404, { error: 'Device not found' });
     if (!device.connected) throw new RawApiError(400, { error: 'An error has occurred' });
     const name = ctx.query.name ? String(ctx.query.name).toLowerCase() : null;
@@ -442,7 +442,7 @@ export function createGroup(app: SandboxApp, input: NewGroup): Group {
   const id = app.store.ids.group.next();
   const group: Group = {
     id,
-    uid: `120363${String(id).padStart(12, '0')}@g.us`,
+    uid: `120363${String(app.store.ids.groupUid.next()).padStart(12, '0')}@g.us`,
     name: input.name,
     description: '',
     deviceId: input.device.id,

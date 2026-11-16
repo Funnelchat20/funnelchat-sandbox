@@ -24,6 +24,12 @@ function pattern(schema: Schema): RegExp | null {
   }
 }
 
+/** An opaque id (`^xxx_[A-Za-z0-9]{23}$`) that fits the pattern: its prefix, `_` and 23 characters. */
+function opaqueIdFor(schema: Schema): string | null {
+  const prefix = typeof schema.pattern === 'string' ? /^\^([a-z]{3})_\[A-Za-z0-9\]\{23\}\$$/.exec(schema.pattern)?.[1] : undefined;
+  return prefix ? `${prefix}_${'Ejemplo'.padEnd(23, '0')}` : null;
+}
+
 function plainString(schema: Schema, name: string): string {
   switch (schema.format) {
     case 'date-time':
@@ -54,7 +60,7 @@ function plainString(schema: Schema, name: string): string {
 function stringFor(schema: Schema, name: string): string {
   let value = plainString(schema, name);
   const regex = pattern(schema);
-  if (regex && !regex.test(value)) value = PATTERN_CANDIDATES.find((candidate) => regex.test(candidate)) ?? value;
+  if (regex && !regex.test(value)) value = PATTERN_CANDIDATES.find((candidate) => regex.test(candidate)) ?? opaqueIdFor(schema) ?? value;
   if (typeof schema.maxLength === 'number' && value.length > schema.maxLength) value = value.slice(0, schema.maxLength);
   if (typeof schema.minLength === 'number' && value.length < schema.minLength) value = value.padEnd(schema.minLength, 'x');
   return value;

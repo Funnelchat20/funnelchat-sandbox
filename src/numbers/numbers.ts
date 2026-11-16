@@ -9,7 +9,7 @@
  *   `connect_link_id`: the link that connected the number last, or `null`.
  *
  * Amended by v0.1 of the contract (23-10, read from accounts `feat/alta-de-numeros-api` `52d49b319`): the errors,
- * the integer id of a link, `pending_number_exists`, `connect_link_id` in the four events and the reason
+ * the opaque id of a link, `pending_number_exists`, `connect_link_id` in the four events and the reason
  * `disconnected_by_user`; and by v0.2 (accounts `8852b3fad`, part 2 done): a Meta link survives up to five failed
  * attempts of Facebook or Meta, and the customer cannot choose a connection the link does not allow.
  */
@@ -19,7 +19,7 @@ import { ApiError } from '../http/errors.js';
 import { eventDevice } from '../state/resources.js';
 import type { ConnectLink, Connection, Device, HealthState } from '../state/store.js';
 import { sees, type WorkspaceScope } from '../state/workspaces.js';
-import { isoSeconds } from '../util.js';
+import { asId, crc32Hex, isoSeconds } from '../util.js';
 
 /** Closed list of `device.disconnected` `reason` (contract A3). */
 export const DISCONNECT_REASONS = ['qr_logged_out', 'meta_account_not_registered', 'shadow_ban_protection', 'provider_error', 'unknown', 'disconnected_by_user'] as const;
@@ -57,7 +57,7 @@ export function placesInUse(app: SandboxApp): number {
 /** A QR number never connected yet: the pool keeps at most one per account. */
 const isPendingQr = (device: Device): boolean => device.kind === 'qr' && !device.connected && device.firstConnectedAt === null;
 
-export function pendingQrIds(app: SandboxApp): number[] {
+export function pendingQrIds(app: SandboxApp): string[] {
   return [...app.store.devices.values()].filter(isPendingQr).map((d) => d.id);
 }
 
@@ -97,7 +97,7 @@ export const invalidReferenceDevice = () => new ApiError(422, 'invalid_reference
  * `ConnectLinkService::referenceVisible`).
  */
 export function checkSameNumber(app: SandboxApp, id: unknown, scope: WorkspaceScope): Device {
-  const target = app.store.devices.get(Number(id));
+  const target = app.store.devices.get(asId(id));
   if (!target || !sees(scope, target.workspaceId)) throw invalidReferenceDevice();
   if (target.kind === 'qr') {
     throw new ApiError(422, 'method_already_present', 'Ese número ya tiene QR.', { device_id: target.id });
@@ -123,13 +123,14 @@ export interface NewDevice {
 
 export function createDevice(app: SandboxApp, input: NewDevice): Device {
   const id = app.store.ids.device.next();
+  const ordinal = app.store.ids.deviceOrdinal.next();
   const now = new Date();
   const cloud = input.connection !== 'qr';
   const connected = input.connected ?? false;
   const device: Device = {
     id,
     workspaceId: input.workspaceId,
-    alias: input.alias ?? `Número ${id}`,
+    alias: input.alias ?? `Número ${ordinal}`,
     number: input.number ?? null,
     provider: cloud ? 2 : 1,
     kind: cloud ? 'cloud' : 'qr',
@@ -139,8 +140,8 @@ export function createDevice(app: SandboxApp, input: NewDevice): Device {
     externalReference: input.externalReference ?? null,
     health: cloud ? (connected ? 'available' : 'unknown') : null,
     lastConnectLinkId: null,
-    wabaId: cloud ? `1000000000${String(id).padStart(5, '0')}` : null,
-    phoneNumberId: cloud ? `2000000000${String(id).padStart(5, '0')}` : null,
+    wabaId: cloud ? `1000000000${String(ordinal).padStart(5, '0')}` : null,
+    phoneNumberId: cloud ? `2000000000${String(ordinal).padStart(5, '0')}` : null,
     firstConnectedAt: connected ? now : null,
     createdAt: now,
   };
@@ -150,7 +151,8 @@ export function createDevice(app: SandboxApp, input: NewDevice): Device {
 
 /** A phone for a number that connects in the sandbox: Argentina for QR and coexistence, the US for the pool. */
 export function fakeNumber(device: Device): string {
-  const tail = String(device.id).padStart(4, '0').slice(-4);
+  // Ids are opaque: four digits that depend on the id, so each number gets its own phone.
+  const tail = String(Number.parseInt(crc32Hex(device.id), 16) % 10000).padStart(4, '0');
   return device.fromPool ? `1555010${tail}` : `54911555${tail}`;
 }
 
@@ -169,7 +171,7 @@ const eventData = (device: Device, rest: Record<string, unknown>, connectLinkId 
  * without one). A link that connects it is remembered for the other three events; a connection without a link does
  * not forget it. Nothing happens if it was already connected.
  */
-export function connectDevice(app: SandboxApp, device: Device, options: { number?: string | null; connectLinkId?: number | null } = {}) {
+export function connectDevice(app: SandboxApp, device: Device, options: { number?: string | null; connectLinkId?: string | null } = {}) {
   if (device.connected) return null;
   const at = new Date();
   const connectLinkId = options.connectLinkId ?? null;

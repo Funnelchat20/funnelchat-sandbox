@@ -2,7 +2,7 @@
  * Send → `queued` → `message.status_changed` (sent → delivered → read), and the forced failures.
  */
 import { describe, expect, it } from 'vitest';
-import { startReceiver, startSandbox, subscribe, until } from './helpers.js';
+import { startReceiver, startSandbox, subscribe, until, OFFICIAL, QR, CONTACT, TEMPLATE, NO_DEVICE } from './helpers.js';
 
 const PUBLIC_MESSAGE_KEYS = ['id', 'contact_id', 'device_id', 'direction', 'type', 'status', 'error', 'client_reference', 'created_at', 'updated_at'];
 
@@ -16,11 +16,11 @@ async function setup(config = {}) {
 describe('sending with an API key', () => {
   it('answers the queued message at once and then announces sent, delivered and read', async () => {
     const { api, receiver } = await setup();
-    await api.call('POST', '/_sandbox/inbound/message', { contact_id: 2001, device_id: 3 });
+    await api.call('POST', '/_sandbox/inbound/message', { contact_id: CONTACT, device_id: OFFICIAL });
 
-    const res = await api.call('POST', '/api/v1/contacts/2001/message', {
-      device_id: 3,
-      contact_id: 2001,
+    const res = await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, {
+      device_id: OFFICIAL,
+      contact_id: CONTACT,
       phone: '5491100000000',
       text: '¡Hola! Te paso la info',
       client_reference: 'pedido-8841',
@@ -28,7 +28,7 @@ describe('sending with an API key', () => {
     expect(res.status).toBe(200);
     expect(Object.keys(res.body)).toEqual(['message']);
     expect(Object.keys(res.body.message)).toEqual(PUBLIC_MESSAGE_KEYS);
-    expect(res.body.message).toMatchObject({ contact_id: 2001, device_id: 3, direction: 'outbound', type: 'text', status: 'queued', error: null, client_reference: 'pedido-8841' });
+    expect(res.body.message).toMatchObject({ contact_id: CONTACT, device_id: OFFICIAL, direction: 'outbound', type: 'text', status: 'queued', error: null, client_reference: 'pedido-8841' });
     const id = res.body.message.id;
 
     const events = await receiver.waitFor(3);
@@ -40,30 +40,30 @@ describe('sending with an API key', () => {
     for (const e of events) {
       expect(e.json.type).toBe('message.status_changed');
       expect(Object.keys(e.json.data)).toEqual(['message_id', 'contact_id', 'device_id', 'status', 'previous_status', 'occurred_at', 'client_reference', 'workspace_id']);
-      expect(e.json.data).toMatchObject({ message_id: id, contact_id: 2001, device_id: 3, client_reference: 'pedido-8841' });
+      expect(e.json.data).toMatchObject({ message_id: id, contact_id: CONTACT, device_id: OFFICIAL, client_reference: 'pedido-8841' });
     }
     expect(new Set(events.map((e) => e.json.id)).size).toBe(3);
 
-    const lookup = await api.call('GET', `/api/v1/contacts/2001/messages/${id}`);
+    const lookup = await api.call('GET', `/api/v1/contacts/${CONTACT}/messages/${id}`);
     expect(lookup.body).toMatchObject({ id, status: 'read', error: null });
-    const history = await api.call('GET', '/api/v1/contacts/2001/messages');
-    const row = history.body.data.find((m: { id: number }) => m.id === id);
+    const history = await api.call('GET', `/api/v1/contacts/${CONTACT}/messages`);
+    const row = history.body.data.find((m: { id: string }) => m.id === id);
     expect(row).toMatchObject({ own: 1, status: 2, client_reference: 'pedido-8841', text: '¡Hola! Te paso la info' });
   });
 
   it('never emits queued, and stops where the configuration says', async () => {
     const { api, receiver } = await setup({ statusDelays: { sent: 0.02, delivered: 0.02, read: null } });
-    const res = await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 4, contact_id: 2001, text: 'Por QR, sin ventana' });
+    const res = await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: QR, contact_id: CONTACT, text: 'Por QR, sin ventana' });
     expect(res.status).toBe(200);
     await receiver.waitFor(2);
     await new Promise((r) => setTimeout(r, 100));
     expect(receiver.received.map((e) => e.json.data.status)).toEqual(['sent', 'delivered']);
-    expect((await api.call('GET', `/api/v1/contacts/2001/messages/${res.body.message.id}`)).body.status).toBe('delivered');
+    expect((await api.call('GET', `/api/v1/contacts/${CONTACT}/messages/${res.body.message.id}`)).body.status).toBe('delivered');
   });
 
   it('a note is stored with status null and is not sent', async () => {
     const { api, receiver } = await setup();
-    const res = await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 3, contact_id: 2001, text: 'Nota interna', note: true });
+    const res = await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: OFFICIAL, contact_id: CONTACT, text: 'Nota interna', note: true });
     expect(res.body.message).toMatchObject({ type: 'note', status: null });
     await new Promise((r) => setTimeout(r, 100));
     expect(receiver.received).toHaveLength(0);
@@ -71,34 +71,34 @@ describe('sending with an API key', () => {
 
   it('brings the templates of an official number from Meta: 202 completed; a QR number 422; an unknown one 404', async () => {
     const api = await startSandbox();
-    expect(await api.call('POST', '/api/v1/devices/3/templates')).toMatchObject({ status: 202, body: { status: 'completed' } });
-    expect(await api.call('POST', '/api/v1/devices/4/templates')).toMatchObject({ status: 422, body: { error: 'number_not_connected_to_meta' } });
-    expect(await api.call('POST', '/api/v1/devices/99/templates')).toMatchObject({ status: 404, body: { error: 'not_found', message: 'Objeto no encontrado.' } });
+    expect(await api.call('POST', `/api/v1/devices/${OFFICIAL}/templates`)).toMatchObject({ status: 202, body: { status: 'completed' } });
+    expect(await api.call('POST', `/api/v1/devices/${QR}/templates`)).toMatchObject({ status: 422, body: { error: 'number_not_connected_to_meta' } });
+    expect(await api.call('POST', `/api/v1/devices/${NO_DEVICE}/templates`)).toMatchObject({ status: 404, body: { error: 'not_found', message: 'Objeto no encontrado.' } });
   });
 
   it('send-message and send-template answer {message} too; a template needs no window', async () => {
     const { api, receiver } = await setup();
-    const direct = await api.call('POST', '/api/v1/message/send-message', { device_id: 4, contact_id: 2001, text: 'Directo' });
+    const direct = await api.call('POST', '/api/v1/message/send-message', { device_id: QR, contact_id: CONTACT, text: 'Directo' });
     expect(direct.status).toBe(200);
     expect(direct.body.message.status).toBe('queued');
 
-    const template = await api.call('POST', '/api/v1/devices/3/templates/45/send-template', {
+    const template = await api.call('POST', `/api/v1/devices/${OFFICIAL}/templates/${TEMPLATE}/send-template`, {
       phone: '5491100000000',
-      contact_id: 2001,
+      contact_id: CONTACT,
       template_variables: { body: ['Lucía'] },
       client_reference: 'bienvenida-1',
     });
     expect(template.status).toBe(200);
-    expect(template.body.message).toMatchObject({ type: 'template', status: 'queued', device_id: 3, client_reference: 'bienvenida-1' });
+    expect(template.body.message).toMatchObject({ type: 'template', status: 'queued', device_id: OFFICIAL, client_reference: 'bienvenida-1' });
     await receiver.waitFor(6);
-    const history = await api.call('GET', '/api/v1/contacts/2001/messages');
-    expect(history.body.data.find((m: { id: number }) => m.id === template.body.message.id).text).toBe('Hola Lucía, gracias por escribirnos. ¿En qué te podemos ayudar?');
+    const history = await api.call('GET', `/api/v1/contacts/${CONTACT}/messages`);
+    expect(history.body.data.find((m: { id: string }) => m.id === template.body.message.id).text).toBe('Hola Lucía, gracias por escribirnos. ¿En qué te podemos ayudar?');
   });
 
   it('cards answer one queued message per card, in order', async () => {
     const { api } = await setup();
     const other = await api.call('POST', '/api/v1/contacts', { phone: '5491100000055', name: 'Tarjeta' });
-    const res = await api.call('POST', '/api/v1/contacts/2001/message/contact-card', { device_id: 4, contact_card_ids: [other.body.id, 2001], client_reference: 'tarjetas' });
+    const res = await api.call('POST', `/api/v1/contacts/${CONTACT}/message/contact-card`, { device_id: QR, contact_card_ids: [other.body.id, CONTACT], client_reference: 'tarjetas' });
     expect(res.status).toBe(200);
     expect(res.body.messages).toHaveLength(2);
     expect(res.body.messages.map((m: { type: string; status: string }) => [m.type, m.status])).toEqual([
@@ -112,7 +112,7 @@ describe('sending with an API key', () => {
 describe('forcing failures', () => {
   it('X-Sandbox-Fail with a reason of Funnelchat: one failed with previous_status null and error.reason', async () => {
     const { api, receiver } = await setup();
-    const res = await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 4, contact_id: 2001, text: 'Sin saldo' }, { 'X-Sandbox-Fail': 'insufficient_balance' });
+    const res = await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: QR, contact_id: CONTACT, text: 'Sin saldo' }, { 'X-Sandbox-Fail': 'insufficient_balance' });
     expect(res.body.message.status).toBe('queued');
     const [event] = await receiver.waitFor(1);
     await new Promise((r) => setTimeout(r, 100));
@@ -120,13 +120,13 @@ describe('forcing failures', () => {
     expect(event!.json.data).toMatchObject({ status: 'failed', previous_status: null, error: { code: null, reason: 'insufficient_balance' } });
     expect(typeof event!.json.data.error.title).toBe('string');
     expect(Object.keys(event!.json.data)).toEqual(['message_id', 'contact_id', 'device_id', 'status', 'previous_status', 'error', 'occurred_at', 'client_reference', 'workspace_id']);
-    const lookup = await api.call('GET', `/api/v1/contacts/2001/messages/${res.body.message.id}`);
+    const lookup = await api.call('GET', `/api/v1/contacts/${CONTACT}/messages/${res.body.message.id}`);
     expect(lookup.body.error).toEqual(event!.json.data.error);
   });
 
   it('X-Sandbox-Fail with a Meta code: sent, then failed with the code and title of Meta', async () => {
     const { api, receiver } = await setup();
-    await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 4, contact_id: 2001, text: 'Rechazado' }, { 'X-Sandbox-Fail': '131047' });
+    await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: QR, contact_id: CONTACT, text: 'Rechazado' }, { 'X-Sandbox-Fail': '131047' });
     const events = await receiver.waitFor(2);
     expect(events.map((e) => e.json.data.status)).toEqual(['sent', 'failed']);
     expect(events[1]!.json.data).toMatchObject({ previous_status: 'sent', error: { code: 131047, title: 'Re-engagement message', reason: null } });
@@ -134,28 +134,28 @@ describe('forcing failures', () => {
 
   it('X-Sandbox-Reject answers the error of the rule right away and stores nothing', async () => {
     const { api } = await setup();
-    const before = (await api.call('GET', '/api/v1/contacts/2001/messages')).body.data.length;
-    const res = await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 4, contact_id: 2001, text: 'x' }, { 'X-Sandbox-Reject': 'rate_limited' });
+    const before = (await api.call('GET', `/api/v1/contacts/${CONTACT}/messages`)).body.data.length;
+    const res = await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: QR, contact_id: CONTACT, text: 'x' }, { 'X-Sandbox-Reject': 'rate_limited' });
     expect(res.status).toBe(429);
     expect(res.body).toEqual({ error: 'rate_limited', message: expect.any(String) });
     expect(res.headers.get('retry-after')).toBe('6');
-    expect((await api.call('GET', '/api/v1/contacts/2001/messages')).body.data.length).toBe(before);
+    expect((await api.call('GET', `/api/v1/contacts/${CONTACT}/messages`)).body.data.length).toBe(before);
   });
 
   it('POST /_sandbox/failures arms the next sends, also for templates', async () => {
     const { api, receiver } = await setup();
     const armed = await api.call('POST', '/_sandbox/failures', { mode: 'fail', code: 'window_closed', count: 1 });
     expect(armed.status).toBe(201);
-    await api.call('POST', '/api/v1/devices/3/templates/45/send-template', { phone: '5491100000000', contact_id: 2001, template_variables: { body: ['Lucía'] } });
+    await api.call('POST', `/api/v1/devices/${OFFICIAL}/templates/${TEMPLATE}/send-template`, { phone: '5491100000000', contact_id: CONTACT, template_variables: { body: ['Lucía'] } });
     const [event] = await receiver.waitFor(1);
     expect(event!.json.data).toMatchObject({ status: 'failed', error: { reason: 'window_closed' } });
 
     await api.call('POST', '/_sandbox/failures', { mode: 'reject', code: 'antiblock_unanswered_limit' });
-    const rejected = await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 4, contact_id: 2001, text: 'otro' });
+    const rejected = await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: QR, contact_id: CONTACT, text: 'otro' });
     expect(rejected.status).toBe(422);
     expect(rejected.body.error).toBe('antiblock_unanswered_limit');
     // Used up: the next one goes out.
-    expect((await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 4, contact_id: 2001, text: 'y otro' })).status).toBe(200);
+    expect((await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: QR, contact_id: CONTACT, text: 'y otro' })).status).toBe(200);
   });
 
   it('rejects an unknown forced code with what is accepted', async () => {
@@ -167,7 +167,7 @@ describe('forcing failures', () => {
 
   it('a manual transition via /_sandbox/messages/{id}/status never goes back', async () => {
     const { api, receiver } = await setup({ statusDelays: { sent: 60 } });
-    const res = await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 4, contact_id: 2001, text: 'manual' });
+    const res = await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: QR, contact_id: CONTACT, text: 'manual' });
     const id = res.body.message.id;
     expect((await api.call('POST', `/_sandbox/messages/${id}/status`, { status: 'read' })).status).toBe(200);
     expect((await api.call('POST', `/_sandbox/messages/${id}/status`, { status: 'delivered' })).status).toBe(409);

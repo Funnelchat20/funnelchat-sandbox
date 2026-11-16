@@ -3,6 +3,31 @@ import type { AddressInfo } from 'node:net';
 import { afterEach } from 'vitest';
 import { createSandbox, type ConfigInput, type Sandbox } from '../src/index.js';
 import { silentLogger } from '../src/app.js';
+import { EXAMPLE_DEVICE, EXAMPLE_ID } from '../src/state/store.js';
+import { fixedId } from '../src/util.js';
+
+// The example records of every session, by their opaque ids.
+export const OFFICIAL = EXAMPLE_DEVICE.official;
+export const QR = EXAMPLE_DEVICE.qr;
+export const CONTACT = EXAMPLE_ID.contact;
+export const TAG = EXAMPLE_ID.tag;
+export const TEMPLATE = EXAMPLE_ID.template;
+export const GROUP = EXAMPLE_ID.group;
+
+// Well-formed ids of records that do not exist: they answer like a record that is not there.
+export const NO_DEVICE = fixedId('dev', 'Missing');
+export const NO_CONTACT = fixedId('ctc', 'Missing');
+export const NO_MESSAGE = fixedId('msg', 'Missing');
+export const NO_LINK = fixedId('lnk', 'Missing');
+export const NO_FORM = fixedId('frv', 'Missing');
+export const NO_TEMPLATE = fixedId('tpl', 'Missing');
+export const NOTE = fixedId('not', 'Example');
+
+// The shape of an opaque id, by type.
+export const DEVICE_ID = /^dev_[A-Za-z0-9]{23}$/;
+export const LINK_ID = /^lnk_[A-Za-z0-9]{23}$/;
+export const MESSAGE_ID = /^msg_[A-Za-z0-9]{23}$/;
+export const DELIVERY_ID = /^dlv_[A-Za-z0-9]{23}$/;
 
 export const API_KEY = '1|fc_live_sandboxTest0000000000000000000000000000';
 

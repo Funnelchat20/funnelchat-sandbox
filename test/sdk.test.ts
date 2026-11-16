@@ -7,7 +7,7 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { API_KEY, startReceiver, startSandbox } from './helpers.js';
+import { API_KEY, startReceiver, startSandbox, OFFICIAL, QR, CONTACT } from './helpers.js';
 
 const sdkRoot = resolve(process.env.FUNNELCHAT_NODE_SDK ?? resolve(import.meta.dirname, '../../funnelchat-node'));
 const entry = resolve(sdkRoot, 'src/index.ts');
@@ -21,7 +21,7 @@ describe.skipIf(!existsSync(entry))('the Node SDK against the sandbox', () => {
 
     const devices = [];
     for await (const device of funnelchat.devices.list()) devices.push(device.id);
-    expect(devices).toEqual([3, 4]);
+    expect(devices).toEqual([OFFICIAL, QR]);
 
     for (let i = 0; i < 3; i++) await funnelchat.contacts.create({ phone: `54911000010${i}`, name: `Contacto ${i}` });
     const contacts = [];
@@ -31,11 +31,11 @@ describe.skipIf(!existsSync(entry))('the Node SDK against the sandbox', () => {
     const subscription = await funnelchat.webhooks.create({ url: receiver.url, events: ['message.received', 'message.status_changed'] });
     expect(typeof subscription.secret).toBe('string');
 
-    await api.call('POST', '/_sandbox/inbound/message', { contact_id: 2001, device_id: 3, text: 'Hola' });
-    const window = await funnelchat.contacts.metaWindow(2001, { device_id: 3 });
+    await api.call('POST', '/_sandbox/inbound/message', { contact_id: CONTACT, device_id: OFFICIAL, text: 'Hola' });
+    const window = await funnelchat.contacts.metaWindow(CONTACT, { device_id: OFFICIAL });
     expect(window.is_open).toBe(true);
 
-    const sent = await funnelchat.messages.send(2001, { device_id: 3, phone: '5491100000000', text: '¡Hola!', client_reference: 'pedido-8841' });
+    const sent = await funnelchat.messages.send(CONTACT, { device_id: OFFICIAL, phone: '5491100000000', text: '¡Hola!', client_reference: 'pedido-8841' });
     expect(sent.message).toMatchObject({ status: 'queued', client_reference: 'pedido-8841' });
 
     const deliveries = await receiver.waitFor(4);
@@ -44,7 +44,7 @@ describe.skipIf(!existsSync(entry))('the Node SDK against the sandbox', () => {
 
     let error: any;
     try {
-      await funnelchat.messages.send(2001, { device_id: 3, phone: '5491100000000', text: 'x' }, { headers: { 'X-Sandbox-Reject': 'window_closed' } });
+      await funnelchat.messages.send(CONTACT, { device_id: OFFICIAL, phone: '5491100000000', text: 'x' }, { headers: { 'X-Sandbox-Reject': 'window_closed' } });
     } catch (e) {
       error = e;
     }

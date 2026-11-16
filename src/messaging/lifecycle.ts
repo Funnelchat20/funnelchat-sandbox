@@ -11,14 +11,14 @@ import { deterministicEventId, isoSeconds, randomAlnum } from '../util.js';
 const ORDER: Record<string, number> = { sent: 1, delivered: 2, read: 3 };
 
 export interface NewMessage {
-  contactId: number;
-  deviceId: number | null;
+  contactId: string;
+  deviceId: string | null;
   own: boolean;
   type: string;
   text?: string | null;
   file?: string | null;
   clientReference?: string | null;
-  templateId?: number | null;
+  templateId?: string | null;
   viaApi: boolean;
   status: PublicStatus | null;
   createdAt?: Date;
@@ -39,7 +39,7 @@ export function createMessage(app: SandboxApp, input: NewMessage): Message {
     clientReference: input.clientReference ?? null,
     // What WhatsApp gives: a `wamid.` for what is sent and for what an official number receives, the id of Z-API for
     // what a QR number receives.
-    uid: input.own || app.store.devices.get(input.deviceId ?? -1)?.kind === 'cloud' ? `wamid.SANDBOX${randomAlnum(24)}` : `false_${randomAlnum(20)}`,
+    uid: input.own || app.store.devices.get(input.deviceId ?? '')?.kind === 'cloud' ? `wamid.SANDBOX${randomAlnum(24)}` : `false_${randomAlnum(20)}`,
     viaApi: input.viaApi,
     templateId: input.templateId ?? null,
     reactions: [],

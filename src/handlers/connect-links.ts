@@ -29,11 +29,12 @@ import {
 import { connectLinkResource } from '../state/resources.js';
 import type { ConnectLink } from '../state/store.js';
 import { sees } from '../state/workspaces.js';
+import { asId } from '../util.js';
 
 const DEFAULT_EXPIRES_IN_MINUTES = 1440;
 
 function linkOf(ctx: HandlerContext, id: unknown): ConnectLink {
-  const link = ctx.app.store.connectLinks.get(Number(id));
+  const link = ctx.app.store.connectLinks.get(asId(id));
   // A link of another workspace is out of the query: the same 404 as one that does not exist.
   if (!link || !sees(ctx.workspace, link.workspaceId)) throw notFound('No encontramos ese link de alta en la cuenta.');
   return refreshLink(link);
@@ -107,7 +108,7 @@ export const connectLinkHandlers: HandlerTable = {
       }
       const reconnect = present(b.device_id);
       if (reconnect) {
-        const device = app.store.devices.get(Number(b.device_id));
+        const device = app.store.devices.get(asId(b.device_id));
         if (!device || !sees(ctx.workspace, device.workspaceId)) throw invalidReferenceDevice();
         if ((device.kind === 'qr') !== (b.type === 'qr')) {
           throw new ApiError(422, 'connection_type_mismatch', 'El type del link tiene que coincidir con el método del número a reconectar.');
@@ -120,7 +121,7 @@ export const connectLinkHandlers: HandlerTable = {
         throw new ApiError(429, 'too_many_open_links', `Tienes ${OPEN_LINKS_LIMIT} links de alta abiertos. Revoca alguno o espera a que venzan.`, { limit: OPEN_LINKS_LIMIT });
       }
       const now = new Date();
-      const deviceId = reconnect ? Number(b.device_id) : null;
+      const deviceId = reconnect ? asId(b.device_id) : null;
       // A new reconnection link for a number revokes the earlier ones of that number.
       if (reconnect) {
         for (const other of app.store.connectLinks.values()) {
@@ -168,7 +169,7 @@ export const connectLinkHandlers: HandlerTable = {
       .map((link) => refreshLink(link))
       .filter((link) => !status || link.status === status)
       .filter((link) => reference === undefined || reference === '' || link.externalReference === String(reference))
-      .sort((a, b) => b.id - a.id);
+      .reverse();
     return ok(paginate(list, listContext(ctx), connectLinkResource));
   },
 

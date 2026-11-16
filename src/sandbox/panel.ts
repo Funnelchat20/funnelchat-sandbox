@@ -4,6 +4,8 @@
  * (the ones answered shape only, marked), the webhook deliveries with their answer, and a form to simulate an incoming
  * message. One self-contained page (no external resources); it polls the `/_sandbox` JSON routes every two seconds.
  */
+import { EXAMPLE_DEVICE } from '../state/store.js';
+
 export function panelHtml(): string {
   return `<!doctype html>
 <html lang="en">
@@ -56,7 +58,7 @@ export function panelHtml(): string {
         <label for="name">Name (if the contact is new)</label>
         <input id="name" name="name" placeholder="Optional">
         <label for="device">Number that receives it</label>
-        <select id="device" name="device_id"><option value="3">3 · official (Cloud API)</option><option value="4">4 · QR</option></select>
+        <select id="device" name="device_id"><option value="${EXAMPLE_DEVICE.official}">${EXAMPLE_DEVICE.official} · official (Cloud API)</option><option value="${EXAMPLE_DEVICE.qr}">${EXAMPLE_DEVICE.qr} · QR</option></select>
         <label for="text">Text</label>
         <textarea id="text" name="text" rows="3">Hola, quiero más información</textarea>
         <button type="submit">Send incoming message</button>
@@ -104,7 +106,7 @@ async function refresh() {
 document.getElementById('inbound').addEventListener('submit', async (ev) => {
   ev.preventDefault();
   const f = new FormData(ev.target);
-  const body = { phone: f.get('phone'), device_id: Number(f.get('device_id')), text: f.get('text') };
+  const body = { phone: f.get('phone'), device_id: f.get('device_id'), text: f.get('text') };
   if (f.get('name')) body.name = f.get('name');
   const res = await fetch('/_sandbox/inbound/message', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const json = await res.json();

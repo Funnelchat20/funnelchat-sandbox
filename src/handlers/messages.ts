@@ -30,9 +30,10 @@ import { historyMessage, publicMessage, templateResource } from '../state/resour
 import type { Contact, Device, Message, Template } from '../state/store.js';
 import { sees } from '../state/workspaces.js';
 import { getContact, isBsuid, outsideWorkspace, sendRecipient } from './contacts.js';
+import { asId } from '../util.js';
 
 export function getDevice(app: SandboxApp, id: unknown, field = 'device_id'): Device {
-  const device = app.store.devices.get(Number(id));
+  const device = app.store.devices.get(asId(id));
   // A number of another account is a validation error on `device_id`, not a 404 (conversations).
   if (!device) throw fieldError(field, `El valor seleccionado en ${field} no es válido.`);
   return device;
@@ -54,7 +55,7 @@ interface Outgoing {
   type: string;
   text: string | null;
   file: string | null;
-  templateId?: number | null;
+  templateId?: string | null;
   hash: string;
 }
 
@@ -196,7 +197,7 @@ function renderTemplate(template: Template, variables: unknown): string {
 }
 
 function getTemplate(ctx: HandlerContext, id: unknown): Template {
-  const template = ctx.app.store.templates.get(Number(id));
+  const template = ctx.app.store.templates.get(asId(id));
   if (!template) throw notFound('La plantilla no existe en esta cuenta.');
   if (!sees(ctx.workspace, template.workspaceId)) throw outsideWorkspace();
   return template;
@@ -214,20 +215,20 @@ function sendTemplate(ctx: HandlerContext): HandlerResult {
   }
   // `template_not_found` goes before everything else (`MessageTemplateController`).
   // A number of another workspace answers 404 before anything else (`MessageTemplateController`, v1.19.7).
-  const own = ctx.app.store.devices.get(Number(ctx.path.device));
+  const own = ctx.app.store.devices.get(asId(ctx.path.device));
   if (own && !sees(ctx.workspace, own.workspaceId)) throw outsideWorkspace();
-  const found = ctx.app.store.templates.get(Number(ctx.path.template_id ?? ctx.path.template));
+  const found = ctx.app.store.templates.get(asId(ctx.path.template_id ?? ctx.path.template));
   // One of another workspace is the same `template_not_found` (v1.19.21).
   const template = found && sees(ctx.workspace, found.workspaceId) ? found : undefined;
   if (!template) throw new ApiError(404, 'template_not_found', 'No se envió: la plantilla no existe en tu cuenta. Revisa el identificador de la plantilla.');
-  const device = ctx.app.store.devices.get(Number(ctx.path.device));
+  const device = ctx.app.store.devices.get(asId(ctx.path.device));
   // A number outside the account is refused by `ApiKeySendAcceptor`.
   if (!device) throw rejection('device_unavailable');
   if (template.deviceId !== device.id) throw new ApiError(422, 'template_waba_mismatch', 'La plantilla no pertenece al número actual');
   if (template.status !== 'APPROVED') throw fieldError('template', `La plantilla está ${template.status}: solo se envían plantillas aprobadas.`);
   assertUsable(b, device);
   const identity = byIdentity(b);
-  const contactId = identity ? sendRecipient(ctx, b).id : Number(b.contact_id);
+  const contactId = identity ? sendRecipient(ctx, b).id : asId(b.contact_id);
   const contact = ctx.app.store.contacts.get(contactId);
   // A contact of another workspace answers like one of another account (v1.19.21).
   if (!contact || !sees(ctx.workspace, contact.workspaceId)) throw new ApiError(404, 'not_found', 'Contact not found');
@@ -263,11 +264,11 @@ export const messageHandlers: HandlerTable = {
     }
     let contact: Contact | null = null;
     if (!byIdentity(b)) {
-      contact = ctx.app.store.contacts.get(Number(b.contact_id)) ?? null;
+      contact = ctx.app.store.contacts.get(asId(b.contact_id)) ?? null;
       // `MessageController`: `404 not_found`, which keeps its `status: "error"`; a contact of another workspace, the same 404.
       if (!contact || !sees(ctx.workspace, contact.workspaceId)) throw new ApiError(404, 'not_found', 'Contacto no encontrado.', { status: 'error' });
     }
-    if (!ctx.app.store.devices.has(Number(b.device_id))) throw new ApiError(403, 'forbidden', 'No autorizado');
+    if (!ctx.app.store.devices.has(asId(b.device_id))) throw new ApiError(403, 'forbidden', 'No autorizado');
     return sendToContact(ctx, contact, 'direct');
   },
 
@@ -282,7 +283,7 @@ export const messageHandlers: HandlerTable = {
     const device = getDevice(ctx.app, b.device_id);
     const ids = (b.contact_card_ids as number[] | undefined) ?? [];
     const cards = ids.map((id, i) => {
-      const card = ctx.app.store.contacts.get(Number(id));
+      const card = ctx.app.store.contacts.get(asId(id));
       if (!card) throw fieldError(`contact_card_ids.${i}`, `El valor seleccionado en contact_card_ids.${i} no es válido.`);
       return card;
     });
@@ -299,13 +300,13 @@ export const messageHandlers: HandlerTable = {
 
   'POST /api/v1/contacts/{contact}/messages/{message}/forward': (ctx) => {
     const origin = getContact(ctx.app, ctx.path.contact, ctx.workspace);
-    const source = ctx.app.store.messages.get(Number(ctx.path.message));
+    const source = ctx.app.store.messages.get(asId(ctx.path.message));
     if (!source || source.contactId !== origin.id) throw objectNotFound();
     const b = body(ctx);
     const reference = clientReference(b);
     const targets = (b.targets as { contact_id: number; device_id: number }[] | undefined) ?? [];
     const resolved = targets.map((t, i) => {
-      const contact = ctx.app.store.contacts.get(Number(t.contact_id));
+      const contact = ctx.app.store.contacts.get(asId(t.contact_id));
       if (!contact) throw fieldError(`targets.${i}.contact_id`, `El valor seleccionado en targets.${i}.contact_id no es válido.`);
       return { contact, device: getDevice(ctx.app, t.device_id, `targets.${i}.device_id`) };
     });
@@ -334,7 +335,7 @@ export const messageHandlers: HandlerTable = {
 
   'PUT /api/v1/contacts/{contact}/messages/{message}/reaction': (ctx) => {
     const contact = getContact(ctx.app, ctx.path.contact, ctx.workspace);
-    const message = ctx.app.store.messages.get(Number(ctx.path.message));
+    const message = ctx.app.store.messages.get(asId(ctx.path.message));
     if (!message || message.contactId !== contact.id) throw objectNotFound();
     message.reactions = [...message.reactions.filter((r) => !r.own), { emoji: String(body(ctx).emoji), own: true }];
     return { status: 202 };
@@ -342,28 +343,28 @@ export const messageHandlers: HandlerTable = {
 
   'DELETE /api/v1/contacts/{contact}/messages/{message}/reaction': (ctx) => {
     const contact = getContact(ctx.app, ctx.path.contact, ctx.workspace);
-    const message = ctx.app.store.messages.get(Number(ctx.path.message));
+    const message = ctx.app.store.messages.get(asId(ctx.path.message));
     if (!message || message.contactId !== contact.id) throw objectNotFound();
     message.reactions = message.reactions.filter((r) => !r.own);
     return { status: 202 };
   },
 
   'GET /api/v1/contacts/{contactId}/messages': (ctx) => {
-    const contact = ctx.app.store.contacts.get(Number(ctx.path.contactId));
+    const contact = ctx.app.store.contacts.get(asId(ctx.path.contactId));
     if (!contact || !sees(ctx.workspace, contact.workspaceId)) throw new ApiError(404, 'not_found', 'Contacto no encontrado.');
     const since = ctx.query.updated_since ? new Date(String(ctx.query.updated_since)) : null;
     const list = ctx.app.store
       .contactMessages(contact.id)
       .filter((m) => !since || Number.isNaN(since.getTime()) || m.updatedAt >= since)
-      .sort((a, b) => b.id - a.id);
+      .reverse();
     return ok(cursorPaginate(list, listContext(ctx), (m) => historyMessage(ctx.app.store, m)));
   },
 
   // One message by id (`ShowMessageController`): every refusal is the same 404.
   'GET /api/v1/contacts/{contact}/messages/{message}': (ctx) => {
-    const contact = ctx.app.store.contacts.get(Number(ctx.path.contact));
+    const contact = ctx.app.store.contacts.get(asId(ctx.path.contact));
     if (contact && !sees(ctx.workspace, contact.workspaceId)) throw outsideWorkspace();
-    const message = ctx.app.store.messages.get(Number(ctx.path.message));
+    const message = ctx.app.store.messages.get(asId(ctx.path.message));
     if (!contact || !message || message.contactId !== contact.id) throw objectNotFound();
     return ok(publicMessage(message));
   },
@@ -382,10 +383,11 @@ export const messageHandlers: HandlerTable = {
           (!q.category || t.category === q.category) &&
           (!q.language_code || t.languageCode === q.language_code) &&
           (!q.type || t.type === q.type) &&
-          (q.deviceId === undefined || q.deviceId === null || t.deviceId === Number(q.deviceId)),
-      )
-      .sort((a, b) => (q.orderByMethod === 'asc' ? a.id - b.id : b.id - a.id));
-    return ok(paginate(list, listContext(ctx), (t) => templateResource(t, q.deviceId === undefined ? undefined : Number(q.deviceId))));
+          (q.deviceId === undefined || q.deviceId === null || t.deviceId === asId(q.deviceId)),
+      );
+    // Ids are opaque: the order of creation is the order of the store.
+    if (q.orderByMethod !== 'asc') list.reverse();
+    return ok(paginate(list, listContext(ctx), (t) => templateResource(t, q.deviceId === undefined ? undefined : asId(q.deviceId))));
   },
 
   'POST /api/v1/templates': (ctx) => {
@@ -455,7 +457,7 @@ export const messageHandlers: HandlerTable = {
   // to Meta: an official number answers that it finished (its templates are already the sandbox's), a QR one that it
   // has none, and a number outside the account or the key's workspace, conversations' 404.
   'POST /api/v1/devices/{device}/templates': (ctx) => {
-    const device = ctx.app.store.devices.get(Number(ctx.path.device));
+    const device = ctx.app.store.devices.get(asId(ctx.path.device));
     if (!device || !sees(ctx.workspace, device.workspaceId)) throw objectNotFound();
     if (device.kind !== 'cloud') {
       throw new ApiError(
@@ -469,7 +471,7 @@ export const messageHandlers: HandlerTable = {
 
   'DELETE /api/v1/devices/{device}/templates/{template}': (ctx) => {
     const template = getTemplate(ctx, ctx.path.template);
-    if (template.deviceId !== Number(ctx.path.device)) throw notFound('La plantilla no es de este número.');
+    if (template.deviceId !== asId(ctx.path.device)) throw notFound('La plantilla no es de este número.');
     ctx.app.store.templates.delete(template.id);
     return noContent();
   },
