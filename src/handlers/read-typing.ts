@@ -16,6 +16,7 @@ import { contactIsIndividual } from '../messaging/rules.js';
 import type { Contact, Device } from '../state/store.js';
 import { sees } from '../state/workspaces.js';
 import { getContact } from './contacts.js';
+import { asId } from '../util.js';
 
 const READ: Record<string, string> = {
   recipient_unsupported:
@@ -38,19 +39,19 @@ const TYPING: Record<string, string> = {
 const DAY = 24 * 60 * 60 * 1000;
 
 /** A number of the account the key reaches; `ReadTypingAccess::notFound()` otherwise. */
-function reachableDevice(ctx: HandlerContext, id: number | null): Device | undefined {
+function reachableDevice(ctx: HandlerContext, id: string | null): Device | undefined {
   const device = id === null ? undefined : ctx.app.store.devices.get(id);
   if (device && !sees(ctx.workspace, device.workspaceId)) throw objectNotFound();
   return device;
 }
 
 const inbound = (ctx: HandlerContext, contact: Contact) =>
-  [...ctx.app.store.messages.values()].filter((m) => m.contactId === contact.id && !m.own).sort((a, b) => b.id - a.id);
+  [...ctx.app.store.messages.values()].filter((m) => m.contactId === contact.id && !m.own).reverse();
 
 export const readTypingHandlers: HandlerTable = {
   'POST /api/v1/contacts/{contact}/messages/{message}/read': (ctx) => {
     const contact = getContact(ctx.app, ctx.path.contact, ctx.workspace);
-    const message = ctx.app.store.messages.get(Number(ctx.path.message));
+    const message = ctx.app.store.messages.get(asId(ctx.path.message));
     if (!message || message.contactId !== contact.id) throw objectNotFound();
     const refuse = (code: string) => new ApiError(422, code, READ[code] as string);
     if (!contactIsIndividual(contact)) throw refuse('recipient_unsupported');
@@ -59,7 +60,8 @@ export const readTypingHandlers: HandlerTable = {
     if (!device || !message.uid || (device.kind === 'cloud' && !message.uid.startsWith('wamid.'))) throw refuse('message_not_markable');
     if (Date.now() - message.createdAt.getTime() > 30 * DAY) throw refuse('message_expired');
     // The conversation is read, except for the messages that arrived after this one.
-    const newer = inbound(ctx, contact).filter((m) => m.id > message.id).length;
+    // `inbound` lists the newest first, so the ones after this message are the ones before it in the list.
+    const newer = Math.max(0, inbound(ctx, contact).findIndex((m) => m.id === message.id));
     if (newer === 0) {
       contact.unreadMessages = 0;
       contact.manuallyUnread = false;
@@ -73,7 +75,7 @@ export const readTypingHandlers: HandlerTable = {
     const refuse = (code: string) => new ApiError(422, code, TYPING[code] as string);
     let device: Device | undefined;
     if (b.device_id !== undefined && b.device_id !== null) {
-      device = reachableDevice(ctx, Number(b.device_id));
+      device = reachableDevice(ctx, asId(b.device_id));
       if (!device) throw objectNotFound();
     }
     if (!contactIsIndividual(contact)) throw refuse('recipient_unsupported');

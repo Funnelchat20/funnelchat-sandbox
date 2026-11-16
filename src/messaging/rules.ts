@@ -124,7 +124,7 @@ export function parseForced(mode: 'reject' | 'fail', value: unknown, field: stri
 }
 
 /** The forced failure of this send, if any: a header of the request, or the next armed one that applies. */
-export function takeForcedFailure(app: SandboxApp, headers: Record<string, string | undefined>, contactId: number): { mode: 'reject' | 'fail'; code: string } | null {
+export function takeForcedFailure(app: SandboxApp, headers: Record<string, string | undefined>, contactId: string): { mode: 'reject' | 'fail'; code: string } | null {
   const reject = headers['x-sandbox-reject'];
   if (reject) return { mode: 'reject', code: parseForced('reject', reject, 'X-Sandbox-Reject') };
   const fail = headers['x-sandbox-fail'];

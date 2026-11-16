@@ -3,7 +3,7 @@
  * any event of the catalog, and the reset.
  */
 import { describe, expect, it } from 'vitest';
-import { startReceiver, startSandbox, subscribe } from './helpers.js';
+import { startReceiver, startSandbox, subscribe, OFFICIAL, QR, CONTACT, TAG, MESSAGE_ID } from './helpers.js';
 
 describe('POST /_sandbox/inbound/message', () => {
   it('a new phone creates the contact (contact.created) and emits message.received with the shape of the API', async () => {
@@ -11,9 +11,9 @@ describe('POST /_sandbox/inbound/message', () => {
     const receiver = await startReceiver();
     await subscribe(api, receiver.url, ['contact.created', 'message.received']);
 
-    const res = await api.call('POST', '/_sandbox/inbound/message', { phone: '+54 9 11 5555-0001', name: 'Lucía', device_id: 3, text: 'Hola, ¿tienen stock?' });
+    const res = await api.call('POST', '/_sandbox/inbound/message', { phone: '+54 9 11 5555-0001', name: 'Lucía', device_id: OFFICIAL, text: 'Hola, ¿tienen stock?' });
     expect(res.status).toBe(201);
-    expect(res.body.window).toEqual({ device_id: 3, is_open: true });
+    expect(res.body.window).toEqual({ device_id: OFFICIAL, is_open: true });
 
     const [created, received] = await receiver.waitFor(2);
     expect(created!.json.type).toBe('contact.created');
@@ -23,7 +23,7 @@ describe('POST /_sandbox/inbound/message', () => {
       message: { id: res.body.message.id, type: 'text', text: 'Hola, ¿tienen stock?', media: null },
       contact: { id: res.body.contact.id, name: 'Lucía', phone: '+5491155550001' },
       receiver: { phone: '+5491100000001' },
-      device_id: 3,
+      device_id: OFFICIAL,
       workspace_id: 1,
     });
     // The API stores the phone without `+`.
@@ -35,7 +35,7 @@ describe('POST /_sandbox/inbound/message', () => {
     const receiver = await startReceiver();
     await subscribe(api, receiver.url, ['contact.created', 'message.received']);
     const res = await api.call('POST', '/_sandbox/inbound/message', { phone: '5491100000000' });
-    expect(res.body.contact.id).toBe(2001);
+    expect(res.body.contact.id).toBe(CONTACT);
     await receiver.waitFor(1);
     await new Promise((r) => setTimeout(r, 50));
     expect(receiver.received.map((d) => d.json.type)).toEqual(['message.received']);
@@ -47,17 +47,17 @@ describe('POST /_sandbox/inbound/message', () => {
     await subscribe(api, receiver.url, ['message.received']);
     await api.call('POST', '/_sandbox/inbound/message', { phone: '5491100000000', type: 'image', file: 'https://example.com/foto.jpg', text: null });
     const [d] = await receiver.waitFor(1);
-    expect(d!.json.data.message).toEqual({ id: expect.any(Number), type: 'image', text: null, media: { file: 'https://example.com/foto.jpg' } });
+    expect(d!.json.data.message).toEqual({ id: expect.stringMatching(MESSAGE_ID), type: 'image', text: null, media: { file: 'https://example.com/foto.jpg' } });
   });
 
   it('the message shows up in the history, in the conversations and as unread', async () => {
     const api = await startSandbox();
     await api.call('POST', '/_sandbox/inbound/message', { phone: '5491100000000', text: 'Hola' });
-    const history = await api.call('GET', '/api/v1/contacts/2001/messages');
+    const history = await api.call('GET', `/api/v1/contacts/${CONTACT}/messages`);
     expect(history.body.data[0]).toMatchObject({ own: 0, text: 'Hola', status: 1 });
     expect((await api.call('GET', '/api/v1/conversations/count/unread')).body).toEqual({ count: 1 });
     const conversations = await api.call('GET', '/api/v1/conversations');
-    expect(conversations.body.data.map((c: { id: number }) => c.id)).toEqual([2001]);
+    expect(conversations.body.data.map((c: { id: string }) => c.id)).toEqual([CONTACT]);
     expect((await api.call('POST', '/api/v1/conversations/mark-all-read')).body.updated_count).toBe(1);
   });
 
@@ -102,14 +102,14 @@ describe('other simulated events', () => {
     const api = await startSandbox();
     const receiver = await startReceiver();
     await subscribe(api, receiver.url, ['contact.tag_added', 'contact.tag_removed']);
-    await api.call('POST', '/_sandbox/contacts/2001/tags', { tag_id: 4001 });
-    expect((await api.call('GET', '/api/v1/contacts/2001/tags')).body.data.map((t: { id: number }) => t.id)).toEqual([4001]);
-    expect((await api.call('GET', '/api/v1/contacts?tag_ids[]=4001&tag_mode=any')).body.meta.total).toBe(1);
-    await api.call('DELETE', '/_sandbox/contacts/2001/tags/4001');
+    await api.call('POST', `/_sandbox/contacts/${CONTACT}/tags`, { tag_id: TAG });
+    expect((await api.call('GET', `/api/v1/contacts/${CONTACT}/tags`)).body.data.map((t: { id: string }) => t.id)).toEqual([TAG]);
+    expect((await api.call('GET', `/api/v1/contacts?tag_ids[]=${TAG}&tag_mode=any`)).body.meta.total).toBe(1);
+    await api.call('DELETE', `/_sandbox/contacts/${CONTACT}/tags/${TAG}`);
     const [added, removed] = await receiver.waitFor(2);
     expect(added!.json.data).toEqual({
-      contact: { id: 2001, name: 'Contacto de ejemplo', phone: '+5491100000000' },
-      tag: { id: 4001, name: 'Cliente' },
+      contact: { id: CONTACT, name: 'Contacto de ejemplo', phone: '+5491100000000' },
+      tag: { id: TAG, name: 'Cliente' },
       source: 'manual',
       workspace_id: 1,
     });
@@ -120,10 +120,10 @@ describe('other simulated events', () => {
     const api = await startSandbox();
     const receiver = await startReceiver();
     await subscribe(api, receiver.url, ['device.disconnected', 'device.connected']);
-    await api.call('POST', '/_sandbox/devices/4/disconnect');
-    await api.call('POST', '/_sandbox/devices/4/connect');
+    await api.call('POST', `/_sandbox/devices/${QR}/disconnect`);
+    await api.call('POST', `/_sandbox/devices/${QR}/connect`);
     const [off, on] = await receiver.waitFor(2);
-    expect(off!.json.data).toMatchObject({ device: { id: 4, name: 'Número QR de ejemplo', number: '5491100000002' } });
+    expect(off!.json.data).toMatchObject({ device: { id: QR, name: 'Número QR de ejemplo', number: '5491100000002' } });
     expect(on!.json.type).toBe('device.connected');
   });
 
@@ -143,6 +143,6 @@ describe('other simulated events', () => {
     await api.call('POST', '/api/v1/webhooks', { url: 'http://127.0.0.1:9/x', events: ['message.received'] });
     const res = await api.call('POST', '/_sandbox/reset');
     expect(res.body.counts).toMatchObject({ contacts: 1, subscriptions: 0, messages: 0 });
-    expect((await api.call('GET', '/api/v1/contacts')).body.data.map((c: { id: number }) => c.id)).toEqual([2001]);
+    expect((await api.call('GET', '/api/v1/contacts')).body.data.map((c: { id: string }) => c.id)).toEqual([CONTACT]);
   });
 });

@@ -97,3 +97,21 @@ export function sleep(ms: number): Promise<void> {
 export function truncate(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max)}…`;
 }
+
+/** The prefixes of the opaque ids of the public API: three letters per type, as the portal's «Identificadores» page lists them. */
+export type IdPrefix = 'dev' | 'ctc' | 'msg' | 'tag' | 'fld' | 'tpl' | 'grp' | 'lnk' | 'dlv' | 'frm' | 'frv' | 'frs' | 'not';
+
+/** A new opaque id: the prefix of its type, `_`, and 23 base62 characters (`^xxx_[A-Za-z0-9]{23}$`). */
+export function newId(prefix: IdPrefix): string {
+  return `${prefix}_${randomAlnum(23)}`;
+}
+
+/** A fixed id for the example records: the prefix, `_`, and the label padded with `0` to 23 base62 characters. */
+export function fixedId(prefix: IdPrefix, label: string): string {
+  return `${prefix}_${label.padEnd(23, '0')}`;
+}
+
+/** The id a client sent, as text. Anything that is not text (an integer, `null`) is not an id: it finds nothing. */
+export function asId(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}

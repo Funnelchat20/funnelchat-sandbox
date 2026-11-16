@@ -3,7 +3,7 @@
  * to a group (a group action, behind communities' kill switch) and the participant events.
  */
 import { describe, expect, it } from 'vitest';
-import { startReceiver, startSandbox, subscribe } from './helpers.js';
+import { startReceiver, startSandbox, subscribe, OFFICIAL, QR, GROUP, NO_DEVICE } from './helpers.js';
 
 const UID = '120363000000000000@g.us';
 
@@ -24,10 +24,10 @@ describe('the groups of the account', () => {
     expect(group).toMatchObject({
       uid: UID,
       name: 'Grupo de ejemplo',
-      deviceId: 4,
+      deviceId: QR,
       participants_count: 2,
       admins: [{ phone: '5491100000002', lid: null, isConnected: true, accessDenied: false, displayPhone: '5491100000002' }],
-      ownNumbers: [{ deviceId: 4, phone: '5491100000002', role: 'admin' }],
+      ownNumbers: [{ deviceId: QR, phone: '5491100000002', role: 'admin' }],
       type: 1,
       status: 0,
     });
@@ -65,7 +65,7 @@ describe('sending a message to a group', () => {
     const api = await startSandbox();
     const receiver = await startReceiver();
     await subscribe(api, receiver.url, ['group_action.completed']);
-    const res = await api.call('POST', `/api/v1/groups/${encodeURIComponent(UID)}/messages`, { device_id: 4, type: 'text', text: 'Hola a todos' });
+    const res = await api.call('POST', `/api/v1/groups/${encodeURIComponent(UID)}/messages`, { device_id: QR, type: 'text', text: 'Hola a todos' });
     expect(res.status).toBe(202);
     expect(res.body).toEqual({ action_id: expect.stringMatching(/^[0-9a-f-]{36}$/), status: 'queued' });
 
@@ -82,7 +82,7 @@ describe('sending a message to a group', () => {
       action_id: res.body.action_id,
       type: 'send_message',
       status: 'completed',
-      device_id: 4,
+      device_id: QR,
       group: { uid: UID, name: 'Grupo de ejemplo' },
       result: { message: { uid: event!.json.data.result.message.uid } },
       reason: null,
@@ -94,21 +94,21 @@ describe('sending a message to a group', () => {
   it('refuses like communities: the body, the number, the group and the official number without the beta', async () => {
     const api = await startSandbox();
     const path = `/api/v1/groups/${encodeURIComponent(UID)}/messages`;
-    expect((await api.call('POST', path, { device_id: 4, type: 'text' })).body.errors.text).toBeDefined();
-    expect((await api.call('POST', path, { device_id: 4, type: 'image', media_url: 'http://example.com/a.jpg' })).body.errors.media_url).toEqual([
+    expect((await api.call('POST', path, { device_id: QR, type: 'text' })).body.errors.text).toBeDefined();
+    expect((await api.call('POST', path, { device_id: QR, type: 'image', media_url: 'http://example.com/a.jpg' })).body.errors.media_url).toEqual([
       'El archivo debe ser una URL https con una extensión admitida para ese tipo de mensaje.',
     ]);
-    expect(await api.call('POST', path, { device_id: 99, type: 'text', text: 'x' })).toMatchObject({ status: 404, body: { error: 'device_not_found' } });
-    expect(await api.call('POST', '/api/v1/groups/120363999999999999@g.us/messages', { device_id: 4, type: 'text', text: 'x' })).toMatchObject({
+    expect(await api.call('POST', path, { device_id: NO_DEVICE, type: 'text', text: 'x' })).toMatchObject({ status: 404, body: { error: 'device_not_found' } });
+    expect(await api.call('POST', '/api/v1/groups/120363999999999999@g.us/messages', { device_id: QR, type: 'text', text: 'x' })).toMatchObject({
       status: 404,
       body: { error: 'group_not_found', message: 'No encontramos ese grupo en tu cuenta.' },
     });
-    expect(await api.call('POST', path, { device_id: 3, type: 'text', text: 'x' })).toMatchObject({
+    expect(await api.call('POST', path, { device_id: OFFICIAL, type: 'text', text: 'x' })).toMatchObject({
       status: 422,
       body: { error: 'provider_unsupported', provider: 'official', requires: 'cloud-api-groups' },
     });
-    await api.call('POST', '/_sandbox/devices/4/disconnect');
-    expect(await api.call('POST', path, { device_id: 4, type: 'text', text: 'x' })).toMatchObject({ status: 422, body: { error: 'device_not_connected' } });
+    await api.call('POST', `/_sandbox/devices/${QR}/disconnect`);
+    expect(await api.call('POST', path, { device_id: QR, type: 'text', text: 'x' })).toMatchObject({ status: 422, body: { error: 'device_not_connected' } });
     expect((await api.call('GET', '/api/v1/groups/actions/7c9e6679-7425-40de-944b-e07fc1f90ae7')).body.error).toBe('action_not_found');
   });
 });
@@ -120,7 +120,7 @@ describe('participants', () => {
     await subscribe(api, receiver.url, ['group_participant.joined', 'group_participant.left']);
     const joined = await api.call('POST', '/_sandbox/groups/participant-joined', { participant: { phone: '+54 9 11 5555-0123', name: 'Lucía' } });
     expect(joined.body.participants).toBe(3);
-    await api.call('POST', '/_sandbox/groups/participant-left', { group_id: 7001, participant: { phone: '5491155550123' } });
+    await api.call('POST', '/_sandbox/groups/participant-left', { group_id: GROUP, participant: { phone: '5491155550123' } });
     const [first, second] = await receiver.waitFor(2);
     expect(first!.json.data).toEqual({
       group: { uid: UID, name: 'Grupo de ejemplo' },
@@ -137,27 +137,27 @@ describe('participants', () => {
 describe('following a group (communities v2.35.7)', () => {
   it('the live list shows what is not imported; import follows it, and a send imports first', async () => {
     const api = await startSandbox();
-    const live = await api.call('GET', '/api/v1/devices/4/groups');
+    const live = await api.call('GET', `/api/v1/devices/${QR}/groups`);
     expect(live.body.data.map((g: { uid: string; device_id: unknown }) => [g.uid, g.device_id])).toEqual([
-      [UID, 4],
+      [UID, QR],
       ['120363000000000001@g.us', ''],
     ]);
     const vip = '120363000000000001@g.us';
-    const followed = await api.call('POST', `/api/v1/groups/${encodeURIComponent(vip)}/import`, { device_id: 4 });
+    const followed = await api.call('POST', `/api/v1/groups/${encodeURIComponent(vip)}/import`, { device_id: QR });
     expect(followed).toMatchObject({ status: 201, body: { data: { uid: vip, name: 'Clientes VIP', imported: true, is_admin: true } } });
-    expect((await api.call('POST', `/api/v1/groups/${encodeURIComponent(vip)}/import`, { device_id: 4 })).status).toBe(200);
-    expect(await api.call('POST', `/api/v1/groups/${encodeURIComponent(UID)}/import`, { device_id: 3 })).toMatchObject({ status: 422, body: { error: 'provider_unsupported' } });
+    expect((await api.call('POST', `/api/v1/groups/${encodeURIComponent(vip)}/import`, { device_id: QR })).status).toBe(200);
+    expect(await api.call('POST', `/api/v1/groups/${encodeURIComponent(UID)}/import`, { device_id: OFFICIAL })).toMatchObject({ status: 422, body: { error: 'provider_unsupported' } });
 
     // A send to a group the account does not have imports it first; the number must be its admin.
-    const other = await api.call('POST', '/_sandbox/groups', { device_id: 4, name: 'Solo participante', imported: false, admin: false });
-    const sent = await api.call('POST', `/api/v1/groups/${encodeURIComponent(other.body.group.uid)}/messages`, { device_id: 4, type: 'text', text: 'Hola' });
+    const other = await api.call('POST', '/_sandbox/groups', { device_id: QR, name: 'Solo participante', imported: false, admin: false });
+    const sent = await api.call('POST', `/api/v1/groups/${encodeURIComponent(other.body.group.uid)}/messages`, { device_id: QR, type: 'text', text: 'Hola' });
     expect(sent).toMatchObject({ status: 422, body: { error: 'device_not_group_admin' } });
     const keyed = await api.call('POST', '/_sandbox/keys', { permissions: ['communities:send'] });
-    const fresh = await api.call('POST', '/_sandbox/groups', { device_id: 4, name: 'Nuevo', imported: false });
+    const fresh = await api.call('POST', '/_sandbox/groups', { device_id: QR, name: 'Nuevo', imported: false });
     expect(
-      await api.call('POST', `/api/v1/groups/${encodeURIComponent(fresh.body.group.uid)}/messages`, { device_id: 4, type: 'text', text: 'x' }, { Authorization: `Bearer ${keyed.body.key}` }),
+      await api.call('POST', `/api/v1/groups/${encodeURIComponent(fresh.body.group.uid)}/messages`, { device_id: QR, type: 'text', text: 'x' }, { Authorization: `Bearer ${keyed.body.key}` }),
     ).toMatchObject({ status: 403, body: { error: 'import_permission_required' } });
-    expect((await api.call('POST', `/api/v1/groups/${encodeURIComponent(fresh.body.group.uid)}/messages`, { device_id: 4, type: 'text', text: 'x' })).status).toBe(202);
+    expect((await api.call('POST', `/api/v1/groups/${encodeURIComponent(fresh.body.group.uid)}/messages`, { device_id: QR, type: 'text', text: 'x' })).status).toBe(202);
     expect((await api.call('GET', '/api/v1/groups')).body.meta.total).toBe(3);
   });
 });
@@ -176,7 +176,7 @@ describe('groups and workspaces', () => {
     expect((await asB('GET', '/api/v1/groups')).body.data.map((g: { uid: string }) => g.uid)).toEqual([uid]);
     expect((await api.call('GET', '/api/v1/groups')).body.data.map((g: { uid: string }) => g.uid)).toEqual([UID]);
     expect((await asB('GET', `/api/v1/groups/${encodeURIComponent(UID)}`)).status).toBe(404);
-    expect((await asB('POST', `/api/v1/groups/${encodeURIComponent(UID)}/messages`, { device_id: 4, type: 'text', text: 'x' })).body.error).toBe('device_not_found');
+    expect((await asB('POST', `/api/v1/groups/${encodeURIComponent(UID)}/messages`, { device_id: QR, type: 'text', text: 'x' })).body.error).toBe('device_not_found');
 
     const receiver = await startReceiver();
     await asB('POST', '/api/v1/webhooks', { url: receiver.url, events: ['group_participant.joined'] });

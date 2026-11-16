@@ -20,6 +20,7 @@ import { fakeQrDataUri } from '../numbers/qr.js';
 import { deviceResource } from '../state/resources.js';
 import type { Device } from '../state/store.js';
 import { sees } from '../state/workspaces.js';
+import { asId } from '../util.js';
 
 /**
  * Seconds the QR is good for: ask for it again after them (0 once connected). accounts serves 5, the cadence of the
@@ -28,7 +29,7 @@ import { sees } from '../state/workspaces.js';
 export const QR_EXPIRES_IN = 5;
 
 export function deviceOf(ctx: HandlerContext, id: unknown): Device {
-  const device = ctx.app.store.devices.get(Number(id));
+  const device = ctx.app.store.devices.get(asId(id));
   // accounts `bootstrap/app.php`: the `404 not_found` of a model, its message in English.
   if (!device) throw new ApiError(404, 'not_found', 'Object not found');
   // A number of the account in another workspace: `DevicePolicy` answers `denyAsNotFound()`, the common `404 not_found`.
@@ -45,8 +46,7 @@ export const deviceHandlers: HandlerTable = {
     const reference = ctx.query.external_reference;
     const list = [...ctx.app.store.devices.values()]
       .filter((d) => sees(ctx.workspace, d.workspaceId))
-      .filter((d) => reference === undefined || reference === '' || d.externalReference === String(reference))
-      .sort((a, b) => a.id - b.id);
+      .filter((d) => reference === undefined || reference === '' || d.externalReference === String(reference));
     return ok(paginate(list, listContext(ctx), deviceResource));
   },
 

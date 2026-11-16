@@ -9,6 +9,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { signature } from '../src/webhooks/signature.js';
+import { OFFICIAL } from './helpers.js';
 import { BODY, FIXED_T, FIXED_VECTORS, SECRET, portalCases } from './fixtures/portal-signature-vectors.js';
 import { startReceiver, startSandbox, subscribe } from './helpers.js';
 import { checkSignature, verify } from './vendor/funnelchat-node/src/webhooks/signature.js';
@@ -50,7 +51,7 @@ describe('a real delivery of the sandbox', () => {
     const receiver = await startReceiver();
     const { secret } = await subscribe(api, receiver.url, ['message.received']);
 
-    await api.call('POST', '/_sandbox/inbound/message', { phone: '5491100000000', device_id: 3, text: 'Hola, ¿precio? 🚀' });
+    await api.call('POST', '/_sandbox/inbound/message', { phone: '5491100000000', device_id: OFFICIAL, text: 'Hola, ¿precio? 🚀' });
     const [delivery] = await receiver.waitFor(1);
     const header = String(delivery?.headers['x-funnelchat-signature']);
 
@@ -69,7 +70,7 @@ describe('a real delivery of the sandbox', () => {
     const api = await startSandbox();
     const receiver = await startReceiver();
     await subscribe(api, receiver.url, ['message.received']);
-    await api.call('POST', '/_sandbox/inbound/message', { phone: '5491100000000', device_id: 3 });
+    await api.call('POST', '/_sandbox/inbound/message', { phone: '5491100000000', device_id: OFFICIAL });
     const [delivery] = await receiver.waitFor(1);
 
     expect(delivery!.headers['content-type']).toBe('application/json');

@@ -172,7 +172,8 @@ export const webhookHandlers: HandlerTable = {
     const q = ctx.query;
     const list = ctx.app.store.deliveries
       .filter((d) => d.subscriptionId === subscription.id && (!q.event_type || d.eventType === q.event_type) && (!q.event_id || d.eventId === q.event_id))
-      .sort((a, b) => b.attemptedAt.getTime() - a.attemptedAt.getTime() || b.id - a.id);
+      .reverse()
+      .sort((a, b) => b.attemptedAt.getTime() - a.attemptedAt.getTime());
     return ok(paginate(list, listContext(ctx), deliveryResource));
   },
 };

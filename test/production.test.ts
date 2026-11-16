@@ -4,7 +4,7 @@
  * capabilities, and the polls and events, which the gate closes and the published spec does not carry.
  */
 import { describe, expect, it } from 'vitest';
-import { startReceiver, startSandbox, subscribe } from './helpers.js';
+import { startReceiver, startSandbox, subscribe, OFFICIAL, QR, CONTACT, TEMPLATE, NO_DEVICE, NO_CONTACT, NO_TEMPLATE, NO_MESSAGE } from './helpers.js';
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -59,8 +59,8 @@ describe('errors of the edge', () => {
 });
 
 describe('the file of a send', () => {
-  const send = (api: Awaited<ReturnType<typeof startSandbox>>, extra: Record<string, unknown>, path = '/api/v1/contacts/2001/message') =>
-    api.call('POST', path, { device_id: 4, contact_id: 2001, ...extra });
+  const send = (api: Awaited<ReturnType<typeof startSandbox>>, extra: Record<string, unknown>, path = `/api/v1/contacts/${CONTACT}/message`) =>
+    api.call('POST', path, { device_id: QR, contact_id: CONTACT, ...extra });
 
   it('infers the type from the extension like conversations', async () => {
     const api = await startSandbox({ rules: { antiblock: false } });
@@ -117,44 +117,44 @@ describe('the MAC of the account', () => {
     const api = await startSandbox();
     const other = (await api.call('POST', '/api/v1/contacts', { phone: '5491100000088', name: 'Activo' })).body.id;
     await api.call('POST', '/_sandbox/mac', { lockout: true, active_contact_ids: [other] });
-    const res = await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 4, contact_id: 2001, text: 'Hola' });
+    const res = await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: QR, contact_id: CONTACT, text: 'Hola' });
     expect(res.status).toBe(429);
     expect(res.body).toEqual({ error: 'mac_lockout_24h', message: 'Tu cuenta está en bloqueo de 24h por agotamiento de MACs.' });
     expect(res.headers.get('retry-after')).toBeNull();
-    expect((await api.call('POST', `/api/v1/contacts/${other}/message`, { device_id: 4, contact_id: other, text: 'Hola' })).status).toBe(200);
-    const template = await api.call('POST', '/api/v1/devices/3/templates/45/send-template', { phone: '5491100000000', contact_id: 2001, template_variables: { body: ['Lucía'] } });
+    expect((await api.call('POST', `/api/v1/contacts/${other}/message`, { device_id: QR, contact_id: other, text: 'Hola' })).status).toBe(200);
+    const template = await api.call('POST', `/api/v1/devices/${OFFICIAL}/templates/${TEMPLATE}/send-template`, { phone: '5491100000000', contact_id: CONTACT, template_variables: { body: ['Lucía'] } });
     expect(template.status).toBe(200);
 
     // The forward is not a 429: that destination comes back blocked.
-    const source = (await api.call('POST', `/api/v1/contacts/${other}/message`, { device_id: 4, contact_id: other, text: 'Reenvíame' })).body.message.id;
-    const forward = await api.call('POST', `/api/v1/contacts/${other}/messages/${source}/forward`, { targets: [{ contact_id: 2001, device_id: 4 }, { contact_id: other, device_id: 4 }] });
+    const source = (await api.call('POST', `/api/v1/contacts/${other}/message`, { device_id: QR, contact_id: other, text: 'Reenvíame' })).body.message.id;
+    const forward = await api.call('POST', `/api/v1/contacts/${other}/messages/${source}/forward`, { targets: [{ contact_id: CONTACT, device_id: QR }, { contact_id: other, device_id: QR }] });
     expect(forward.status).toBe(200);
-    expect(forward.body[0]).toEqual({ contact_id: 2001, mode: 'native', status: 'blocked', reason: 'mac_lockout_24h', message: null });
+    expect(forward.body[0]).toEqual({ contact_id: CONTACT, mode: 'native', status: 'blocked', reason: 'mac_lockout_24h', message: null });
     expect(forward.body[1]).toMatchObject({ contact_id: other, status: 'queued', reason: null });
   });
 
   it('a contact inactive by MAC gets the same answer without a lockout', async () => {
     const api = await startSandbox();
-    await api.call('POST', '/_sandbox/mac', { inactive_contact_ids: [2001] });
-    expect((await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 4, contact_id: 2001, text: 'Hola' })).body.error).toBe('mac_lockout_24h');
-    expect((await api.call('GET', '/_sandbox/mac')).body).toEqual({ lockout: false, active_contact_ids: [], inactive_contact_ids: [2001] });
+    await api.call('POST', '/_sandbox/mac', { inactive_contact_ids: [CONTACT] });
+    expect((await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: QR, contact_id: CONTACT, text: 'Hola' })).body.error).toBe('mac_lockout_24h');
+    expect((await api.call('GET', '/_sandbox/mac')).body).toEqual({ lockout: false, active_contact_ids: [], inactive_contact_ids: [CONTACT] });
   });
 });
 
 describe('the bodies of each route', () => {
   it('send-message, send-template and the lookup answer error and message', async () => {
     const api = await startSandbox();
-    expect(await api.call('POST', '/api/v1/message/send-message', { device_id: 4, contact_id: 999999, text: 'x' })).toMatchObject({ status: 404, body: { error: 'not_found', message: 'Contacto no encontrado.', status: 'error' } });
-    expect(await api.call('POST', '/api/v1/message/send-message', { device_id: 99, contact_id: 2001, text: 'x' })).toMatchObject({ status: 403, body: { error: 'forbidden', message: 'No autorizado' } });
-    expect(await api.call('POST', '/api/v1/devices/3/templates/999/send-template', { phone: '5491100000000', contact_id: 2001 })).toMatchObject({ status: 404, body: { error: 'template_not_found' } });
-    expect(await api.call('POST', '/api/v1/devices/4/templates/45/send-template', { phone: '5491100000000', contact_id: 2001 })).toMatchObject({
+    expect(await api.call('POST', '/api/v1/message/send-message', { device_id: QR, contact_id: NO_CONTACT, text: 'x' })).toMatchObject({ status: 404, body: { error: 'not_found', message: 'Contacto no encontrado.', status: 'error' } });
+    expect(await api.call('POST', '/api/v1/message/send-message', { device_id: NO_DEVICE, contact_id: CONTACT, text: 'x' })).toMatchObject({ status: 403, body: { error: 'forbidden', message: 'No autorizado' } });
+    expect(await api.call('POST', `/api/v1/devices/${OFFICIAL}/templates/${NO_TEMPLATE}/send-template`, { phone: '5491100000000', contact_id: CONTACT })).toMatchObject({ status: 404, body: { error: 'template_not_found' } });
+    expect(await api.call('POST', `/api/v1/devices/${QR}/templates/${TEMPLATE}/send-template`, { phone: '5491100000000', contact_id: CONTACT })).toMatchObject({
       status: 422,
       body: { error: 'template_waba_mismatch', message: 'La plantilla no pertenece al número actual' },
     });
-    const missing = await api.call('POST', '/api/v1/devices/3/templates/45/send-template', { phone: '5491100000000', contact_id: 2001, template_variables: { body: [] } });
+    const missing = await api.call('POST', `/api/v1/devices/${OFFICIAL}/templates/${TEMPLATE}/send-template`, { phone: '5491100000000', contact_id: CONTACT, template_variables: { body: [] } });
     expect(missing.body).toMatchObject({ error: 'template_unresolved_placeholder', placeholders: ['{{1}}'], count: 1 });
-    expect(await api.call('GET', '/api/v1/contacts/2001/messages/424242')).toMatchObject({ status: 404, body: { error: 'not_found', message: 'Objeto no encontrado.' } });
-    expect(await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 4, contact_id: 2001, note: true, text: 'n', options: [{ id: 'a', label: 'A' }] })).toMatchObject({
+    expect(await api.call('GET', `/api/v1/contacts/${CONTACT}/messages/${NO_MESSAGE}`)).toMatchObject({ status: 404, body: { error: 'not_found', message: 'Objeto no encontrado.' } });
+    expect(await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: QR, contact_id: CONTACT, note: true, text: 'n', options: [{ id: 'a', label: 'A' }] })).toMatchObject({
       status: 422,
       body: { error: 'A note cannot carry interactive options.' },
     });
@@ -164,7 +164,7 @@ describe('the bodies of each route', () => {
     const api = await startSandbox();
     const receiver = await startReceiver();
     await subscribe(api, receiver.url, ['message.status_changed']);
-    await api.call('POST', '/api/v1/contacts/2001/message', { device_id: 4, contact_id: 2001, text: 'x' }, { 'X-Sandbox-Fail': 'insufficient_balance' });
+    await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: QR, contact_id: CONTACT, text: 'x' }, { 'X-Sandbox-Fail': 'insufficient_balance' });
     const [event] = await receiver.waitFor(1);
     expect(event!.json.data.error).toEqual({ code: null, title: 'Saldo insuficiente en tu billetera de WhatsApp.', reason: 'insufficient_balance' });
   });
@@ -212,12 +212,12 @@ describe('numbers and groups', () => {
     expect(cloud.health).toMatchObject({ state: 'available' });
     expect(qr.health).toBeNull();
     expect(qr.capabilities).toMatchObject({ messages: { templates: false, polls: true }, groups: { create: true, add_participants: 'direct', join_requests: false }, statuses: ['sent', 'delivered', 'read', 'failed'] });
-    expect(await api.call('GET', '/api/v1/devices/99')).toMatchObject({ status: 404, body: { error: 'not_found', message: 'Object not found' } });
+    expect(await api.call('GET', `/api/v1/devices/${NO_DEVICE}`)).toMatchObject({ status: 404, body: { error: 'not_found', message: 'Object not found' } });
   });
 
   it('polls and events are not in the published spec: 404 route_not_found', async () => {
     const api = await startSandbox();
-    for (const path of ['/api/v1/contacts/2001/message/poll', '/api/v1/contacts/2001/message/event']) {
+    for (const path of [`/api/v1/contacts/${CONTACT}/message/poll`, `/api/v1/contacts/${CONTACT}/message/event`]) {
       const res = await api.call('POST', path, {});
       expect(res.status, path).toBe(404);
       expect(res.body.error).toBe('route_not_found');

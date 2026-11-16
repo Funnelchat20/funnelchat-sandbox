@@ -16,7 +16,7 @@ import { FORM_TEMPLATES } from '../forms/templates.js';
 import { rejection } from '../messaging/rules.js';
 import { publicMessage } from '../state/resources.js';
 import type { Contact, Device, FormFamily, FormRun, FormVersion, Message } from '../state/store.js';
-import { iso8601, isoSeconds, isRecord, laravelJson } from '../util.js';
+import { iso8601, isoSeconds, isRecord, laravelJson, asId } from '../util.js';
 import { getContact } from './contacts.js';
 import { clientReference, send } from './messages.js';
 
@@ -133,44 +133,44 @@ function numbers(form: FormVersion): Record<string, unknown>[] {
 }
 
 function getForm(app: SandboxApp, id: unknown): FormVersion {
-  const form = app.store.forms.get(Number(id));
+  const form = app.store.forms.get(asId(id));
   if (!form) throw objectNotFound();
   return form;
 }
 
 function getFamily(app: SandboxApp, id: unknown): FormFamily {
-  const family = app.store.formFamilies.get(Number(id));
+  const family = app.store.formFamilies.get(asId(id));
   if (!family) throw objectNotFound();
   return family;
 }
 
-const versionsOf = (app: SandboxApp, familyId: number): FormVersion[] =>
+const versionsOf = (app: SandboxApp, familyId: string): FormVersion[] =>
   [...app.store.forms.values()].filter((f) => f.familyId === familyId).sort((a, b) => b.version - a.version);
 
 /** `MetaCredentialsResolver`: only official numbers of the account, with their WABA. */
 function eligibleNumber(app: SandboxApp, id: unknown): Device {
-  const device = app.store.devices.get(Number(id));
+  const device = app.store.devices.get(asId(id));
   if (!device) throw new ApiError(422, 'NUMBER_NOT_ELIGIBLE', 'No encontramos ese número en tu cuenta');
   if (device.kind !== 'cloud') throw new ApiError(422, 'NUMBER_NOT_ELIGIBLE', 'Disponible para números conectados con la API de WhatsApp');
   return device;
 }
 
 /** `Identity::slug` + `firstFree`: the name is unique per number; a taken one gets `_2`, `_3`… */
-function freeName(app: SandboxApp, base: string, deviceId: number): string {
+function freeName(app: SandboxApp, base: string, deviceId: string): string {
   const taken = new Set([...app.store.forms.values()].filter((f) => f.deviceId === deviceId).map((f) => f.name));
   if (!taken.has(base)) return base;
   for (let n = 2; ; n++) if (!taken.has(`${base}_${n}`)) return `${base}_${n}`;
 }
 
-function intField(b: Record<string, unknown>, field: string, required: boolean): number | null {
+/** An id of the body: opaque text. Anything else is not an id. */
+function idField(b: Record<string, unknown>, field: string, required: boolean): string | null {
   const value = b[field];
   if (value === undefined || value === null) {
     if (required) throw fieldError(field, `El campo ${field} es obligatorio.`);
     return null;
   }
-  if (!Number.isInteger(value)) throw fieldError(field, `El campo ${field} debe ser un número entero.`);
-  if ((value as number) < 1) throw fieldError(field, `El campo ${field} debe ser al menos 1.`);
-  return value as number;
+  if (typeof value !== 'string') throw fieldError(field, `El campo ${field} debe ser un id de texto.`);
+  return value;
 }
 
 function lintFailure(issues: LintIssue[]): ApiError {
@@ -188,7 +188,7 @@ function sync(form: FormVersion): void {
 }
 
 /** The copies of a version on other numbers publish in the background: `publishing`, then `published`. */
-function publishCopies(app: SandboxApp, form: FormVersion, only?: number[]): void {
+function publishCopies(app: SandboxApp, form: FormVersion, only?: string[]): void {
   const generation = app.generation;
   for (const [deviceId, copy] of form.copies) {
     if (only && !only.includes(deviceId)) continue;
@@ -311,7 +311,7 @@ function runDetail(app: SandboxApp, run: FormRun): Record<string, unknown> {
 }
 
 /** `FormSendAcceptance::preflight`, in its order, after the number. */
-function preflight(app: SandboxApp, familyId: number, device: Device, contact: Contact): FormVersion {
+function preflight(app: SandboxApp, familyId: string, device: Device, contact: Contact): FormVersion {
   const family = app.store.formFamilies.get(familyId);
   if (!family) throw new ApiError(404, 'form_not_found', 'No se envió: el formulario no existe en tu cuenta. Revisa el identificador del formulario.');
   if (device.kind !== 'cloud') {
@@ -338,8 +338,8 @@ function sendForm(ctx: HandlerContext): HandlerResult {
   const { app } = ctx;
   const contact = getContact(app, ctx.path.contact);
   const b = body(ctx);
-  const formId = intField(b, 'form_id', true) as number;
-  intField(b, 'device_id', true);
+  const formId = idField(b, 'form_id', true) as string;
+  idField(b, 'device_id', true);
   if (b.text !== undefined && (typeof b.text !== 'string' || b.text.length < 1 || b.text.length > 1024)) {
     throw fieldError('text', 'El campo text debe tener entre 1 y 1024 caracteres.');
   }
@@ -348,9 +348,10 @@ function sendForm(ctx: HandlerContext): HandlerResult {
     if (EMOJI.test(b.button_text)) throw fieldError('button_text', 'El formato del campo button_text no es válido.');
   }
   const reference = clientReference(b);
-  const device = app.store.devices.get(Number(b.device_id));
+  const device = app.store.devices.get(asId(b.device_id));
   if (!device || !device.connected) throw rejection('device_unavailable');
-  const form = preflight(app, formId, device, contact);
+  // `form_id` is the id of a version of the form (`frv_`): the send goes out with the current published one of its family.
+  const form = preflight(app, app.store.forms.get(formId)?.familyId ?? '', device, contact);
   const text = typeof b.text === 'string' ? b.text : labelOf(form);
   const [message] = send(ctx, {
     device,
@@ -381,10 +382,10 @@ export function completeForm(app: SandboxApp, input: Record<string, unknown>): R
   const runs = [...app.store.formRuns.values()];
   const run =
     input.run_id !== undefined
-      ? app.store.formRuns.get(Number(input.run_id))
+      ? app.store.formRuns.get(asId(input.run_id))
       : input.message_id !== undefined
-        ? runs.find((r) => r.messageId === Number(input.message_id))
-        : runs.filter((r) => r.status === 'pending' && (input.contact_id === undefined || r.contactId === Number(input.contact_id))).pop();
+        ? runs.find((r) => r.messageId === asId(input.message_id))
+        : runs.filter((r) => r.status === 'pending' && (input.contact_id === undefined || r.contactId === asId(input.contact_id))).pop();
   if (!run) throw new ApiError(404, 'not_found', 'There is no form send with that run_id, message_id or contact_id. Send one with POST /api/v1/contacts/{contact}/message/form.');
   const form = app.store.forms.get(run.versionId) as FormVersion;
   if (run.status === 'completed') return { run: runDetail(app, run), event: null };
@@ -423,16 +424,17 @@ export const formHandlers: HandlerTable = {
         (f) =>
           (!q.q || f.name.toLowerCase().includes(String(q.q).toLowerCase())) &&
           (!q.status || f.status === q.status) &&
-          (q.device_id === undefined || f.deviceId === Number(q.device_id) || f.copies.has(Number(q.device_id))),
+          (q.device_id === undefined || f.deviceId === asId(q.device_id) || f.copies.has(asId(q.device_id))),
       )
-      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime() || b.id - a.id);
+      .reverse()
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
     return ok(paginate(list, { ...listContext(ctx), query: { ...q, perPage: q.per_page ?? q.perPage } }, (f) => formResource(ctx.app, f, 'list')));
   },
 
   'POST /api/v1/forms': (ctx) => {
     const { app } = ctx;
     const b = body(ctx);
-    const primary = intField(b, 'device_id', true) as number;
+    const primary = idField(b, 'device_id', true) as string;
     const extra = b.device_ids === undefined ? [] : b.device_ids;
     if (!Array.isArray(extra)) throw fieldError('device_ids', 'El campo device_ids debe ser una lista.');
     if (extra.length > 50) throw fieldError('device_ids', 'El campo device_ids no debe tener más de 50 elementos.');
@@ -550,7 +552,7 @@ export const formHandlers: HandlerTable = {
   'POST /api/v1/forms/{id}/numbers': (ctx) => {
     const { app } = ctx;
     const form = getForm(app, ctx.path.id);
-    const device = eligibleNumber(app, intField(body(ctx), 'device_id', true));
+    const device = eligibleNumber(app, idField(body(ctx), 'device_id', true));
     if (device.id !== form.deviceId && !form.copies.has(device.id)) form.copies.set(device.id, { status: 'draft', error: null });
     if (form.status === 'published') publishCopies(app, form, [device.id]);
     return ok({ numbers: numbers(form) });
@@ -558,7 +560,7 @@ export const formHandlers: HandlerTable = {
 
   'DELETE /api/v1/forms/{id}/numbers/{deviceId}': (ctx) => {
     const form = getForm(ctx.app, ctx.path.id);
-    const deviceId = Number(ctx.path.deviceId);
+    const deviceId = asId(ctx.path.deviceId);
     if (deviceId === form.deviceId) throw new ApiError(422, 'PRIMARY_NUMBER', 'El número con el que se creó el formulario no se puede quitar.');
     if (!form.copies.delete(deviceId)) throw objectNotFound();
     return ok({ numbers: numbers(form) });
@@ -600,8 +602,9 @@ export const formHandlers: HandlerTable = {
     const family = getFamily(ctx.app, ctx.path.familyId);
     const q = ctx.query;
     const runs = [...ctx.app.store.formRuns.values()]
-      .filter((r) => r.familyId === family.id && (q.version_id === undefined || r.versionId === Number(q.version_id)) && (!q.status || RUN_STATUS[r.status].key === q.status))
-      .sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime() || b.id - a.id);
+      .filter((r) => r.familyId === family.id && (q.version_id === undefined || r.versionId === asId(q.version_id)) && (!q.status || RUN_STATUS[r.status].key === q.status))
+      .reverse()
+      .sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime());
     const current = versionsOf(ctx.app, family.id)[0];
     const columns = current ? derive(current.definition).fields.map((f) => ({ name: f.name, label: f.label || f.name, type: f.type, retired: false })) : [];
     return ok({ ...paginate(runs, { ...listContext(ctx), query: { ...q, perPage: q.per_page ?? q.perPage } }, (r) => runRow(ctx.app, r)), columns });
@@ -609,7 +612,7 @@ export const formHandlers: HandlerTable = {
 
   'GET /api/v1/forms/families/{familyId}/responses/{runId}': (ctx) => {
     const family = getFamily(ctx.app, ctx.path.familyId);
-    const run = ctx.app.store.formRuns.get(Number(ctx.path.runId));
+    const run = ctx.app.store.formRuns.get(asId(ctx.path.runId));
     if (!run || run.familyId !== family.id) throw objectNotFound();
     return ok({ data: runDetail(ctx.app, run) });
   },
