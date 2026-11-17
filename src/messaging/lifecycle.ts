@@ -19,6 +19,8 @@ export interface NewMessage {
   file?: string | null;
   clientReference?: string | null;
   templateId?: string | null;
+  /** The choices of a question sent with `options`. */
+  options?: { id: string; label: string }[] | null;
   viaApi: boolean;
   status: PublicStatus | null;
   createdAt?: Date;
@@ -42,6 +44,7 @@ export function createMessage(app: SandboxApp, input: NewMessage): Message {
     uid: input.own || app.store.devices.get(input.deviceId ?? '')?.kind === 'cloud' ? `wamid.SANDBOX${randomAlnum(24)}` : `false_${randomAlnum(20)}`,
     viaApi: input.viaApi,
     templateId: input.templateId ?? null,
+    options: input.options ?? null,
     reactions: [],
     createdAt: now,
     updatedAt: now,

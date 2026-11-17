@@ -21,8 +21,12 @@ import type { ConnectLink, Connection, Device, HealthState } from '../state/stor
 import { sees, type WorkspaceScope } from '../state/workspaces.js';
 import { asId, crc32Hex, isoSeconds } from '../util.js';
 
-/** Closed list of `device.disconnected` `reason` (contract A3). */
-export const DISCONNECT_REASONS = ['qr_logged_out', 'meta_account_not_registered', 'shadow_ban_protection', 'provider_error', 'unknown', 'disconnected_by_user'] as const;
+/**
+ * Closed list of `device.disconnected` `reason` (contract A3), as accounts emits it
+ * (`DeviceWebhookEmitter::DISCONNECT_REASONS`): without `provider_error`, which was documented and never emitted (second
+ * review of gaps, 13-11). It is still a link's `error_code` (`LINK_ERROR_CODES`).
+ */
+export const DISCONNECT_REASONS = ['qr_logged_out', 'meta_account_not_registered', 'shadow_ban_protection', 'disconnected_by_user', 'unknown'] as const;
 export type DisconnectReason = (typeof DISCONNECT_REASONS)[number];
 
 export const HEALTH_STATES: HealthState[] = ['available', 'limited', 'blocked', 'unknown'];

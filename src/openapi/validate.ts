@@ -3,8 +3,9 @@
  * validation (`errors` per field, the same Spanish messages), inside the `{error, message}` body.
  *
  * Values are first coerced the way Laravel reads them: query values arrive as text, and Laravel's
- * `integer` / `numeric` / `boolean` rules accept `"5"`, `"1.5"`, `"true"`, `"1"`… So a numeric text becomes a
- * number and `"true"`/`"1"` a boolean where the schema asks for that type, before Ajv checks the schema.
+ * `integer` / `numeric` / `boolean` rules accept `"5"`, `"1.5"`, `"1"`… So a numeric text becomes a number and
+ * `"1"`/`"0"` a boolean where the schema asks for that type, before Ajv checks the schema. A boolean of the query that
+ * is not `1` or `0` (`true`) is refused, like Laravel's `boolean` rule does (see `LENIENT_QUERY_BOOLEANS`).
  */
 import { Ajv2020, type ErrorObject, type ValidateFunction } from 'ajv/dist/2020.js';
 import addFormatsModule from 'ajv-formats';
@@ -253,6 +254,22 @@ export type ValidationOutcome =
   | { ok: false; kind: 'not_found' }
   | { ok: false; kind: 'invalid'; errors: FieldErrors };
 
+/**
+ * Laravel's `boolean` rule (`bool`) takes `true`, `false`, `1`, `0`, `"1"` and `"0"`: in a query, where every value is a
+ * text, only `1` and `0`, so `?activeConversation=true` answers `422` in production (conversations
+ * `ConversationController`). Every boolean of a query of the spec is read with that rule except these (`operationId` and
+ * name), which the controller reads with `$request->boolean()` and so also take `true` and `false`.
+ */
+const LENIENT_QUERY_BOOLEANS = new Set(['contact.addTags bulk', 'contact.removeTags bulk']);
+
+/** Whether a query value stays a text for Ajv to refuse: a boolean parameter that is not `1` or `0`. */
+function refusedQueryBoolean(op: Operation, name: string, schema: Schema, raw: unknown): boolean {
+  const types = typesOf(resolveSchema(schema));
+  if (!types.includes('boolean') || types.includes('string') || typeof raw !== 'string') return false;
+  if (LENIENT_QUERY_BOOLEANS.has(`${op.operationId ?? ''} ${name}`)) return false;
+  return raw.trim() !== '1' && raw.trim() !== '0';
+}
+
 const queryValue = (query: Record<string, unknown>, param: Parameter): unknown => {
   const name = param.name.endsWith('[]') ? param.name.slice(0, -2) : param.name;
   return query[name] ?? query[param.name];
@@ -289,7 +306,7 @@ export function validateRequest(
     }
     // Filters that Laravel reads as nested objects (`tag_filters[0][mode]=all`) are not checked here.
     if (!param.schema || param['x-deepObject-style']) continue;
-    const value = coerce(param.schema, raw);
+    const value = refusedQueryBoolean(op, name, param.schema, raw) ? raw : coerce(param.schema, raw);
     coercedQuery[name] = value;
     errors = mergeErrors(errors, validateValue(param.schema, value, name));
   }

@@ -282,6 +282,16 @@ Every session starts with this:
 
 **With state** (what you create, change or delete stays): contacts (`/api/v1/contacts…`, with their tags, fields and the `meta-window`), conversations (`/api/v1/conversations…`), messages (send, history, reactions, forward, cards, the lookup by id, mark as read and «typing…»), tags, custom fields, templates, [WhatsApp forms](#whatsapp-forms), numbers and sign-up links ([connecting numbers](#connecting-numbers)), [groups](#groups) (the list, one group and the send) and webhook subscriptions with their history, in one or more [workspaces](#workspaces).
 
+**Contacts, as production keeps them** (conversations on `main`, 17-11):
+
+- `POST /api/v1/contacts` and `POST /api/v1/contacts/update-or-create` answer **`201` when they create the contact** and `200` when it already was there (a Laravel resource of a model just created; the published spec only says `200`).
+- Both take `custom_fields: [{"id": "fld_…", "value": "…"}]` (up to 100) and **keep the values**: `update-or-create` on the contact it creates or updates, `POST /contacts` only on one it creates. They are checked before anything is written: a field that is not of the account is `422` on `custom_fields.N.id`; a value out of its type's format (number `1500` or `99.90`, date `AAAA-MM-DD`, URL with `http(s)://`) `422` on `custom_fields.N.value`; a repeated `id` or an empty value, too.
+- `POST /api/v1/contacts/add-tags` and `…/remove-tags` (`[{"contactId": "ctc_…", "tag": {"id": "tag_…"}}]`, up to 200) **keep the tags**: `200` without a body, `contact.tag_added` / `contact.tag_removed` with `source: "manual"` for each real change, and an item whose contact or tag is not of the account is skipped without an error. `?bulk=1` (or `true`) is accepted.
+
+**Conversations** (`GET /api/v1/conversations`) are not contacts: each row is the one conversations builds, the contact's columns (`contact_id`, `contact_name`, `contact_phone`, `contact_active_conversation`, `unread_messages`, `last_device_id`, `tag_ids`, `meta_window_inbounds`, `is_mac_inactive`…) followed by the columns of the **last message**: `id` is that message's (`msg_…`), never the contact's. Values are the database's (`0`/`1`, `2026-10-01 12:00:00`, `null`). The page is the cursor one, with `links.first` and `meta.total` (the count without a cursor, `null` with one). `country_code` and `lead_score` are always `null` here.
+
+**Booleans of a query are `1` or `0`**, as Laravel's `boolean` rule reads them: `?activeConversation=true` answers `422` on `activeConversation`, like production; `?activeConversation=1` lists the open ones. The only exception is `bulk` of `add-tags` and `remove-tags`, which conversations reads with `$request->boolean()`.
+
 **The numbers** are those of accounts: `GET /api/v1/devices` always paginates (`{data, links, meta}`, `perPage` from 1 to 100), and each number carries `capabilities`, with what the API can do through it:
 
 ```json
@@ -343,7 +353,7 @@ The complete spec the sandbox uses is at `GET /_sandbox/openapi.json`.
 
 The sandbox answers every operation of that spec, in one of two ways:
 
-- **With state**, the first use: numbers and sign-up links, contacts with their tags and fields, conversations and messages, groups (the live list, the list, one group, the import and the send), WhatsApp forms, mark as read and «typing…», and webhook subscriptions. What you create stays (in memory) and the events go out, signed.
+- **With state**, the first use: numbers and sign-up links, contacts with their tags (`add-tags` and `remove-tags` too) and fields, conversations and messages, groups (the live list, the list, one group, the import and the send), WhatsApp forms, mark as read and «typing…», and webhook subscriptions. What you create stays (in memory) and the events go out, signed.
 - **Shape only**, everything else. The request is validated like any other (the key, the route, the path, the query and the body, with the same `401`, `404` and `422`), and the answer is the success status the spec gives (`200`, `201`, `202` or `204`) with a body that fits its response schema: the spec's example of the response when it has one that fits, otherwise one built from the schema. It is the same on every call to that operation, whatever you send. Nothing is stored and no event goes out: creating a board answers `201` with a board, and the list of boards does not have it.
 
 A shape-only answer carries `X-Sandbox-Simulated: shape-only`; the body stays as the schema says. Nothing else carries that header.
@@ -360,7 +370,7 @@ curl -si -X POST http://localhost:4010/api/v1/kanban-settings -H "Authorization:
 
 ```bash
 curl -s http://localhost:4010/_sandbox/operations | jq '.meta'
-# {"total": 253, "stateful": 88, "shape_only": 165, "closed": 0}
+# {"total": 253, "stateful": 90, "shape_only": 163, "closed": 0}
 curl -s http://localhost:4010/_sandbox/operations | jq -r '.data[] | select(.simulated == "shape-only") | "\(.method) \(.path)"'
 ```
 
@@ -397,6 +407,7 @@ curl -s http://localhost:4010/api/v1/contacts/ctc_Sandbox0Contacto0000000/messag
 
 - **Queued is not sent.** Then, at 1, 3 and 6 seconds (configurable), the message moves to `sent`, `delivered` and `read`, and every change arrives through `message.status_changed` with the same `message_id`, `previous_status` (`null` on the first one) and your `client_reference`. `queued` never appears in the event.
 - The current status is read with `GET /api/v1/contacts/{contact}/messages/{message}` (the same object) and in the history `GET /api/v1/contacts/{contactId}/messages`.
+- **Creating a template** (`POST /api/v1/templates`) follows conversations' rules, all at once: `device_id` is required (`422` on `device_id`; a number that is not of the key's workspace, `422 {"error": "validation_failed", "message": "Device not found", "error_code": "device_not_found"}`), `file` unless `type` is `text`, and **for every `{{n}}` of `body`, a field and a sample in `params`**, which is an object: `{"body": {"1": "{name}"}, "samples": {"body": {"1": "Lucía"}}}`. Without them it is a `422` on `body` («Falta elegir el campo de {{1}}.», «Falta el valor de ejemplo de {{1}}. …») and nothing is created; a list of texts (`["Lucía"]`, the shape the published spec shows) declares fields without samples and gets the same `422`. A valid one answers **`201`** with the template `PENDING` and `params` as stored; on an official number it is `APPROVED` after `--template-approval` seconds (`template.status_changed`), on a QR number it ends `REJECTED` right away with the observation «El dispositivo no tiene WABA ID configurado.» and no event, as conversations' job leaves it. `PUT /api/v1/templates/{template}` checks `file` and `params` the same way. A name with anything but lower-case letters, digits and `_` is refused at once (in production Meta refuses it after the `201`).
 - **A template created in Meta that does not appear in `GET /api/v1/templates`:** bring it with `POST /api/v1/devices/{device}/templates` (official numbers only, conversations v1.19.37) and list again. In the sandbox nothing goes to Meta: an official number answers `202 {"status": "completed"}`, a QR one `422 number_not_connected_to_meta`, and a number that is not of the key's workspace `404`.
 - The same goes for `POST /api/v1/message/send-message` (`{message}`), templates (`POST /api/v1/devices/{device}/templates/{template}/send-template`, `{message}`), forms (`POST /api/v1/contacts/{contact}/message/form`, `{message}`), cards (`{messages: [...]}`, one per card) and the forward (one item per destination, with its `message`, or `status: "blocked"` and `message: null`).
 - `client_reference` is optional: 1 to 64 visible ASCII characters, no spaces. If it does not fit, `422 errors.client_reference`.
@@ -546,7 +557,8 @@ starts the same way. To test it, turn it on with `--meta-connect`, `"numbers": {
 **Each number has** `external_reference` (your text, not unique) and `connection` (`qr`, `coexistence` or
 `dedicated`). The four `device.*` events carry both inside `device`, and `connect_link_id`: in `device.connected`, the
 link of that connection; in the other three, the link that connected the number last; `null` without one. `device.disconnected` brings `reason`: `qr_logged_out`, `meta_account_not_registered`,
-`shadow_ban_protection`, `provider_error`, `unknown` or `disconnected_by_user`. Like every event, they end with
+`shadow_ban_protection`, `disconnected_by_user` or `unknown`, accounts' closed list (`provider_error` is no longer one:
+it was documented and never emitted; it is still a link's `error_code`). Like every event, they end with
 `workspace_id`, the number's workspace.
 
 **The quota** counts phones: QR and Meta of the same phone count once. The sandbox account allows 5 and the two
@@ -667,6 +679,7 @@ These routes take no key: they belong to the sandbox, not to the API.
 | Route | What it simulates |
 |---|---|
 | `POST /_sandbox/inbound/message` | A contact writes to you: `{"phone": "5491100000000", "device_id": "dev_Sandbox0Oficial00000000", "text": "Hola"}` (or `contact_id`; optional `name`, `type`, `file` and `occurred_at`). If the phone is new it creates the contact (`contact.created`); then it emits `message.received` and opens the 24-hour window of that number. |
+| `POST /_sandbox/inbound` (or `…/inbound/message`) with `reply` | The contact **taps a button** of a message you sent: `{"reply": {"to_message_id": "msg_…", "option_id": "humano"}}`. On a question sent with `options` it is `message.received` with `type: "interactive"`; on a template with `QUICK_REPLY` buttons (`option_id` is the button's text), `type: "template_button_reply"`. `text` is the label tapped (cut to 20 characters for buttons and 24 for a list, as WhatsApp shows it); the option's `id` is not in the event, as in production. The contact and the number are the message's. |
 | `POST /_sandbox/groups`, `GET /_sandbox/groups` | A group of a connected QR number, in the number's workspace: `{"device_id": "dev_Ac7Ku7iIZDXJTjdCu0UB1mX", "name": "Clientes", "participants": [{"phone": "5491155550000", "name": "Ana"}]}`. In the account unless `"imported": false` (only on WhatsApp, to import); the number is its admin unless `"admin": false`. |
 | `POST /_sandbox/groups/participant-joined`, `…/participant-left` | Someone joins or leaves a group: `{"group_id": "grp_Sandbox0Grupo0000000000", "participant": {"phone": "…", "name": "…"}}` (or `"uid"`; the example group without either). The group's participants change and the event goes to its workspace. A `group` the sandbox does not have (`{"group": {"uid": "…@g.us", "name": "…"}}`) goes out from the catalog's example. |
 | `POST /_sandbox/forms/complete` | The contact completes a sent form: emits `whatsapp_form.completed` (see [WhatsApp forms](#whatsapp-forms)). |
@@ -675,7 +688,7 @@ These routes take no key: they belong to the sandbox, not to the API.
 | `POST /_sandbox/devices/{id}/disconnect`, `…/connect` | The number disconnects (`{"reason": "disconnected_by_user"}`, any of the list; `qr_logged_out` for QR and `unknown` for official ones by default) or connects, which is the scan of a QR (`{"number": "5491155550101"}`, a fake one otherwise): `device.disconnected` and `device.connected`. Disconnected, sends answer `422 device_unavailable`. |
 | `POST /_sandbox/devices/{id}/health` | The health of an official number changes: `{"state": "limited"}` (`available`, `limited`, `blocked`, `unknown`) emits `device.health_changed`, only if it changed. |
 | `POST /_sandbox/numbers`, `GET /_sandbox/numbers` | The quota of the account: `{"limit": 3, "included": true, "trial": false, "meta_connect": true, "links_per_minute": 10}` (`meta_connect` turns the Meta sign-up on or off). `GET` also says how many places are in use and which QR numbers are pending. |
-| `POST /_sandbox/templates/{id}/status` | Meta approves or rejects a template: `{"status": "REJECTED", "reason": "…"}` emits `template.status_changed`. |
+| `POST /_sandbox/templates/{id}/status` | Meta approves or rejects a template: `{"status": "REJECTED", "reason": "…"}` emits `template.status_changed` with `reason: null`, as production sends a review of Meta (it only carries a reason for a rejection reported when the template is created); the reason stays in the template's `observation`. |
 | `POST /_sandbox/events/{type}` | Any event of the catalog, with its example; what you send in `{"data": {…}}` overrides it, and `{"workspace_id": 2}` sends it to that workspace (the default one otherwise). `GET /_sandbox/events` lists them. The example is the one of the catalog, the spec's. |
 | `POST /_sandbox/window` | Opens or closes the window by hand: `{"contact_id": "ctc_Sandbox0Contacto0000000", "device_id": "dev_Sandbox0Oficial00000000", "open": false}`. |
 | `POST /_sandbox/workspaces`, `GET /_sandbox/workspaces` | A [workspace](#workspaces) with a key that only sees it: `{"name": "Cliente B"}` answers `201 {workspace, key}`. `POST /_sandbox/keys` with `{"workspace_id": 2}` mints another key (of the default workspace without `workspace_id`); with `"permissions": [...]` it has only those (the sandbox checks just `communities:operate`, to import a group). |
@@ -764,6 +777,7 @@ And at `http://localhost:4010/_sandbox` you see each request and each delivery w
 - **The state is memory only:** it is lost when the process stops or with `POST /_sandbox/reset`. So your receiver does not lose the secret, put the subscription in the configuration file.
 - **The shape-only routes** answer the shape of the spec, always the same: it does not match your data, a write keeps nothing and no event goes out. See [With state or shape only](#with-state-or-shape-only).
 - **The validation messages** are Laravel's in Spanish, built from the schema: they may not match the API's word for word (decide by the HTTP status and by `error`, not by `message`).
+- **The filters of `GET /api/v1/conversations`** are simpler than production's: there `favorites`, `ownContacts` and `ownAndUnassigned` filter whenever they are present (`favorites=0` too) and `unreadMessages=0` does not filter, `perName` also searches the phone, and `contactId` finds a contact without messages; here `favorites=0` and `unreadMessages=0` take the other side, `perName` is the name only and a contact without messages is not a conversation. A template's name is not checked for being unique in its WhatsApp Business account, and editing an approved template does not send it back to `PENDING`.
 - **Webhook URLs** may be `http` and local, without the real API's protection against internal destinations (try `--require-https`). Do not expose the sandbox to the internet: the `/_sandbox` routes take no key and the sandbox `POST`s to any URL subscribed to it.
 - **The event catalog** is what the spec documents (`generated/catalog.json`, transcribed by `npm run generate`): fields of production's catalog the spec does not document, such as `is_critical` and `label`, are not there.
 - **Groups have state only for the number's live list, the list, one group, the import and the send of a message** (the action is `completed` after the delays of `sent` and `delivered`; it never fails on its own). The live list is never cached (production keeps it a minute for a key). The other group actions, the campaigns and the rest of the groups' routes answer shape only, and their events are fired from `/_sandbox`. There are no official groups (the account is not in their beta), no `too_many_pending_actions` and no rate limit of 30 sends per minute.
@@ -792,6 +806,8 @@ What `spec/pending-sandbox.json` still corrects:
 | `data.workspace_id` in every event (accounts v1.5.97, Q35) | The events of the spec do not carry it yet |
 | `null` in `allowed_connection_types` and `provision_us_number` of `POST /api/v1/connect-links` | A correction: accounts' rules depend on `type`, and Laravel's `prohibited` lets `null` through |
 | The ids of the events and shapes of the SDK's layer (`idPatches`: `device_id`, `contact.id`, `message_id`, `connect_link_id`, the form's…) as opaque ids | That layer was written before the portal's v0.7.0 and still types them as numbers; the entries apply only while it does, and the generator reports them once it is updated |
+| `device_id` and `params` (an object) in the body of `POST /api/v1/templates` and `PUT /api/v1/templates/{template}` | The spec has no `device_id` there and types `params` as a list of texts, which production refuses (`TemplateParamsComplete`) |
+| `reason` of `device.disconnected` without `provider_error` | accounts no longer emits it (13-11); the SDK's layer still lists it |
 
 ## Regenerating
 

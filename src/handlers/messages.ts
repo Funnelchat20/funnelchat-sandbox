@@ -15,6 +15,7 @@ import { ApiError, fieldError, notFound, objectNotFound, RawApiError, validation
 import { cursorPaginate, paginate } from '../http/paginate.js';
 import { resolveFile, type UnsupportedStyle } from '../messaging/files.js';
 import { createMessage, scheduleLifecycle } from '../messaging/lifecycle.js';
+import { canonicalParams, templateFileErrors, templateParamsErrors } from '../messaging/template-params.js';
 import {
   checkSend,
   contentHash,
@@ -56,7 +57,20 @@ interface Outgoing {
   text: string | null;
   file: string | null;
   templateId?: string | null;
+  options?: { id: string; label: string }[] | null;
   hash: string;
+}
+
+/**
+ * conversations `InteractiveMenu::normalize()`: the choices as WhatsApp shows them, the label trimmed and cut to 20
+ * characters for buttons (1 to 3) or 24 for a list (4 to 10). What the contact taps comes back with that label.
+ */
+function menuOptions(options: unknown[]): { id: string; label: string }[] {
+  const max = options.length <= 3 ? 20 : 24;
+  return options.map((option) => {
+    const o = (typeof option === 'object' && option !== null ? option : {}) as Record<string, unknown>;
+    return { id: String(o.id ?? ''), label: [...String(o.label ?? '').trim()].slice(0, max).join('') };
+  });
 }
 
 export interface SendInput {
@@ -103,6 +117,7 @@ export function send(ctx: HandlerContext, input: SendInput): Message[] {
       file: item.file,
       clientReference: input.clientReference,
       templateId: item.templateId ?? null,
+      options: item.options ?? null,
       viaApi: true,
       status: 'queued',
     });
@@ -169,7 +184,7 @@ function sendToContact(ctx: HandlerContext, given: Contact | null, style: Unsupp
     device,
     contact,
     profile: 'free_form',
-    items: [{ type, text, file: file?.file ?? null, hash: contentHash('message', text, file?.file ?? null, options) }],
+    items: [{ type, text, file: file?.file ?? null, options: options ? menuOptions(options) : null, hash: contentHash('message', text, file?.file ?? null, options) }],
     // `recipient_mismatch` (`ApiRecipientBinding`): a contact found by the body's phone is it by construction.
     phone: given === null ? undefined : b.phone,
     whatsappId: given === null ? undefined : b.whatsapp_id,
@@ -194,6 +209,20 @@ function renderTemplate(template: Template, variables: unknown): string {
     );
   }
   return template.body.replace(PLACEHOLDER, (_, n: string) => String(values[Number(n) - 1]));
+}
+
+/**
+ * `StoreMessageTemplateRequest::resolveOwnedDeviceOrFail()`, before the rules: `device_id` is required, and a number
+ * outside the account or the key's workspace answers `422 device_not_found` (conversations' `{message, error_code}`,
+ * with the `error` the gate adds).
+ */
+function templateDevice(ctx: HandlerContext, id: unknown): Device {
+  if (id === undefined || id === null || id === '') throw fieldError('device_id', 'El campo device id es requerido.');
+  const device = ctx.app.store.devices.get(asId(id));
+  if (!device || !sees(ctx.workspace, device.workspaceId)) {
+    throw new RawApiError(422, { error: 'validation_failed', message: 'Device not found', error_code: 'device_not_found' });
+  }
+  return device;
 }
 
 function getTemplate(ctx: HandlerContext, id: unknown): Template {
@@ -390,12 +419,18 @@ export const messageHandlers: HandlerTable = {
     return ok(paginate(list, listContext(ctx), (t) => templateResource(t, q.deviceId === undefined ? undefined : asId(q.deviceId))));
   },
 
+  // conversations `StoreMessageTemplateRequest`: the number first (`device_id`, required, a number of the key's
+  // workspace), then the rules, every one at once: `file` unless `type` is `text`, and a field and a sample for every
+  // `{{n}}` of `body` in `params` (`TemplateParamsComplete`). `201` with the template, `PENDING`.
   'POST /api/v1/templates': (ctx) => {
     const b = body(ctx);
     const { app } = ctx;
+    const device = templateDevice(ctx, b.device_id);
+    const errors = { ...templateFileErrors(b.type, b.file), ...templateParamsErrors(b.body, b.params) };
+    if (Object.keys(errors).length) throw validationFailed(errors);
+    // Not a rule of conversations: Meta refuses such a name after the 201 (the template ends REJECTED). The sandbox
+    // refuses it at once.
     if (!/^[a-z0-9_]+$/.test(String(b.name))) throw fieldError('name', 'El nombre solo puede tener minúsculas, números y guiones bajos.');
-    const device = [...app.store.devices.values()].find((d) => d.kind === 'cloud' && sees(ctx.workspace, d.workspaceId));
-    if (!device) throw fieldError('name', 'La cuenta no tiene un número oficial para registrar plantillas.');
     const now = new Date();
     const id = app.store.ids.template.next();
     const template: Template = {
@@ -412,23 +447,34 @@ export const messageHandlers: HandlerTable = {
       languageCode: String(b.language_code),
       deviceId: device.id,
       file: typeof b.file === 'string' ? b.file : null,
-      params: Array.isArray(b.params) ? b.params.map(String) : null,
+      params: canonicalParams(b.params),
       buttons: Array.isArray(b.buttons) ? (b.buttons as Template['buttons']) : null,
       rejectionReason: null,
       createdAt: now,
       updatedAt: now,
     };
     app.store.templates.set(id, template);
+    const generation = app.generation;
+    if (device.kind !== 'cloud') {
+      // `TemplateCreateRequestJob`: a number without a WhatsApp Business account (a QR one) ends the template
+      // REJECTED right after the 201, with this observation and without `template.status_changed`.
+      app.scheduler.after(0, () => {
+        if (generation !== app.generation || app.store.templates.get(id) !== template || template.status !== 'PENDING') return;
+        template.status = 'REJECTED';
+        template.rejectionReason = 'El dispositivo no tiene WABA ID configurado.';
+        template.updatedAt = new Date();
+      });
+      return ok(templateResource(template), 201);
+    }
     const seconds = app.config.templateApprovalSeconds;
     if (seconds !== null) {
-      const generation = app.generation;
       app.scheduler.after(seconds * 1000, () => {
         if (generation === app.generation && app.store.templates.get(id) === template && template.status === 'PENDING') {
           setTemplateStatus(app, template, 'APPROVED', null);
         }
       });
     }
-    return ok(templateResource(template));
+    return ok(templateResource(template), 201);
   },
 
   'GET /api/v1/templates/{template}': (ctx) => ok(templateResource(getTemplate(ctx, ctx.path.template))),
@@ -436,13 +482,16 @@ export const messageHandlers: HandlerTable = {
   'PUT /api/v1/templates/{template}': (ctx) => {
     const template = getTemplate(ctx, ctx.path.template);
     const b = body(ctx);
+    // `UpdateMessageTemplateRequest`: the same `file` and `params` rules as creating it, then the number.
+    const errors = { ...templateFileErrors(b.type, b.file), ...templateParamsErrors(b.body, b.params) };
+    if (Object.keys(errors).length) throw validationFailed(errors);
     getDevice(ctx.app, b.device_id);
     template.category = String(b.category);
     template.type = String(b.type);
     template.body = String(b.body);
     if ('header' in b) template.header = typeof b.header === 'string' ? b.header : null;
     if ('footer' in b) template.footer = typeof b.footer === 'string' ? b.footer : null;
-    if ('params' in b) template.params = Array.isArray(b.params) ? b.params.map(String) : null;
+    if ('params' in b) template.params = canonicalParams(b.params);
     if ('buttons' in b) template.buttons = Array.isArray(b.buttons) ? (b.buttons as Template['buttons']) : null;
     template.updatedAt = new Date();
     return noContent();
@@ -477,7 +526,12 @@ export const messageHandlers: HandlerTable = {
   },
 };
 
-/** Changes a template's status and emits `template.status_changed`. */
+/**
+ * Meta's review changes a template's status (conversations `TemplateStatusJob`) and emits `template.status_changed`.
+ * The event's `reason` is `null`, as production sends it for a review: it only carries one for a rejection reported
+ * when the template was created (`TemplateStatusObservationJob`), which the sandbox does not have. The reason given
+ * here stays in the template's `observation`.
+ */
 export function setTemplateStatus(app: SandboxApp, template: Template, status: Template['status'], reason: string | null): void {
   const previous = template.status;
   if (previous === status) return;
@@ -486,7 +540,7 @@ export function setTemplateStatus(app: SandboxApp, template: Template, status: T
   template.updatedAt = new Date();
   app.webhooks.emit(
     'template.status_changed',
-    { template: { id: template.id, uid: template.uid, name: template.name, category: template.category }, previous_status: previous, status, reason },
+    { template: { id: template.id, uid: template.uid, name: template.name, category: template.category }, previous_status: previous, status, reason: null },
     { workspaceId: template.workspaceId },
   );
 }

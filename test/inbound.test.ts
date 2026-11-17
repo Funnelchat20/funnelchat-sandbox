@@ -57,7 +57,9 @@ describe('POST /_sandbox/inbound/message', () => {
     expect(history.body.data[0]).toMatchObject({ own: 0, text: 'Hola', status: 1 });
     expect((await api.call('GET', '/api/v1/conversations/count/unread')).body).toEqual({ count: 1 });
     const conversations = await api.call('GET', '/api/v1/conversations');
-    expect(conversations.body.data.map((c: { id: string }) => c.id)).toEqual([CONTACT]);
+    // A row is the contact (`contact_id`) with its last message (`id`).
+    expect(conversations.body.data.map((c: { contact_id: string }) => c.contact_id)).toEqual([CONTACT]);
+    expect(conversations.body.data[0].id).toBe(history.body.data[0].id);
     expect((await api.call('POST', '/api/v1/conversations/mark-all-read')).body.updated_count).toBe(1);
   });
 
@@ -131,7 +133,16 @@ describe('other simulated events', () => {
     const api = await startSandbox({ templateApprovalSeconds: 0.05 });
     const receiver = await startReceiver();
     await subscribe(api, receiver.url, ['template.status_changed']);
-    const created = await api.call('POST', '/api/v1/templates', { name: 'promo_octubre', language_code: 'es', category: 'MARKETING', type: 'text', body: 'Hola {{1}}' });
+    const created = await api.call('POST', '/api/v1/templates', {
+      device_id: OFFICIAL,
+      name: 'promo_octubre',
+      language_code: 'es',
+      category: 'MARKETING',
+      type: 'text',
+      body: 'Hola {{1}}',
+      params: { body: { '1': '{name}' }, samples: { body: { '1': 'Lucía' } } },
+    });
+    expect(created.status).toBe(201);
     expect(created.body.status).toBe('PENDING');
     const [d] = await receiver.waitFor(1);
     expect(d!.json.data).toMatchObject({ template: { id: created.body.id, name: 'promo_octubre' }, previous_status: 'PENDING', status: 'APPROVED', reason: null });

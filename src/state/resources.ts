@@ -1,6 +1,7 @@
 /**
  * The public shape of each object, as the domains' Laravel resources write them (keys, order, date formats).
  */
+import type { TemplateParams } from '../messaging/template-params.js';
 import { iso8601, isoSeconds, laravelJson, sqlDateTime } from '../util.js';
 import type { ConnectLink, Connection, Contact, CustomField, Delivery, Device, Message, Store, Subscription, Tag, Template } from './store.js';
 
@@ -22,6 +23,7 @@ const MESSAGE_TYPE_INT: Record<string, number> = {
   button: 15,
   template: 16,
   option_list: 18,
+  template_button_reply: 19,
 };
 
 /** MessageStatusEnum of conversations: the number the history shows. */
@@ -104,6 +106,81 @@ export function contactResource(store: Store, contact: Contact, mode: 'list' | '
   };
 }
 
+/**
+ * One row of `GET /api/v1/conversations` (conversations `ConversationController::index`): not a contact resource but
+ * the raw row the listing builds, the contact's columns (`contact_*`, `unread_messages`, `adviser_id`, `last_device_id`…)
+ * plus the computed ones (`is_mac_inactive`, `has_mac`, `tag_ids`, `lead_score`, `manually_unread`,
+ * `meta_window_inbounds`) and then the columns of the last message: **`id` is the last message's (`msg_…`), the
+ * contact is `contact_id`**. Database values as they are: `0`/`1`, `Y-m-d H:i:s` dates and `null`, not `''`.
+ * `country_code` is `null` (the sandbox does not derive it from the phone) and `lead_score` too (no lead scoring).
+ */
+export function conversationRow(store: Store, contact: Contact): Record<string, unknown> {
+  const last = store.contactMessages(contact.id).reverse()[0];
+  const device = last?.deviceId ? store.devices.get(last.deviceId) : undefined;
+  const at = (date: Date | undefined): string | null => (date ? sqlDateTime(date) : null);
+  const reached = (status: Message['status'], ...after: Message['status'][]): boolean => status !== null && after.includes(status);
+  // `contact_meta_window_inbounds`: the last inbound per official number, the 24-hour window's start.
+  const inbounds = [...store.devices.values()]
+    .filter((d) => d.kind === 'cloud')
+    .flatMap((d) => {
+      const date = store.lastInbound.get(`${contact.id}:${d.id}`);
+      return date ? [{ device_id: d.id, last_inbound_at: iso8601(date) }] : [];
+    });
+  return {
+    contact_id: contact.id,
+    contact_name: contact.name,
+    contact_phone: contact.phone,
+    contact_whatsapp_id: contact.whatsappId,
+    contact_email: contact.email,
+    contact_image: contact.image,
+    country_code: null,
+    unread_messages: contact.unreadMessages,
+    contact_active_conversation: contact.activeConversation ? 1 : 0,
+    contact_favorite: contact.favorite ? 1 : 0,
+    contact_custom_fields: null,
+    contact_notes: contact.notes,
+    adviser_id: contact.adviserId,
+    user_id: ACCOUNT_USER_ID,
+    last_message_time: at(last?.createdAt),
+    paused_at: at(contact.pausedAt ?? undefined),
+    last_device_id: last?.deviceId ?? contact.deviceId,
+    contact_whatsapp_username: null,
+    // MAC_PER_CONTACT_ENFORCEMENT is on in production since 21-10.
+    is_mac_inactive: store.mac.inactiveContacts.has(contact.id),
+    mac_date: null,
+    has_mac: 0,
+    tag_ids: [...contact.tags.keys()],
+    lead_score: null,
+    manually_unread: contact.manuallyUnread,
+    meta_window_inbounds: inbounds,
+    id: last?.id ?? null,
+    uid: last?.uid ?? null,
+    text: last ? last.text : null,
+    file: last ? last.file : null,
+    own: last ? (last.own ? 1 : 0) : null,
+    status: last ? statusInt(last, device) : null,
+    error_code: last?.error?.code ?? null,
+    chat_id: last && contact.phone ? `${contact.phone}@c.us` : null,
+    time: at(last?.createdAt),
+    info: null,
+    delivered_at: last && reached(last.status, 'delivered', 'read') ? at(last.updatedAt) : null,
+    viewed_at: last && reached(last.status, 'read') ? at(last.updatedAt) : null,
+    type: last ? (MESSAGE_TYPE_INT[last.type] ?? 0) : null,
+    content: null,
+    origin: last ? (last.own ? 1 : null) : null,
+    device_id: last?.deviceId ?? null,
+    group_id: null,
+    created_at: at(last?.createdAt),
+    updated_at: at(last?.updatedAt),
+    origin_id: null,
+    reference_message_uid: null,
+    forwarded: last ? 0 : null,
+    deleted_at: null,
+    deleted_scope: null,
+    file_original_name: null,
+  };
+}
+
 export function contactCount(store: Store, predicate: (c: Contact) => boolean): number {
   let n = 0;
   for (const contact of store.contacts.values()) if (predicate(contact)) n++;
@@ -160,6 +237,12 @@ export function contactCustomFieldResource(
   };
 }
 
+/** The canonical `params` (`TemplateParams`) as PHP writes them: a map without keys is `[]`. */
+function phpParams(params: TemplateParams): Record<string, unknown> {
+  const map = (m: Record<string, string>): Record<string, string> | [] => (Object.keys(m).length ? { ...m } : []);
+  return { body: map(params.body), samples: { body: map(params.samples.body) } };
+}
+
 export function templateResource(template: Template, currentDeviceId?: string): Record<string, unknown> {
   return {
     id: template.id,
@@ -176,7 +259,7 @@ export function templateResource(template: Template, currentDeviceId?: string): 
     upload_session_id: '',
     header_handle: '',
     file: template.file ?? '',
-    params: template.params ?? [],
+    params: phpParams(template.params),
     buttons: template.buttons ?? [],
     user_id: ACCOUNT_USER_ID,
     device_id: template.deviceId,

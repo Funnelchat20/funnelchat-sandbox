@@ -14721,7 +14721,8 @@
     },
     "x-fc-permission": "conversations:write",
     "x-fc-proposito": "Sirve para crear una plantilla de WhatsApp (encabezado, cuerpo con variables, pie y botones) desde tu sistema, sin pasar por el panel: queda en la cuenta de WhatsApp Business del número oficial que eliges (`device_id`) y Meta la revisa.",
-    "x-fc-domain": "conversations"
+    "x-fc-domain": "conversations",
+    "x-fc-pending": "conversations-template-params"
    }
   },
   "/api/v1/templates/{template}": {
@@ -14826,7 +14827,8 @@
     },
     "x-fc-permission": "conversations:write",
     "x-fc-proposito": "Úsalo para editar el contenido de una plantilla existente: categoría, encabezado, cuerpo, variables, pie o botones.",
-    "x-fc-domain": "conversations"
+    "x-fc-domain": "conversations",
+    "x-fc-pending": "conversations-template-params"
    },
    "get": {
     "operationId": "messageTemplate.template",
@@ -41991,10 +41993,11 @@
              "qr_logged_out",
              "meta_account_not_registered",
              "shadow_ban_protection",
-             "provider_error",
-             "unknown",
-             "disconnected_by_user"
-            ]
+             "disconnected_by_user",
+             "unknown"
+            ],
+            "description": "Por qué se desconectó: `qr_logged_out` (se cerró la sesión de un número por QR), `meta_account_not_registered`, `shadow_ban_protection` (Funnelchat lo desconectó para protegerlo), `disconnected_by_user` (alguien de la cuenta lo desconectó) o `unknown`.",
+            "x-fc-pending": "accounts-disconnect-reasons"
            },
            "connect_link_id": {
             "type": [
@@ -53507,12 +53510,54 @@
      },
      "params": {
       "type": [
+       "object",
        "array",
        "null"
       ],
-      "items": {
-       "type": "string"
-      }
+      "description": "Si `body` tiene `{{n}}`, es obligatorio: para cada variable, el campo del contacto que la llena (`body`) y un valor de ejemplo para la revisión de Meta (`samples.body`), con la variable sin llaves como clave. Por ejemplo `{\"body\": {\"1\": \"{name}\"}, \"samples\": {\"body\": {\"1\": \"Lucía\"}}}`. Sin ellos la API responde 422 en `body`.",
+      "properties": {
+       "body": {
+        "type": [
+         "object",
+         "array"
+        ],
+        "additionalProperties": {
+         "type": [
+          "string",
+          "null"
+         ]
+        }
+       },
+       "samples": {
+        "type": "object",
+        "properties": {
+         "body": {
+          "type": [
+           "object",
+           "array"
+          ],
+          "additionalProperties": {
+           "type": [
+            "string",
+            "null"
+           ]
+          }
+         }
+        }
+       }
+      },
+      "examples": [
+       {
+        "body": {
+         "1": "{name}"
+        },
+        "samples": {
+         "body": {
+          "1": "Lucía"
+         }
+        }
+       }
+      ]
      },
      "footer": {
       "type": [
@@ -53549,6 +53594,14 @@
        }
       },
       "maxItems": 3
+     },
+     "device_id": {
+      "type": "string",
+      "description": "El número (oficial) donde se registra la plantilla. Obligatorio: sin él, o con uno que no es de tu cuenta, la API responde 422. Id opaco: un texto que empieza con `dev_`. Se usa tal como llega; no se arma ni se interpreta.",
+      "pattern": "^dev_[A-Za-z0-9]{23}$",
+      "examples": [
+       "dev_Ac7Ku7iIZDXJTjdCu0UB1mX"
+      ]
      }
     },
     "required": [
@@ -54606,7 +54659,7 @@
     "properties": {
      "device_id": {
       "type": "string",
-      "description": "Id opaco: un texto que empieza con `dev_`. Se usa tal como llega; no se arma ni se interpreta.",
+      "description": "El número (oficial) donde se registra la plantilla. Obligatorio: sin él, o con uno que no es de tu cuenta, la API responde 422. Id opaco: un texto que empieza con `dev_`. Se usa tal como llega; no se arma ni se interpreta.",
       "pattern": "^dev_[A-Za-z0-9]{23}$",
       "examples": [
        "dev_Ac7Ku7iIZDXJTjdCu0UB1mX"
@@ -54645,12 +54698,54 @@
      },
      "params": {
       "type": [
+       "object",
        "array",
        "null"
       ],
-      "items": {
-       "type": "string"
-      }
+      "description": "Si `body` tiene `{{n}}`, es obligatorio: para cada variable, el campo del contacto que la llena (`body`) y un valor de ejemplo para la revisión de Meta (`samples.body`), con la variable sin llaves como clave. Por ejemplo `{\"body\": {\"1\": \"{name}\"}, \"samples\": {\"body\": {\"1\": \"Lucía\"}}}`. Sin ellos la API responde 422 en `body`.",
+      "properties": {
+       "body": {
+        "type": [
+         "object",
+         "array"
+        ],
+        "additionalProperties": {
+         "type": [
+          "string",
+          "null"
+         ]
+        }
+       },
+       "samples": {
+        "type": "object",
+        "properties": {
+         "body": {
+          "type": [
+           "object",
+           "array"
+          ],
+          "additionalProperties": {
+           "type": [
+            "string",
+            "null"
+           ]
+          }
+         }
+        }
+       }
+      },
+      "examples": [
+       {
+        "body": {
+         "1": "{name}"
+        },
+        "samples": {
+         "body": {
+          "1": "Lucía"
+         }
+        }
+       }
+      ]
      },
      "footer": {
       "type": [
@@ -56420,7 +56515,7 @@
   "inputs": {
    "spec/funnelchat.json": "fadcd73731cba99d0b49adfec7b5799d7318fe99944c88282a444362d869e576",
    "spec/pending.json": "665399018a4a5193038efd4471c4e8655b2fd05400eb9bd9b621627148f8be47",
-   "spec/pending-sandbox.json": "d7852e85e4b11a6f2463ba830d663edae8b558372d58a4b0807d2c48e5b79bdd"
+   "spec/pending-sandbox.json": "17a96341a41202c5164ca06d0ffed276c0a4f035abf0d1e45f2a96b7be33648c"
   },
   "snapshot_commit": null,
   "pending_commit": "bde867919d1da0fc9412bad7e67688c3cd2e6a9b",
@@ -56454,7 +56549,10 @@
    "webhook message.status_changed [pending.json]",
    "webhook whatsapp_form.completed [pending.json]",
    "POST /api/v1/connect-links (cuerpo: allowed_connection_types, provision_us_number) [pending-sandbox.json]",
+   "POST /api/v1/templates (cuerpo: device_id, params) [pending-sandbox.json]",
+   "PUT /api/v1/templates/{template} (cuerpo: device_id, params) [pending-sandbox.json]",
    "webhook * (data: workspace_id) [pending-sandbox.json]",
+   "webhook device.disconnected (data: reason) [pending-sandbox.json]",
    "webhook device.connected (ids: connect_link_id) [pending-sandbox.json]",
    "webhook device.disconnected (ids: connect_link_id) [pending-sandbox.json]",
    "webhook device.deleted (ids: connect_link_id) [pending-sandbox.json]",

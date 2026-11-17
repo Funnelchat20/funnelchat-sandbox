@@ -13,7 +13,9 @@
     },
     "sources": {
       "accounts-workspaces": "accounts v1.5.97, en producción desde el 04-11 (platform-gate v0.9.1): cada API key es de un workspace y solo ve y crea ahí; un evento llega solo a las suscripciones de su workspace y todo aviso público lleva `data.workspace_id` = el workspace al que se ruteó, como última clave de `data`. Los ejemplos del catálogo de accounts usan 37. conversations v1.19.7 y communities v2.35.5 confinan sus rutas igual.",
-      "accounts-prohibited-null": "accounts v1.5.97, en producción desde el 04-11: las reglas de crear un enlace de alta cambian según `type` (`prohibited` con `qr` para `allowed_connection_types` y `provision_us_number`), y `prohibited` de Laravel deja pasar `null`, `\"\"` y `[]`. El esquema publicado no expresa la condición y los declara sin `null`: el sandbox los acepta con `null`, como accounts, y aplica las reglas por `type` en el handler."
+      "accounts-prohibited-null": "accounts v1.5.97, en producción desde el 04-11: las reglas de crear un enlace de alta cambian según `type` (`prohibited` con `qr` para `allowed_connection_types` y `provision_us_number`), y `prohibited` de Laravel deja pasar `null`, `\"\"` y `[]`. El esquema publicado no expresa la condición y los declara sin `null`: el sandbox los acepta con `null`, como accounts, y aplica las reglas por `type` en el handler.",
+      "conversations-template-params": "conversations en producción (origin/main d9823025e8, 17-11): crear o editar una plantilla exige `device_id` (`StoreMessageTemplateRequest`/`UpdateMessageTemplateRequest`, que la clave manda como id opaco `dev_`) y, si `body` tiene `{{n}}`, `params` con un campo y un ejemplo por variable (`TemplateParamsComplete`), en la forma canónica de `TemplateParams`: `{\"body\": {\"1\": \"{name}\"}, \"samples\": {\"body\": {\"1\": \"Lucía\"}}}`. La spec publicada no trae `device_id` en el cuerpo y tipa `params` como lista de textos, que producción lee como campos sin ejemplo y rechaza con 422. El sandbox acepta el objeto (y la lista, que la regla `array` de Laravel también deja pasar) y aplica las reglas en el handler.",
+      "accounts-disconnect-reasons": "accounts en producción (origin/main d9823025e8, 17-11, `DeviceWebhookEmitter::DISCONNECT_REASONS`): `reason` de `device.disconnected` es `qr_logged_out`, `meta_account_not_registered`, `shadow_ban_protection`, `disconnected_by_user` o `unknown`. `provider_error` se documentó y ningún sitio lo emitía: se quitó de la lista el 13-11. La capa del SDK todavía lo lista."
     }
   },
   "components": {
@@ -37,6 +39,33 @@
       },
       "exampleData": {
         "workspace_id": 37
+      }
+    },
+    {
+      "type": "device.disconnected",
+      "while": {
+        "/requestBody/content/application~1json/schema/properties/data/properties/reason/enum": [
+          "qr_logged_out",
+          "meta_account_not_registered",
+          "shadow_ban_protection",
+          "provider_error",
+          "unknown",
+          "disconnected_by_user"
+        ]
+      },
+      "x-fc-pending": "accounts-disconnect-reasons",
+      "dataProperties": {
+        "reason": {
+          "type": "string",
+          "enum": [
+            "qr_logged_out",
+            "meta_account_not_registered",
+            "shadow_ban_protection",
+            "disconnected_by_user",
+            "unknown"
+          ],
+          "description": "Por qué se desconectó: `qr_logged_out` (se cerró la sesión de un número por QR), `meta_account_not_registered`, `shadow_ban_protection` (Funnelchat lo desconectó para protegerlo), `disconnected_by_user` (alguien de la cuenta lo desconectó) o `unknown`."
+        }
       }
     }
   ],
@@ -70,6 +99,140 @@
             "null"
           ],
           "description": "`type: meta` only: offer a US number of the Funnelchat pool."
+        }
+      }
+    },
+    {
+      "method": "post",
+      "path": "/api/v1/templates",
+      "x-fc-pending": "conversations-template-params",
+      "replace": true,
+      "requestBodyProperties": {
+        "device_id": {
+          "type": "string",
+          "description": "El número (oficial) donde se registra la plantilla. Obligatorio: sin él, o con uno que no es de tu cuenta, la API responde 422. Id opaco: un texto que empieza con `dev_`. Se usa tal como llega; no se arma ni se interpreta.",
+          "pattern": "^dev_[A-Za-z0-9]{23}$",
+          "examples": [
+            "dev_Ac7Ku7iIZDXJTjdCu0UB1mX"
+          ]
+        },
+        "params": {
+          "type": [
+            "object",
+            "array",
+            "null"
+          ],
+          "description": "Si `body` tiene `{{n}}`, es obligatorio: para cada variable, el campo del contacto que la llena (`body`) y un valor de ejemplo para la revisión de Meta (`samples.body`), con la variable sin llaves como clave. Por ejemplo `{\"body\": {\"1\": \"{name}\"}, \"samples\": {\"body\": {\"1\": \"Lucía\"}}}`. Sin ellos la API responde 422 en `body`.",
+          "properties": {
+            "body": {
+              "type": [
+                "object",
+                "array"
+              ],
+              "additionalProperties": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "samples": {
+              "type": "object",
+              "properties": {
+                "body": {
+                  "type": [
+                    "object",
+                    "array"
+                  ],
+                  "additionalProperties": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "examples": [
+            {
+              "body": {
+                "1": "{name}"
+              },
+              "samples": {
+                "body": {
+                  "1": "Lucía"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "method": "put",
+      "path": "/api/v1/templates/{template}",
+      "x-fc-pending": "conversations-template-params",
+      "replace": true,
+      "requestBodyProperties": {
+        "device_id": {
+          "type": "string",
+          "description": "El número (oficial) donde se registra la plantilla. Obligatorio: sin él, o con uno que no es de tu cuenta, la API responde 422. Id opaco: un texto que empieza con `dev_`. Se usa tal como llega; no se arma ni se interpreta.",
+          "pattern": "^dev_[A-Za-z0-9]{23}$",
+          "examples": [
+            "dev_Ac7Ku7iIZDXJTjdCu0UB1mX"
+          ]
+        },
+        "params": {
+          "type": [
+            "object",
+            "array",
+            "null"
+          ],
+          "description": "Si `body` tiene `{{n}}`, es obligatorio: para cada variable, el campo del contacto que la llena (`body`) y un valor de ejemplo para la revisión de Meta (`samples.body`), con la variable sin llaves como clave. Por ejemplo `{\"body\": {\"1\": \"{name}\"}, \"samples\": {\"body\": {\"1\": \"Lucía\"}}}`. Sin ellos la API responde 422 en `body`.",
+          "properties": {
+            "body": {
+              "type": [
+                "object",
+                "array"
+              ],
+              "additionalProperties": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "samples": {
+              "type": "object",
+              "properties": {
+                "body": {
+                  "type": [
+                    "object",
+                    "array"
+                  ],
+                  "additionalProperties": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "examples": [
+            {
+              "body": {
+                "1": "{name}"
+              },
+              "samples": {
+                "body": {
+                  "1": "Lucía"
+                }
+              }
+            }
+          ]
         }
       }
     }
