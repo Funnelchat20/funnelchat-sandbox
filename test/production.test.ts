@@ -60,7 +60,7 @@ describe('errors of the edge', () => {
 
 describe('the file of a send', () => {
   const send = (api: Awaited<ReturnType<typeof startSandbox>>, extra: Record<string, unknown>, path = `/api/v1/contacts/${CONTACT}/message`) =>
-    api.call('POST', path, { device_id: QR, contact_id: CONTACT, ...extra });
+    api.call('POST', path, { device_id: QR, contact_id: CONTACT, phone: '5491100000000', ...extra });
 
   it('infers the type from the extension like conversations', async () => {
     const api = await startSandbox({ rules: { antiblock: false } });
@@ -117,16 +117,16 @@ describe('the MAC of the account', () => {
     const api = await startSandbox();
     const other = (await api.call('POST', '/api/v1/contacts', { phone: '5491100000088', name: 'Activo' })).body.id;
     await api.call('POST', '/_sandbox/mac', { lockout: true, active_contact_ids: [other] });
-    const res = await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: QR, contact_id: CONTACT, text: 'Hola' });
+    const res = await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { phone: '5491100000000', device_id: QR, contact_id: CONTACT, text: 'Hola' });
     expect(res.status).toBe(429);
     expect(res.body).toEqual({ error: 'mac_lockout_24h', message: 'Tu cuenta está en bloqueo de 24h por agotamiento de MACs.' });
     expect(res.headers.get('retry-after')).toBeNull();
-    expect((await api.call('POST', `/api/v1/contacts/${other}/message`, { device_id: QR, contact_id: other, text: 'Hola' })).status).toBe(200);
-    const template = await api.call('POST', `/api/v1/devices/${OFFICIAL}/templates/${TEMPLATE}/send-template`, { phone: '5491100000000', contact_id: CONTACT, template_variables: { body: ['Lucía'] } });
+    expect((await api.call('POST', `/api/v1/contacts/${other}/message`, { device_id: QR, contact_id: other, phone: '5491100000088', text: 'Hola' })).status).toBe(200);
+    const template = await api.call('POST', `/api/v1/devices/${OFFICIAL}/templates/${TEMPLATE}/send-template`, { phone: '5491100000000', contact_id: CONTACT, template_variables: { body: { '1': 'Lucía' } } });
     expect(template.status).toBe(200);
 
     // The forward is not a 429: that destination comes back blocked.
-    const source = (await api.call('POST', `/api/v1/contacts/${other}/message`, { device_id: QR, contact_id: other, text: 'Reenvíame' })).body.message.id;
+    const source = (await api.call('POST', `/api/v1/contacts/${other}/message`, { device_id: QR, contact_id: other, phone: '5491100000088', text: 'Reenvíame' })).body.message.id;
     const forward = await api.call('POST', `/api/v1/contacts/${other}/messages/${source}/forward`, { targets: [{ contact_id: CONTACT, device_id: QR }, { contact_id: other, device_id: QR }] });
     expect(forward.status).toBe(200);
     expect(forward.body[0]).toEqual({ contact_id: CONTACT, mode: 'native', status: 'blocked', reason: 'mac_lockout_24h', message: null });
@@ -136,7 +136,7 @@ describe('the MAC of the account', () => {
   it('a contact inactive by MAC gets the same answer without a lockout', async () => {
     const api = await startSandbox();
     await api.call('POST', '/_sandbox/mac', { inactive_contact_ids: [CONTACT] });
-    expect((await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: QR, contact_id: CONTACT, text: 'Hola' })).body.error).toBe('mac_lockout_24h');
+    expect((await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { phone: '5491100000000', device_id: QR, contact_id: CONTACT, text: 'Hola' })).body.error).toBe('mac_lockout_24h');
     expect((await api.call('GET', '/_sandbox/mac')).body).toEqual({ lockout: false, active_contact_ids: [], inactive_contact_ids: [CONTACT] });
   });
 });
@@ -151,10 +151,10 @@ describe('the bodies of each route', () => {
       status: 422,
       body: { error: 'template_waba_mismatch', message: 'La plantilla no pertenece al número actual' },
     });
-    const missing = await api.call('POST', `/api/v1/devices/${OFFICIAL}/templates/${TEMPLATE}/send-template`, { phone: '5491100000000', contact_id: CONTACT, template_variables: { body: [] } });
+    const missing = await api.call('POST', `/api/v1/devices/${OFFICIAL}/templates/${TEMPLATE}/send-template`, { phone: '5491100000000', contact_id: CONTACT, template_variables: { body: {} } });
     expect(missing.body).toMatchObject({ error: 'template_unresolved_placeholder', placeholders: ['{{1}}'], count: 1 });
     expect(await api.call('GET', `/api/v1/contacts/${CONTACT}/messages/${NO_MESSAGE}`)).toMatchObject({ status: 404, body: { error: 'not_found', message: 'Objeto no encontrado.' } });
-    expect(await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: QR, contact_id: CONTACT, note: true, text: 'n', options: [{ id: 'a', label: 'A' }] })).toMatchObject({
+    expect(await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { phone: '5491100000000', device_id: QR, contact_id: CONTACT, note: true, text: 'n', options: [{ id: 'a', label: 'A' }] })).toMatchObject({
       status: 422,
       body: { error: 'A note cannot carry interactive options.' },
     });
@@ -164,7 +164,7 @@ describe('the bodies of each route', () => {
     const api = await startSandbox();
     const receiver = await startReceiver();
     await subscribe(api, receiver.url, ['message.status_changed']);
-    await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: QR, contact_id: CONTACT, text: 'x' }, { 'X-Sandbox-Fail': 'insufficient_balance' });
+    await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { phone: '5491100000000', device_id: QR, contact_id: CONTACT, text: 'x' }, { 'X-Sandbox-Fail': 'insufficient_balance' });
     const [event] = await receiver.waitFor(1);
     expect(event!.json.data.error).toEqual({ code: null, title: 'Saldo insuficiente en tu billetera de WhatsApp.', reason: 'insufficient_balance' });
   });
@@ -176,8 +176,8 @@ describe('numbers and groups', () => {
     const res = await api.call('GET', '/api/v1/devices');
     expect(Object.keys(res.body)).toEqual(['data', 'links', 'meta']);
     const [cloud, qr] = res.body.data;
-    // accounts v1.5.97 `DeviceResource`, in its order.
-    expect(Object.keys(cloud).slice(14)).toEqual([
+    // accounts `DeviceResource`, in its order.
+    expect(Object.keys(cloud).slice(15)).toEqual([
       'health',
       'number_key',
       'number_key_confirmed',

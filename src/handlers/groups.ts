@@ -117,7 +117,7 @@ const groupsOnWhatsApp = (app: SandboxApp, device: Device): Group[] =>
 const isAdminOf = (device: Device, group: Group): boolean => group.participants.some((p) => p.admin && p.phone === device.number);
 
 /** The fixed Spanish texts of communities `BoundKeyListings` for a key's list: `422 validation_failed` with `errors`. */
-function checkListQuery(q: Record<string, unknown>): void {
+export function groupListQueryErrors(q: Record<string, unknown>): Record<string, string[]> {
   const errors: Record<string, string[]> = {};
   if (q.perPage !== undefined) {
     const n = Number(q.perPage);
@@ -128,6 +128,11 @@ function checkListQuery(q: Record<string, unknown>): void {
     errors.orderBy = ['`orderBy` solo acepta: created_at, id, name, updated_at.'];
   }
   if (q.orderByMethod !== undefined && !['asc', 'desc'].includes(String(q.orderByMethod))) errors.orderByMethod = ['`orderByMethod` solo acepta: asc, desc.'];
+  return errors;
+}
+
+function checkListQuery(q: Record<string, unknown>): void {
+  const errors = groupListQueryErrors(q);
   const first = Object.values(errors)[0];
   if (first) throw new ApiError(422, 'validation_failed', first[0] as string, { errors });
 }
@@ -205,7 +210,8 @@ const MEDIA_EXTENSIONS: Record<string, string[]> = {
 };
 
 /** communities `SendGroupMessageRequest`: the rules by `type`, with Laravel's messages in Spanish. */
-function checkSendBody(b: Record<string, unknown>): void {
+export function groupSendBodyErrors(value: unknown): Record<string, string[]> {
+  const b = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
   const errors: Record<string, string[]> = {};
   const type = typeof b.type === 'string' ? b.type : '';
   const present = (key: string) => b[key] !== undefined && b[key] !== null && b[key] !== '';
@@ -237,6 +243,11 @@ function checkSendBody(b: Record<string, unknown>): void {
   if (type !== 'image' && type !== 'video') prohibited('caption');
   else if (present('caption') && String(b.caption).length > 1024) errors.caption = ['El campo caption no debe tener más de 1024 caracteres.'];
   if (type !== 'document') prohibited('file_name');
+  return errors;
+}
+
+function checkSendBody(b: Record<string, unknown>): void {
+  const errors = groupSendBodyErrors(b);
   if (Object.keys(errors).length) throw new ApiError(422, 'validation_failed', summarize(errors), { errors });
 }
 

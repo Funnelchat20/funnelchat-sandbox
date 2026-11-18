@@ -17,7 +17,8 @@ const addFormats = (addFormatsModule as unknown as { default?: typeof addFormats
 
 const SPEC_ID = 'urn:funnelchat:openapi';
 
-const ajv = new Ajv2020({ strict: false, allErrors: true, validateFormats: true, discriminator: false, logger: false });
+// `verbose`: each error carries its schema and value, which the conditional rules need (see toFieldErrors).
+const ajv = new Ajv2020({ strict: false, allErrors: true, verbose: true, validateFormats: true, discriminator: false, logger: false });
 (addFormats as unknown as (a: Ajv2020) => void)(ajv);
 // Formats Scramble writes that ajv-formats does not know: accepted as is.
 for (const format of ['binary', 'int32', 'int64', 'float', 'double', 'password', 'byte', 'phone']) {
@@ -181,20 +182,137 @@ function messageFor(error: ErrorObject, attr: string): string {
   }
 }
 
-/** Ajv errors → `{field: [messages]}`, without the noise of the branches of an `anyOf`. */
+const SCHEMA_TEXT = new Set(['description', 'title', 'examples', 'example']);
+
+/** Whether `inner` comes from inside `outer`'s schema, for the same value or a part of it. */
+function inside(inner: ErrorObject, outer: ErrorObject): boolean {
+  if (inner === outer || !inner.schemaPath.startsWith(`${outer.schemaPath}/`)) return false;
+  return inner.instancePath === outer.instancePath || inner.instancePath.startsWith(`${outer.instancePath}/`);
+}
+
+const present = (data: unknown, name: string): boolean => isRecord(data) && data[name] !== undefined && data[name] !== null;
+
+/**
+ * The fields a branch of a union only asks to be there (Laravel's `required_without`, as Scramble writes it:
+ * `{required: [phone], properties: {phone: {not: {type: null}}}}`), or `null` when the branch asks for more than that.
+ */
+function requiredOnly(branch: unknown): string[] | null {
+  const s = deref<Schema>(branch);
+  if (!s || !Array.isArray(s.required) || s.required.length === 0) return null;
+  for (const [key, value] of Object.entries(s)) {
+    if (key === 'required' || SCHEMA_TEXT.has(key)) continue;
+    if (key !== 'properties' || !isRecord(value)) return null;
+    for (const prop of Object.values(value)) {
+      if (!isRecord(prop) || !Object.keys(prop).every((k) => SCHEMA_TEXT.has(k) || (k === 'not' && isRecord(prop.not) && prop.not.type === 'null'))) return null;
+    }
+  }
+  return s.required as string[];
+}
+
+/** Whether an error says the value is of another variant of a union: a discriminator (`type: qr`) or its kind. */
+function mismatch(error: ErrorObject, union: ErrorObject): boolean {
+  const child = error.instancePath.startsWith(`${union.instancePath}/`) && !error.instancePath.slice(union.instancePath.length + 1).includes('/');
+  if ((error.keyword === 'const' || error.keyword === 'enum') && child) return true;
+  if (error.keyword === 'type' && (error.instancePath === union.instancePath || (child && (error.params as { type?: unknown }).type === 'null'))) return true;
+  return false;
+}
+
+/**
+ * The errors of a failed `anyOf`/`oneOf`, the way Laravel would name them. The published spec writes Laravel's
+ * conditional rules as unions: a group of branches that only ask for one field each is `required_without` (each
+ * missing field, «obligatorio cuando … no está presente»); any other union answers with the branch the value is
+ * closest to (fewest errors, a branch whose discriminator does not match last), field by field.
+ */
+function unionErrors(union: ErrorObject, inner: ErrorObject[], prefix: string): FieldErrors {
+  const branches = Array.isArray(union.schema) ? (union.schema as unknown[]) : [];
+  const byBranch: ErrorObject[][] = branches.map(() => []);
+  for (const error of inner) {
+    const match = /^(\d+)\//.exec(error.schemaPath.slice(union.schemaPath.length + 1));
+    if (match) byBranch[Number(match[1])]?.push(error);
+  }
+  const at = (field: string) => [prefix, attribute(`${union.instancePath}/${field}`)].filter(Boolean).join('.');
+  const asks = branches.map(requiredOnly);
+  if (asks.length > 1 && asks.every(Boolean)) {
+    const out: FieldErrors = {};
+    asks.forEach((fields, i) => {
+      const others = asks.filter((_, j) => j !== i).flat() as string[];
+      for (const field of fields as string[]) {
+        if (!present(union.data, field)) (out[at(field)] ??= []).push(`El campo ${field} es obligatorio cuando ${others.join(' / ')} no está presente.`);
+      }
+    });
+    if (Object.keys(out).length) return out;
+  }
+  const scored = byBranch
+    .map((errors, i) => ({ i, errors, score: errors.reduce((n, e) => n + (mismatch(e, union) ? 100 : 1), 0) }))
+    .filter((b) => b.errors.length > 0)
+    .sort((a, b) => a.score - b.score || a.i - b.i);
+  if (scored[0]) return toFieldErrors(scored[0].errors, prefix);
+  // A `oneOf` that more than one branch matches: there is no field to name.
+  const attr = [prefix, attribute(union.instancePath)].filter(Boolean).join('.');
+  return { [attr || 'body']: [`El campo ${attr || 'cuerpo'} no es válido.`] };
+}
+
+/** The message of a `required` inside `else` / `then` of an `if` with one `const` (Laravel's `required_unless` / `_if`). */
+function conditionalRequired(error: ErrorObject, ifs: ErrorObject[], name: string): string | null {
+  for (const cond of ifs) {
+    const base = cond.schemaPath.replace(/\/if$/, '');
+    const failing = (cond.params as { failingKeyword?: string }).failingKeyword;
+    if (!failing || !error.schemaPath.startsWith(`${base}/${failing}/`)) continue;
+    const props = isRecord(cond.schema) && isRecord(cond.schema.properties) ? Object.entries(cond.schema.properties) : [];
+    if (props.length !== 1) continue;
+    const [other, rule] = props[0] as [string, unknown];
+    if (!isRecord(rule) || !('const' in rule)) continue;
+    const value = String(rule.const);
+    return failing === 'else'
+      ? `El campo ${name} es obligatorio a menos que ${other} esté en ${value}.`
+      : `El campo ${name} es obligatorio cuando ${other} es ${value}.`;
+  }
+  return null;
+}
+
+/** Ajv errors → `{field: [messages]}`: one message per failed rule, unions and conditions as Laravel names them. */
 function toFieldErrors(errors: ErrorObject[], prefix = ''): FieldErrors {
-  const unions = errors.filter((e) => e.keyword === 'anyOf' || e.keyword === 'oneOf').map((e) => e.schemaPath);
+  const unions = errors.filter((e) => e.keyword === 'anyOf' || e.keyword === 'oneOf');
+  const outer = unions.filter((u) => !unions.some((o) => inside(u, o)));
+  const ifs = errors.filter((e) => e.keyword === 'if');
   const out: FieldErrors = {};
-  for (const error of errors) {
-    if (error.keyword === 'additionalProperties' || error.keyword === 'if' || error.keyword === 'not') continue;
-    if (unions.some((u) => error.schemaPath !== u && error.schemaPath.startsWith(`${u}/`))) continue;
-    let path = error.instancePath;
-    if (error.keyword === 'required') path = `${path}/${(error.params as { missingProperty: string }).missingProperty}`;
+  const add = (path: string, message: string) => {
     const attr = [prefix, attribute(path)].filter(Boolean).join('.');
-    const message = messageFor(error, attr);
     const key = attr || 'body';
     out[key] ??= [];
     if (!out[key].includes(message)) out[key].push(message);
+  };
+  for (const error of errors) {
+    if (outer.some((u) => error === u || inside(error, u))) continue;
+    if (error.keyword === 'additionalProperties' || error.keyword === 'if') continue;
+    if (error.keyword === 'not') {
+      // `not: {required: [a, b]}` is `prohibits` (a with b); `not: {anyOf: [{required: [a]}, …]}`, `prohibited`.
+      const s = isRecord(error.schema) ? error.schema : {};
+      const together = Array.isArray(s.required) ? (s.required as string[]) : null;
+      const alone = Array.isArray(s.anyOf) ? (s.anyOf as unknown[]).map(requiredOnly) : null;
+      if (together && together.length > 1) {
+        const [first, ...rest] = together;
+        add(`${error.instancePath}/${first}`, `El campo ${first} prohíbe la presencia de ${rest.join(' / ')}.`);
+      } else if (together?.length === 1 || (alone && alone.every(Boolean))) {
+        for (const field of (together ?? (alone as string[][]).flat())) {
+          if (isRecord(error.data) && field in error.data) add(`${error.instancePath}/${field}`, `El campo ${field} está prohibido.`);
+        }
+      } else if (s.type === 'null') {
+        const attr = [prefix, attribute(error.instancePath)].filter(Boolean).join('.');
+        add(error.instancePath, `El campo ${attr || 'cuerpo'} es obligatorio.`);
+      }
+      continue;
+    }
+    let path = error.instancePath;
+    if (error.keyword === 'required') path = `${path}/${(error.params as { missingProperty: string }).missingProperty}`;
+    const attr = [prefix, attribute(path)].filter(Boolean).join('.');
+    add(path, (error.keyword === 'required' && conditionalRequired(error, ifs, attr)) || messageFor(error, attr));
+  }
+  for (const union of outer) {
+    for (const [field, messages] of Object.entries(unionErrors(union, errors.filter((e) => inside(e, union)), prefix))) {
+      out[field] ??= [];
+      for (const m of messages) if (!out[field].includes(m)) out[field].push(m);
+    }
   }
   return out;
 }

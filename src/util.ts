@@ -99,7 +99,7 @@ export function truncate(text: string, max: number): string {
 }
 
 /** The prefixes of the opaque ids of the public API: three letters per type, as the portal's «Identificadores» page lists them. */
-export type IdPrefix = 'dev' | 'ctc' | 'msg' | 'tag' | 'fld' | 'tpl' | 'grp' | 'lnk' | 'dlv' | 'frm' | 'frv' | 'frs' | 'not';
+export type IdPrefix = 'dev' | 'ctc' | 'msg' | 'tag' | 'fld' | 'tpl' | 'grp' | 'lnk' | 'dlv' | 'frm' | 'frv' | 'frs' | 'not' | 'usr';
 
 /** A new opaque id: the prefix of its type, `_`, and 23 base62 characters (`^xxx_[A-Za-z0-9]{23}$`). */
 export function newId(prefix: IdPrefix): string {

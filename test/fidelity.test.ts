@@ -266,8 +266,9 @@ describe('the tap of a button', () => {
     const api = await startSandbox();
     const receiver = await startReceiver();
     await subscribe(api, receiver.url, ['message.received']);
-    const sent = await api.call('POST', '/api/v1/message/send-message', {
+    const sent = await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, {
       contact_id: CONTACT,
+      phone: '5491100000000',
       device_id: QR,
       text: '¿Con quién quieres hablar?',
       options: [
@@ -292,7 +293,7 @@ describe('the tap of a button', () => {
     await subscribe(api, receiver.url, ['message.received']);
     const template = await api.call('POST', '/api/v1/templates', { ...TEMPLATE, params: PARAMS, buttons: [{ type: 'QUICK_REPLY', text: 'Lo retiro hoy' }] });
     await api.call('POST', `/_sandbox/templates/${template.body.id}/status`, { status: 'APPROVED' });
-    const sent = await api.call('POST', `/api/v1/devices/${OFFICIAL}/templates/${template.body.id}/send-template`, { contact_id: CONTACT, phone: '5491100000000', template_variables: { body: ['Lucía'] } });
+    const sent = await api.call('POST', `/api/v1/devices/${OFFICIAL}/templates/${template.body.id}/send-template`, { contact_id: CONTACT, phone: '5491100000000', template_variables: { body: { '1': 'Lucía' } } });
     expect(sent.status).toBe(200);
     await api.call('POST', '/_sandbox/inbound/message', { reply: { to_message_id: sent.body.message.id, option_id: 'Lo retiro hoy' } });
     const [d] = await receiver.waitFor(1);

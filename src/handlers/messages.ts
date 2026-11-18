@@ -161,7 +161,8 @@ function assertUsable(b: Record<string, unknown>, device: Device): void {
 }
 
 /**
- * Text, a file (by URL, with `file_type` / `file_name`) or a menu (`options`) to one contact. `style` is the route:
+ * Text, a file (by URL, with `file_type` / `file_name`) or a menu (`options`, only by the conversation's route) to one
+ * contact. `style` is the route:
  * `conversation` (`contacts/{contact}/message`) or `direct` (`send-message`). `contact` is `null` on a `send-message`
  * by phone: after the checks of the number and the file, the contact of that phone is found or created in the key's
  * workspace. With `contact_id`, the body's `phone` / `whatsapp_id` must be that contact (`recipient_mismatch`).
@@ -169,7 +170,9 @@ function assertUsable(b: Record<string, unknown>, device: Device): void {
 function sendToContact(ctx: HandlerContext, given: Contact | null, style: UnsupportedStyle): HandlerResult {
   const b = body(ctx);
   const reference = clientReference(b);
-  const options = Array.isArray(b.options) ? b.options : null;
+  // A menu only by the conversation's route: `send-message` (`SendDirectMessageRequest`) has no `options` rule, so
+  // Laravel drops it and the text goes out alone.
+  const options = style === 'conversation' && Array.isArray(b.options) ? b.options : null;
   if (b.note === true && options) throw new RawApiError(422, { error: 'A note cannot carry interactive options.' });
   if (given === null) assertUsable(b, getDevice(ctx.app, b.device_id));
   const file = resolveFile(b, style);
@@ -196,9 +199,54 @@ function sendToContact(ctx: HandlerContext, given: Contact | null, style: Unsupp
 
 const PLACEHOLDER = /\{\{\s*(\d+)\s*\}\}/g;
 
-function renderTemplate(template: Template, variables: unknown): string {
-  const values = Array.isArray(variables) ? variables : [];
-  const missing = [...template.body.matchAll(PLACEHOLDER)].map((m) => Number(m[1])).filter((n) => values[n - 1] === undefined || values[n - 1] === null || values[n - 1] === '');
+/** `{name}`, `{first_name}`, `{email}`, `{phone}` or a custom field: conversations' `ContactPlaceholderResolver`. */
+const CONTACT_PLACEHOLDER = /(?<!\{)\{([^{}\r\n":,]+)\}(?!\})/g;
+
+/** One value of a variable with the contact's data; the names of the custom fields the account does not have. */
+function resolveValue(app: SandboxApp, contact: Contact, value: string, unresolved: Set<string>): string {
+  return value.replace(CONTACT_PLACEHOLDER, (token, name: string) => {
+    if (name === 'name') return contact.name ?? '';
+    if (name === 'first_name') return (contact.name ?? '').trim().split(/\s+/)[0] ?? '';
+    if (name === 'email') return contact.email ?? '';
+    if (name === 'phone') return contact.phone ?? '';
+    if (name.startsWith('whalink_') || name.startsWith('paylink_')) return token;
+    const field = [...app.store.customFields.values()].find((f) => f.name === name || f.id === name);
+    if (!field) {
+      unresolved.add(name);
+      return '';
+    }
+    return contact.customFields.get(field.id)?.value ?? '';
+  });
+}
+
+/**
+ * The text of a template for a contact, the way conversations fills it (`TemplateComponentResolver`): without
+ * `template_variables`, each `{{n}}` takes what the template chose for it in `params.body` (`{name}` is the contact's
+ * name); with `template_variables.body`, those values instead, by number (`{"1": "Lucía"}`; a list goes in order, `{{1}}`
+ * first). A value can carry the contact's fields too (`"{first_name}"`). A custom field the account does not have is
+ * `422 template_unresolved_placeholder`, before anything is sent; a `{{n}}` left without a value as well (production
+ * sends it and Meta rejects it with 131008).
+ */
+function renderTemplate(app: SandboxApp, template: Template, contact: Contact, variables: unknown): string {
+  let values: Record<string, unknown>;
+  if (variables === undefined || variables === null) values = template.params.body;
+  else if (Array.isArray(variables)) values = Object.fromEntries(variables.map((v, i) => [String(i + 1), v]));
+  else values = typeof variables === 'object' ? (variables as Record<string, unknown>) : {};
+  const unresolved = new Set<string>();
+  const filled: Record<string, string> = {};
+  for (const [key, value] of Object.entries(values)) {
+    if (typeof value === 'string' || typeof value === 'number') filled[key] = resolveValue(app, contact, String(value), unresolved);
+  }
+  if (unresolved.size) {
+    const placeholders = [...unresolved];
+    throw new ApiError(
+      422,
+      'template_unresolved_placeholder',
+      'No se envió: la plantilla tiene variables que se completan con campos personalizados que no existen en tu cuenta. Revisa las variables de la plantilla.',
+      { placeholders: placeholders.slice(0, 20), count: placeholders.length },
+    );
+  }
+  const missing = [...template.body.matchAll(PLACEHOLDER)].map((m) => String(Number(m[1]))).filter((n) => !filled[n]);
   if (missing.length) {
     const placeholders = [...new Set(missing)].map((n) => `{{${n}}}`);
     throw new ApiError(
@@ -208,7 +256,7 @@ function renderTemplate(template: Template, variables: unknown): string {
       { placeholders: placeholders.slice(0, 20), count: placeholders.length },
     );
   }
-  return template.body.replace(PLACEHOLDER, (_, n: string) => String(values[Number(n) - 1]));
+  return template.body.replace(PLACEHOLDER, (_, n: string) => filled[String(Number(n))] as string);
 }
 
 /**
@@ -268,7 +316,7 @@ function sendTemplate(ctx: HandlerContext): HandlerResult {
   const whatsappId = identity ? undefined : b.whatsapp_id;
   const check = checkSend(ctx.app, { device, contact, profile: 'template', phone, whatsappId, contentHashes: [] });
   if (check?.code === 'recipient_mismatch') throw check;
-  const text = renderTemplate(template, variables);
+  const text = renderTemplate(ctx.app, template, contact, variables);
   const [message] = send(ctx, {
     device,
     contact,

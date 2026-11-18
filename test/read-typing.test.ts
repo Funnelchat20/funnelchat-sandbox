@@ -22,7 +22,7 @@ describe('mark a message as read', () => {
 
   it('refuses a message the contact did not send, and one of another contact', async () => {
     const api = await startSandbox();
-    const sent = await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: QR, contact_id: CONTACT, text: 'Hola' });
+    const sent = await api.call('POST', `/api/v1/contacts/${CONTACT}/message`, { phone: '5491100000000', device_id: QR, contact_id: CONTACT, text: 'Hola' });
     expect(await api.call('POST', `/api/v1/contacts/${CONTACT}/messages/${sent.body.message.id}/read`)).toMatchObject({
       status: 422,
       body: { error: 'message_not_inbound', message: expect.stringContaining('No se marcó como leído') },

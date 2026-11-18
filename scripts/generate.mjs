@@ -218,6 +218,8 @@ function requestSchema(merged, op) {
  *   - `parameterPatches`: add parameters to an operation of the snapshot, only those it lacks (by name and place);
  *   - `operationPatches` with `replace: true`: replace properties of a body the snapshot does have, a correction of
  *     the snapshot (for example, Laravel's conditional `prohibited` letting `null` through), applied every time;
+ *     with `removeKeywords` (`oneOf`, `allOf`…) and `removeRequired`, take out of the body's schema the conditional
+ *     rules the handler applies itself with the domain's messages; reported when the snapshot no longer has them;
  *   - `webhookPatches`: set properties of an event's `data` (schema and example), while the event meets
  *     `while` or while its `data` lacks `whileMissing`. `type: "*"` patches every event;
  *   - `webhooks`: an event that replaces the portal's and brings no example keeps the portal's example;
@@ -248,7 +250,12 @@ function mergeLayer(merged, layer, layerName, report) {
   }
 
   for (const patch of layer.operationPatches ?? []) {
-    const names = [...Object.keys(patch.requestBodyProperties ?? {}), ...(patch.parameters ?? []).map((p) => p.name)];
+    const names = [
+      ...Object.keys(patch.requestBodyProperties ?? {}),
+      ...(patch.parameters ?? []).map((p) => p.name),
+      ...(patch.removeKeywords ?? []).map((k) => `-${k}`),
+      ...(patch.removeRequired ?? []).map((k) => `-required ${k}`),
+    ];
     const label = tag(`${patch.method.toUpperCase()} ${patch.path} (cuerpo: ${names.join(', ')})`);
     const op = merged.paths[patch.path]?.[patch.method];
     if (!op) {
@@ -260,9 +267,21 @@ function mergeLayer(merged, layer, layerName, report) {
       continue;
     }
     const schema = requestSchema(merged, op);
-    if (patch.requestBodyProperties && !schema) {
+    const removes = Boolean(patch.removeKeywords || patch.removeRequired);
+    if ((patch.requestBodyProperties || removes) && !schema) {
       report.missing.push(label);
       continue;
+    }
+    if (removes) {
+      const keywords = (patch.removeKeywords ?? []).filter((k) => k in schema);
+      const required = (patch.removeRequired ?? []).filter((k) => (schema.required ?? []).includes(k));
+      // Nothing left to take out: the snapshot dropped those rules, and the entry can go.
+      if (keywords.length === 0 && required.length === 0 && !patch.requestBodyProperties) {
+        report.superseded.push(label);
+        continue;
+      }
+      for (const k of keywords) delete schema[k];
+      if (required.length) schema.required = schema.required.filter((k) => !required.includes(k));
     }
     const props = Object.entries(patch.requestBodyProperties ?? {});
     const missingProps = props.filter(([prop]) => !(prop in (schema?.properties ?? {})));
@@ -515,7 +534,7 @@ function envelopeOf(type, example, portalExample) {
   return { id: base.id, type, version: base.version, occurred_at: base.occurred_at, data: example.data ?? null };
 }
 
-function buildCatalog(merged, snapshot, portalVersion, specSha) {
+function buildCatalog(merged, snapshot, portalVersion, specSha, catalogFields = {}) {
   const subscribe = merged.paths['/api/v1/webhooks']?.post;
   const subscribable = subscribe ? requestSchema(merged, subscribe)?.properties?.events?.items?.enum : null;
   if (!Array.isArray(subscribable)) throw new Error('POST /api/v1/webhooks has no `events` enum: the catalog cannot be transcribed.');
@@ -546,10 +565,16 @@ function buildCatalog(merged, snapshot, portalVersion, specSha) {
     const post = posts.find((p) => p['x-fc-domain'] === area) ?? posts[0];
     const status = post['x-fc-status'] ?? 'live';
     if (status !== 'live') throw new Error(`${type}: x-fc-status "${status}" is new; say in scripts/generate.mjs what the catalog shows for it.`);
+    // `label` and `is_critical` are accounts' (spec/pending-sandbox.json `catalogFields`): the spec requires them in
+    // `WebhookEventType` and does not carry them per event.
+    const fields = catalogFields[type];
+    if (!fields) throw new Error(`${type}: no label / is_critical in catalogFields of spec/pending-sandbox.json; add it from accounts' catalog.`);
     return {
       type,
       area,
       status: 'active',
+      is_critical: fields.is_critical,
+      label: fields.label,
       description: post.description ?? '',
       subscribable: subscribable.includes(type),
       example: envelopeOf(type, post.requestBody?.content?.['application/json']?.example, portalExamples.get(type)),
@@ -617,7 +642,8 @@ function main() {
     for (const label of report.missing) console.warn(`  - ${label}`);
   }
 
-  const catalog = buildCatalog(merged, snapshot, provenance.snapshot?.source?.portal_version ?? null, sha256(specBytes));
+  const catalogFields = sandboxBytes ? (JSON.parse(sandboxBytes.toString('utf8')).catalogFields ?? {}) : {};
+  const catalog = buildCatalog(merged, snapshot, provenance.snapshot?.source?.portal_version ?? null, sha256(specBytes), catalogFields);
   const subscribable = catalog.entries.filter((entry) => entry.subscribable).length;
   console.log(`event catalog: ${catalog.entries.length} types, ${subscribable} subscribable.`);
   const outputs = [

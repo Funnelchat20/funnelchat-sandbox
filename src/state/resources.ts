@@ -2,11 +2,14 @@
  * The public shape of each object, as the domains' Laravel resources write them (keys, order, date formats).
  */
 import type { TemplateParams } from '../messaging/template-params.js';
-import { iso8601, isoSeconds, laravelJson, sqlDateTime } from '../util.js';
+import { fixedId, iso8601, isoSeconds, laravelJson, sqlDateTime } from '../util.js';
 import type { ConnectLink, Connection, Contact, CustomField, Delivery, Device, Message, Store, Subscription, Tag, Template } from './store.js';
 
-/** The account the sandbox imitates. REST resources carry it in `user_id`; events never do. */
-export const ACCOUNT_USER_ID = 1;
+/**
+ * The account the sandbox imitates. REST resources carry it in `user_id`, which a key reads as an opaque id (`usr_`,
+ * `KeyPublicIds::NAMES`); events never do.
+ */
+export const ACCOUNT_USER_ID = fixedId('usr', 'Sandbox0Cuenta');
 
 const MESSAGE_TYPE_INT: Record<string, number> = {
   text: 0,
@@ -46,8 +49,9 @@ function statusInt(message: Message, device: Device | undefined): number | null 
 }
 
 /**
- * conversations `ContactResource`. The detail (`show`) also carries `ai_assistant_email`, `account_main_email` and
- * `follow_up_date` (conversations v1.19.7), `null` for a contact without an AI assistant nor a follow-up date.
+ * conversations `ContactResource`. The detail (`show`, `ContactController::show`) also carries `opted_out`,
+ * `follow_up_date` and `name_mismatch` (`null`: no pending alert). `ai_assistant_email` and `account_main_email` are
+ * the panel's only: a key never gets them.
  */
 export function contactResource(store: Store, contact: Contact, mode: 'list' | 'show' = 'list'): Record<string, unknown> {
   const show = mode === 'show';
@@ -55,15 +59,16 @@ export function contactResource(store: Store, contact: Contact, mode: 'list' | '
   const last = messages[0];
   return {
     id: contact.id,
-    name: contact.name,
-    email: contact.email,
-    phone: contact.phone,
-    whatsapp_id: contact.whatsappId,
+    // `?? ''`, like conversations: a contact without a name, an email, a phone, a WhatsApp id or a photo has `""`.
+    name: contact.name ?? '',
+    email: contact.email ?? '',
+    phone: contact.phone ?? '',
+    whatsapp_id: contact.whatsappId ?? '',
     whatsapp_username: null,
     has_phone: Boolean(contact.phone),
     country_code: '',
     status: contact.status,
-    image: contact.image,
+    image: contact.image ?? '',
     notes: contact.notes,
     custom_fields: [...contact.customFields.entries()].flatMap(([id, value]) => {
       const field = store.customFields.get(id);
@@ -74,25 +79,28 @@ export function contactResource(store: Store, contact: Contact, mode: 'list' | '
     favorite: contact.favorite ? 1 : 0,
     unread_messages: contact.unreadMessages,
     manually_unread: contact.manuallyUnread,
-    last_message: last
+    // Only when the contact has a last message (`has_last_message`): without one the key is not there.
+    ...(last
       ? {
-          text: last.text ?? '',
-          file: last.file ?? '',
-          date: sqlDateTime(last.createdAt),
-          type: String(MESSAGE_TYPE_INT[last.type] ?? 0),
-          own: last.own ? '1' : '0',
-          deleted_at: null,
-          deleted_scope: null,
+          last_message: {
+            text: last.text ?? '',
+            file: last.file ?? '',
+            date: sqlDateTime(last.createdAt),
+            type: String(MESSAGE_TYPE_INT[last.type] ?? 0),
+            own: last.own ? '1' : '0',
+            deleted_at: null,
+            deleted_scope: null,
+          },
         }
-      : null,
+      : {}),
     device_id: contact.deviceId,
     adviser_id: contact.adviserId,
     paused_at: contact.pausedAt ? laravelJson(contact.pausedAt) : null,
     mac_date: null,
     ai_assistant_name: null,
-    ...(show ? { ai_assistant_email: null, account_main_email: null } : {}),
-    stage_since: null,
-    is_stagnant: false,
+    ...(show ? { opted_out: false } : {}),
+    // `stage_since` and `is_stagnant` only come in a stages board's listing of contacts, which the sandbox answers
+    // with the shape of the spec.
     ...(show ? { follow_up_date: null } : {}),
     lead_score: {
       score: 0,
@@ -103,6 +111,7 @@ export function contactResource(store: Store, contact: Contact, mode: 'list' | '
       disqualified_at: null,
       updated_at: null,
     },
+    ...(show ? { name_mismatch: null } : {}),
   };
 }
 
@@ -229,7 +238,8 @@ export function contactCustomFieldResource(
     id: field.id,
     name: field.name,
     description: null,
-    type: String(field.type),
+    // The model casts `type` to `CustomFieldTypeEnum`: an integer.
+    type: field.type,
     value,
     created_at: laravelJson(dates.createdAt),
     updated_at: laravelJson(dates.updatedAt),
@@ -306,6 +316,9 @@ function deviceHealth(device: Device): Record<string, unknown> | null {
     messaging_limit_per_day: 1000,
     last_fetched_at: iso8601(device.createdAt),
     stale: false,
+    // Meta's approved display name and the status of the phone number, lower case (`DeviceHealthSummaryBuilder`).
+    verified_name: device.alias,
+    meta_status: device.connected ? 'connected' : 'disconnected',
   };
 }
 
@@ -333,6 +346,8 @@ export function deviceResource(device: Device): Record<string, unknown> {
     user_id: ACCOUNT_USER_ID,
     provider: device.provider,
     waba_id: device.wabaId ?? '',
+    // Meta's phone number id: an official number's, `null` on a QR one.
+    phone_number_id: device.kind === 'cloud' ? device.phoneNumberId : null,
     whatsapp_username: null,
     is_business: device.kind === 'cloud' ? 1 : 0,
     connected: device.connected ? 1 : 0,
@@ -377,12 +392,13 @@ export function eventDevice(device: Device): Record<string, unknown> {
   };
 }
 
-/** The sign-up link of contract A1, without the token (it is only in the `url` of the create answer). */
-export function connectLinkResource(link: ConnectLink): Record<string, unknown> {
+/** The sign-up link of contract A1: `url` has the token only in the create answer, `null` afterwards. */
+export function connectLinkResource(link: ConnectLink, url: string | null = null): Record<string, unknown> {
   return {
     id: link.id,
     type: link.type,
     status: link.status,
+    url,
     expires_at: iso8601(link.expiresAt),
     allowed_connection_types: link.allowedConnectionTypes,
     provision_us_number: link.provisionUsNumber,

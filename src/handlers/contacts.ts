@@ -424,7 +424,7 @@ export const contactHandlers: HandlerTable = {
   'POST /api/v1/contacts/add-tags': (ctx) => changeTags(ctx, 'add'),
   'POST /api/v1/contacts/remove-tags': (ctx) => changeTags(ctx, 'remove'),
 
-  // The detail adds `ai_assistant_email`, `account_main_email` and `follow_up_date` (conversations v1.19.7).
+  // The detail adds `opted_out`, `follow_up_date` and `name_mismatch` (see `contactResource`).
   'GET /api/v1/contacts/{contact}': (ctx) => ok(contactResource(ctx.app.store, getContact(ctx.app, ctx.path.contact, ctx.workspace), 'show')),
 
   'PUT /api/v1/contacts/{contact}': (ctx) => {
@@ -482,10 +482,12 @@ export const contactHandlers: HandlerTable = {
     const now = new Date();
     return ok(
       items.map((item) => {
+        // With a key, a field or a contact it cannot see is a 404 item inside the 200 (contract 1113,
+        // `ContactController::attachCustomField`); the panel's 403 items are not the API's.
         const field = ctx.app.store.customFields.get(asId(item.customFieldId));
-        if (!field) return { message: 'No autorizado: el campo personalizado no pertenece al usuario autenticado.', status: 403 };
+        if (!field) return { message: 'Objeto no encontrado.', status: 404 };
         const contact = ctx.app.store.contacts.get(asId(item.contactId));
-        if (!contact) return { message: 'No autorizado: el contacto no pertenece al usuario autenticado.', status: 403 };
+        if (!contact || !sees(ctx.workspace, contact.workspaceId)) return { message: 'Contacto no encontrado.', status: 404 };
         const current = contact.customFields.get(field.id);
         contact.customFields.set(field.id, { value: String(item.value ?? ''), createdAt: current?.createdAt ?? now, updatedAt: now });
         contact.updatedAt = now;
@@ -560,14 +562,15 @@ export const contactHandlers: HandlerTable = {
     return ok({ message: 'Todas las conversaciones han sido marcadas como leídas', updated_count: updated });
   },
   'POST /api/v1/conversations/mark-all-unread': (ctx) => {
-    const ids: Record<string, string> = {};
+    // `pluck('contacts.id')->toArray()`: a list of the contacts marked in this call.
+    const ids: string[] = [];
     for (const c of visibleContacts(ctx)) {
       if (hasMessages(ctx.app, c) && !(c.unreadMessages > 0 || c.manuallyUnread)) {
         c.manuallyUnread = true;
-        ids[String(Object.keys(ids).length)] = c.id;
+        ids.push(c.id);
       }
     }
-    return ok({ message: 'Todas las conversaciones elegibles fueron marcadas como no leídas', marked_count: Object.keys(ids).length, limit_reached: false, contact_ids: ids });
+    return ok({ message: 'Todas las conversaciones elegibles fueron marcadas como no leídas', marked_count: ids.length, limit_reached: false, contact_ids: ids });
   },
 
   // --- tags ---------------------------------------------------------------------------------------------------
@@ -584,7 +587,8 @@ export const contactHandlers: HandlerTable = {
         const cmp = va < vb ? -1 : va > vb ? 1 : 0;
         return desc ? -cmp : cmp;
       });
-    return ok(paginate(list, listContext(ctx), (t) => tagResource(ctx.app.store, t)));
+    // `TagResource::collection()->additional(['with_contact_count' => …])`.
+    return ok({ ...paginate(list, listContext(ctx), (t) => tagResource(ctx.app.store, t)), with_contact_count: ctx.query.withContactCount === true });
   },
   'POST /api/v1/tags': (ctx) => {
     const b = body(ctx);
@@ -623,7 +627,7 @@ export const contactHandlers: HandlerTable = {
     const list = [...ctx.app.store.customFields.values()].filter(
       (f) => (!name || f.name.toLowerCase().includes(name)) && (ctx.query.type === undefined || f.type === Number(ctx.query.type)),
     );
-    return ok(paginate(list, listContext(ctx), (f) => customFieldResource(ctx.app.store, f)));
+    return ok({ ...paginate(list, listContext(ctx), (f) => customFieldResource(ctx.app.store, f)), with_contact_count: ctx.query.withContactCount === true });
   },
   'POST /api/v1/custom-fields': (ctx) => {
     const b = body(ctx);

@@ -165,7 +165,8 @@ describe('sign-up links', () => {
     expect(Date.parse(link.expires_at) - Date.parse(link.created_at)).toBe(60 * 60 * 1000);
 
     const shown = (await api.call('GET', `/api/v1/connect-links/${link.id}`)).body.data;
-    expect(shown.url).toBeUndefined();
+    // The token is only in the create answer: afterwards `url` is null.
+    expect(shown.url).toBeNull();
     expect(JSON.stringify((await api.call('GET', '/_sandbox/state')).body)).not.toContain(link.url.split('/connect/')[1]);
 
     // A preview opens it: nothing happens.

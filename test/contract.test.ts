@@ -157,9 +157,10 @@ async function scenario(api: Api, calls: Call[]): Promise<void> {
 
   // The contact writes; a reply, a question with buttons, the history and the conversations.
   await api.call('POST', '/_sandbox/inbound/message', { contact_id: CONTACT, device_id: OFFICIAL, text: 'Hola' });
-  const reply = (await call('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: OFFICIAL, text: '¡Hola! ¿En qué te ayudo?' })).body;
-  await call('POST', '/api/v1/message/send-message', {
+  const reply = (await call('POST', `/api/v1/contacts/${CONTACT}/message`, { contact_id: CONTACT, phone: '5491100000000', device_id: OFFICIAL, text: '¡Hola! ¿En qué te ayudo?' })).body;
+  await call('POST', `/api/v1/contacts/${CONTACT}/message`, {
     contact_id: CONTACT,
+    phone: '5491100000000',
     device_id: QR,
     text: '¿Con quién quieres hablar?',
     options: [
@@ -198,7 +199,7 @@ async function scenario(api: Api, calls: Call[]): Promise<void> {
   await call('GET', '/api/v1/templates');
   await call('GET', `/api/v1/templates/${template.id}`);
 
-  await call('POST', `/api/v1/devices/${OFFICIAL}/templates/${TEMPLATE}/send-template`, { contact_id: CONTACT, phone: '5491100000000', template_variables: { body: ['Lucía'] } });
+  await call('POST', `/api/v1/devices/${OFFICIAL}/templates/${TEMPLATE}/send-template`, { contact_id: CONTACT, phone: '5491100000000', template_variables: { body: { '1': 'Lucía' } } });
 
   // A subscription.
   await call('GET', '/api/v1/webhooks/events');

@@ -266,7 +266,9 @@ function participantEvent(app: SandboxApp, req: SandboxRequest, type: 'group_par
     return { status: 202, body: { event: emitted(app.webhooks.emit(type, data, { workspaceId: group.workspaceId })), participants: group.participants.length } };
   }
   const entry = catalogEntry(type);
-  const example = obj(entry ? emittedData(entry) : {});
+  // communities always writes `campaign` (`null` outside a campaign), even where the catalog's example leaves it out.
+  const fromCatalog = obj(entry ? emittedData(entry) : {});
+  const example: Record<string, unknown> = 'campaign' in fromCatalog ? fromCatalog : { group: fromCatalog.group, campaign: null, ...fromCatalog };
   delete example.workspace_id;
   const data = deepMerge(example, {
     ...(isRecord(b.group) ? { group: b.group } : {}),

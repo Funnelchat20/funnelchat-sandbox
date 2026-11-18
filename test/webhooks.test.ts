@@ -23,9 +23,11 @@ describe('subscriptions', () => {
 
     const shown = await api.call('GET', `/api/v1/webhooks/${created.body.id}`);
     expect(shown.body.secret).toBeUndefined();
+    // With a key every listing of accounts is a page (`BoundApiKeyListings`: 25 by default).
     const list = await api.call('GET', '/api/v1/webhooks');
-    expect(Array.isArray(list.body)).toBe(true);
-    expect(list.body[0].secret).toBeUndefined();
+    expect(Object.keys(list.body)).toEqual(['data', 'links', 'meta']);
+    expect(list.body.meta).toMatchObject({ per_page: 25, total: 1 });
+    expect(list.body.data[0].secret).toBeUndefined();
     expect(JSON.stringify((await api.call('GET', '/_sandbox/state')).body)).not.toContain(created.body.secret);
     expect(JSON.stringify((await api.call('GET', '/_sandbox/requests')).body)).not.toContain(created.body.secret);
   });
@@ -84,7 +86,8 @@ describe('subscriptions', () => {
     for (const gone of ['ai_quota.low_balance', 'ai_quota.topup_succeeded', 'ai_quota.topup_failed', 'billing.plan_blocked', 'subscription.expiring']) {
       expect(types).not.toContain(gone);
     }
-    expect(Object.keys(res.body.data[0])).toEqual(['type', 'area', 'status', 'description', 'subscribable', 'example']);
+    expect(Object.keys(res.body.data[0])).toEqual(['type', 'area', 'status', 'is_critical', 'label', 'description', 'subscribable', 'example']);
+    expect(res.body.data.find((e: { type: string }) => e.type === 'device.disconnected')).toMatchObject({ is_critical: true, label: 'Número desconectado' });
     expect(res.body.data.find((e: { type: string }) => e.type === 'contact.updated')).toMatchObject({ area: 'conversations', status: 'active', subscribable: true });
     expect(res.body.data.find((e: { type: string }) => e.type === 'webhook.test')).toMatchObject({ area: 'accounts', subscribable: false });
     // Every example is its type's envelope and says its workspace: the API's fictitious 37.

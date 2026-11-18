@@ -86,6 +86,6 @@ describe('configuration', () => {
     expect(verify(d!.raw, String(d!.headers['x-funnelchat-signature']), secret)).toBe(true);
     // And again after a reset.
     await api.call('POST', '/_sandbox/reset');
-    expect((await api.call('GET', '/api/v1/webhooks')).body).toHaveLength(1);
+    expect((await api.call('GET', '/api/v1/webhooks')).body.data).toHaveLength(1);
   });
 });
