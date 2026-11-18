@@ -20,6 +20,7 @@ export const NO_CONTACT = fixedId('ctc', 'Missing');
 export const NO_MESSAGE = fixedId('msg', 'Missing');
 export const NO_LINK = fixedId('lnk', 'Missing');
 export const NO_FORM = fixedId('frv', 'Missing');
+export const NO_FORM_FAMILY = fixedId('frm', 'Missing');
 export const NO_TEMPLATE = fixedId('tpl', 'Missing');
 export const NOTE = fixedId('not', 'Example');
 
