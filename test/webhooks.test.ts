@@ -54,6 +54,16 @@ describe('subscriptions', () => {
     expect(receiver.received).toHaveLength(0);
   });
 
+  it('takes a receiver on your machine, http://localhost or http://127.0.0.1, though the real API wants https', async () => {
+    const api = await startSandbox();
+    for (const url of ['http://localhost:3000/hooks', 'http://127.0.0.1:3000/hooks']) {
+      const created = await api.call('POST', '/api/v1/webhooks', { url, events: ['message.received'] });
+      expect(created.status).toBe(201);
+      expect(created.body.url).toBe(url);
+      expect((await api.call('PUT', `/api/v1/webhooks/${created.body.id}`, { url, events: ['message.received'] })).status).toBe(200);
+    }
+  });
+
   it('validates url and events like accounts', async () => {
     const api = await startSandbox();
     const bad = await api.call('POST', '/api/v1/webhooks', { url: 'https://user:pass@example.com/h', events: ['message.received', 'nope', 'webhook.test'] });
