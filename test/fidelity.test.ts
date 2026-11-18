@@ -110,6 +110,46 @@ describe('booleans of a query: 1 or 0', () => {
   });
 });
 
+describe('pagination links copy the query as it came', () => {
+  /** Follows `links.next` from `path` to the last page: every page answers 200 and every link keeps `keep`. */
+  async function follow(api: Awaited<ReturnType<typeof startSandbox>>, path: string, keep: string[]): Promise<number> {
+    let url: string | null = `${api.url}${path}`;
+    let pages = 0;
+    while (url) {
+      const res = await api.call('GET', url.slice(api.url.length));
+      expect(res.status, url).toBe(200);
+      pages += 1;
+      for (const link of [res.body.links.next, res.body.links.prev, res.body.links.first, res.body.links.last]) {
+        if (typeof link !== 'string') continue;
+        for (const pair of keep) expect(link, link).toContain(pair);
+        expect(link).not.toMatch(/=(true|false)(&|$)/);
+      }
+      url = res.body.links.next;
+      expect(pages).toBeLessThan(20);
+    }
+    return pages;
+  }
+
+  it('activeConversation=1 stays 1 in links.next of /conversations, and the next page answers', async () => {
+    const api = await startSandbox();
+    for (const phone of ['5491155550101', '5491155550102', '5491155550103']) {
+      const contact = await api.call('POST', '/api/v1/contacts', { phone, name: `Contacto ${phone.slice(-3)}` });
+      await api.call('POST', '/_sandbox/inbound/message', { contact_id: contact.body.id, device_id: QR, text: 'Hola' });
+    }
+    expect(await follow(api, '/api/v1/conversations?activeConversation=1&perPage=1', ['activeConversation=1'])).toBe(3);
+  });
+
+  it('withContactCount=1 stays 1 in links.next, prev and last of /tags and /custom-fields', async () => {
+    const api = await startSandbox();
+    for (const name of ['Paginado uno', 'Paginado dos']) {
+      expect((await api.call('POST', '/api/v1/tags', { name })).status).toBeLessThan(300);
+      expect((await api.call('POST', '/api/v1/custom-fields', { name, type: 0 })).status).toBeLessThan(300);
+    }
+    expect(await follow(api, '/api/v1/tags?withContactCount=1&perPage=1', ['withContactCount=1'])).toBeGreaterThan(2);
+    expect(await follow(api, '/api/v1/custom-fields?withContactCount=1&perPage=1', ['withContactCount=1'])).toBeGreaterThan(1);
+  });
+});
+
 describe('GET /api/v1/conversations: the row of the listing, not a contact', () => {
   it('the contact is contact_id, id is its last message, and the page has links and meta.total', async () => {
     const api = await startSandbox();

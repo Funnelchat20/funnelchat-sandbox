@@ -184,6 +184,7 @@ export function createSandbox(options: CreateSandboxOptions = {}): Sandbox {
         op,
         path: validation.value.path,
         query: validation.value.query,
+        rawQuery: url.searchParams,
         body: validation.value.body,
         headers,
         origin: `http://${headers.host ?? `localhost:${config.port}`}`,

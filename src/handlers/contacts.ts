@@ -9,7 +9,7 @@
 import type { SandboxApp } from '../app.js';
 import { body, listContext, ok, type HandlerContext, type HandlerTable } from '../http/context.js';
 import { ApiError, fieldError, notFound, objectNotFound, validationFailed } from '../http/errors.js';
-import { cursorPaginate, paginate } from '../http/paginate.js';
+import { cursorPaginate, linkQuery, paginate } from '../http/paginate.js';
 import {
   contactCustomFieldResource,
   contactResource,
@@ -539,12 +539,7 @@ export const contactHandlers: HandlerTable = {
     const page = cursorPaginate(list, listContext(ctx), (c) => conversationRow(ctx.app.store, c));
     const meta = page.meta as Record<string, unknown>;
     const links = page.links as Record<string, unknown>;
-    const first = new URLSearchParams();
-    for (const [key, value] of Object.entries(ctx.query)) {
-      if (key !== 'cursor' && key !== 'perPage' && value !== undefined && value !== null && typeof value !== 'object') first.set(key, typeof value === 'boolean' ? (value ? '1' : '0') : String(value));
-    }
-    first.set('perPage', String(meta.per_page));
-    links.first = `${meta.path as string}?${first.toString()}`;
+    links.first = `${meta.path as string}?${linkQuery(listContext(ctx), { perPage: meta.per_page as number }, ['cursor']).toString()}`;
     const hasCursor = ctx.query.cursor !== undefined && ctx.query.cursor !== '';
     meta.total = hasCursor || list.length > 5000 ? null : list.length;
     return ok(page);
