@@ -200,8 +200,10 @@ export function tagResource(store: Store, tag: Tag): Record<string, unknown> {
   return {
     id: tag.id,
     name: tag.name,
-    description: null,
+    description: tag.description,
     color: tag.color,
+    // `OptOutTag::isReserved`: the sandbox has no reserved tag.
+    is_system: false,
     created_at: laravelJson(tag.createdAt),
     updated_at: laravelJson(tag.updatedAt),
     contact_count: contactCount(store, (c) => c.tags.has(tag.id)),
@@ -211,7 +213,7 @@ export function tagResource(store: Store, tag: Tag): Record<string, unknown> {
 export function contactTagResource(store: Store, tag: Tag, assignedAt: Date): Record<string, unknown> {
   return {
     ...tagResource(store, tag),
-    contact_count: String(contactCount(store, (c) => c.tags.has(tag.id))),
+    contact_count: contactCount(store, (c) => c.tags.has(tag.id)),
     assigned_at: laravelJson(assignedAt),
     last_updated: laravelJson(assignedAt),
   };
@@ -222,7 +224,7 @@ export function customFieldResource(store: Store, field: CustomField): Record<st
     id: field.id,
     name: field.name,
     type: field.type,
-    description: null,
+    description: field.description,
     contact_count: contactCount(store, (c) => c.customFields.has(field.id)),
     created_at: laravelJson(field.createdAt),
   };
@@ -237,7 +239,7 @@ export function contactCustomFieldResource(
   return {
     id: field.id,
     name: field.name,
-    description: null,
+    description: field.description,
     // The model casts `type` to `CustomFieldTypeEnum`: an integer.
     type: field.type,
     value,

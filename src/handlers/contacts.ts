@@ -59,6 +59,12 @@ export interface NewContact {
 
 const text = (value: unknown): string | null => (value === undefined || value === null || value === '' ? null : String(value));
 
+/**
+ * Whether two names of a tag or a field are the same to production's lookup (`where('name', …)` in MySQL's
+ * `utf8mb4_unicode_ci`): neither case nor accents count, nor spaces at the end.
+ */
+const sameName = (a: string, b: string): boolean => a.trimEnd().localeCompare(b.trimEnd(), 'und', { sensitivity: 'base' }) === 0;
+
 /** Creates a contact and emits `contact.created`, like conversations' `ContactObserver::created`. */
 export function createContact(app: SandboxApp, input: NewContact): Contact {
   const now = new Date();
@@ -590,19 +596,24 @@ export const contactHandlers: HandlerTable = {
     // `TagResource::collection()->additional(['with_contact_count' => …])`.
     return ok({ ...paginate(list, listContext(ctx), (t) => tagResource(ctx.app.store, t)), with_contact_count: ctx.query.withContactCount === true });
   },
+  // `TagController::store`: the tag of that name if the account has it (`200`, unchanged), or a new one (`201`).
   'POST /api/v1/tags': (ctx) => {
     const b = body(ctx);
+    const name = String(b.name);
+    const existing = [...ctx.app.store.tags.values()].find((t) => sameName(t.name, name));
+    if (existing) return ok(tagResource(ctx.app.store, existing));
     const now = new Date();
     const id = ctx.app.store.ids.tag.next();
-    const tag = { id, name: String(b.name), color: text(b.color), createdAt: now, updatedAt: now };
+    const tag = { id, name, description: typeof b.description === 'string' ? b.description : '', color: text(b.color), createdAt: now, updatedAt: now };
     ctx.app.store.tags.set(id, tag);
-    return ok(tagResource(ctx.app.store, tag));
+    return ok(tagResource(ctx.app.store, tag), 201);
   },
   'GET /api/v1/tags/{tag}': (ctx) => ok(tagResource(ctx.app.store, getTag(ctx))),
   'PUT /api/v1/tags/{tag}': (ctx) => {
     const tag = getTag(ctx);
     const b = body(ctx);
     tag.name = String(b.name);
+    if ('description' in b) tag.description = typeof b.description === 'string' ? b.description : '';
     if ('color' in b) tag.color = text(b.color);
     tag.updatedAt = new Date();
     return ok(tagResource(ctx.app.store, tag));
@@ -629,14 +640,19 @@ export const contactHandlers: HandlerTable = {
     );
     return ok({ ...paginate(list, listContext(ctx), (f) => customFieldResource(ctx.app.store, f)), with_contact_count: ctx.query.withContactCount === true });
   },
+  // `CustomFieldController::store`: the field of that name if the account has it (`200`, with its own `type`), or a new
+  // one (`201`).
   'POST /api/v1/custom-fields': (ctx) => {
     const b = body(ctx);
     if (![0, 1, 2, 3, 4].includes(Number(b.type))) throw fieldError('type', 'El valor seleccionado en type no es válido.');
+    const name = String(b.name);
+    const existing = [...ctx.app.store.customFields.values()].find((f) => sameName(f.name, name));
+    if (existing) return ok(customFieldResource(ctx.app.store, existing));
     const now = new Date();
     const id = ctx.app.store.ids.customField.next();
-    const field = { id, name: String(b.name), type: Number(b.type), createdAt: now, updatedAt: now };
+    const field = { id, name, description: typeof b.description === 'string' ? b.description : null, type: Number(b.type), createdAt: now, updatedAt: now };
     ctx.app.store.customFields.set(id, field);
-    return ok(customFieldResource(ctx.app.store, field));
+    return ok(customFieldResource(ctx.app.store, field), 201);
   },
   'GET /api/v1/custom-fields/{customField}': (ctx) => ok(customFieldResource(ctx.app.store, getCustomField(ctx))),
   'PUT /api/v1/custom-fields/{customField}': (ctx) => {

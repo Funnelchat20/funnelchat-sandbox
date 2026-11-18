@@ -223,6 +223,38 @@ describe('contacts: 201 when created, and custom_fields kept', () => {
   });
 });
 
+describe('a tag or a field with a name the account has: the one it has', () => {
+  it('POST /tags answers 201 with a new tag and 200 with the existing one, without a duplicate', async () => {
+    const api = await startSandbox();
+    const before = (await api.call('GET', '/api/v1/tags?perPage=100')).body.meta.total;
+    const created = await api.call('POST', '/api/v1/tags', { name: 'Mayorista', description: 'Compra por caja', color: '#1565C0' });
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({ name: 'Mayorista', description: 'Compra por caja', color: '#1565C0', is_system: false });
+    // Same name (case, accents and spaces at the end do not count, as in MySQL): the tag it has, unchanged.
+    const again = await api.call('POST', '/api/v1/tags', { name: 'mayorísta ', color: '#000000' });
+    expect(again.status).toBe(200);
+    expect(again.body).toMatchObject({ id: created.body.id, name: 'Mayorista', color: '#1565C0' });
+    const seeded = await api.call('POST', '/api/v1/tags', { name: 'Cliente' });
+    expect(seeded.status).toBe(200);
+    expect(seeded.body.id).toBe(TAG);
+    expect((await api.call('GET', '/api/v1/tags?perPage=100')).body.meta.total).toBe(before + 1);
+  });
+
+  it('POST /custom-fields answers 201 with a new field and 200 with the existing one, with its own type', async () => {
+    const api = await startSandbox();
+    const created = await api.call('POST', '/api/v1/custom-fields', { name: 'Segmento', type: 0 });
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({ name: 'Segmento', type: 0, description: null });
+    const again = await api.call('POST', '/api/v1/custom-fields', { name: 'Segmento', type: 1 });
+    expect(again.status).toBe(200);
+    expect(again.body).toMatchObject({ id: created.body.id, name: 'Segmento', type: 0 });
+    // An invalid type is refused before the lookup, as Laravel validates first.
+    expect((await api.call('POST', '/api/v1/custom-fields', { name: 'Segmento', type: 9 })).status).toBe(422);
+    const list = (await api.call('GET', '/api/v1/custom-fields?name=Segmento')).body.data;
+    expect(list.filter((f: { name: string }) => f.name === 'Segmento')).toHaveLength(1);
+  });
+});
+
 describe('add-tags and remove-tags keep the tags', () => {
   it('200 without a body, the tag stays and contact.tag_added goes out; remove-tags takes it off', async () => {
     const api = await startSandbox();

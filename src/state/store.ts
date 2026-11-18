@@ -152,6 +152,8 @@ export interface Message {
 export interface Tag {
   id: string;
   name: string;
+  /** `""` when it has none (`TagController::store` saves `description ?? ''`). */
+  description: string;
   color: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -160,6 +162,7 @@ export interface Tag {
 export interface CustomField {
   id: string;
   name: string;
+  description: string | null;
   type: number;
   createdAt: Date;
   updatedAt: Date;
@@ -607,7 +610,7 @@ export function seed(store: Store, now = new Date()): void {
   });
 
   const tagId = EXAMPLE_ID.tag;
-  store.tags.set(tagId, { id: tagId, name: 'Cliente', color: '#2E7D32', createdAt: now, updatedAt: now });
+  store.tags.set(tagId, { id: tagId, name: 'Cliente', description: '', color: '#2E7D32', createdAt: now, updatedAt: now });
 
   const templateId = EXAMPLE_ID.template;
   store.templates.set(templateId, {
