@@ -388,12 +388,6 @@
       "property": "id",
       "prefix": "dev",
       "x-fc-pending": "opaque-ids"
-    },
-    {
-      "schema": "PendingGroupAction",
-      "property": "device_id",
-      "prefix": "dev",
-      "x-fc-pending": "opaque-ids"
     }
   ],
   "parameterPatches": [],

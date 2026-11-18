@@ -83507,181 +83507,6 @@
      "status",
      "reason"
     ]
-   },
-   "PendingDeviceQr": {
-    "type": "object",
-    "properties": {
-     "connected": {
-      "type": "boolean"
-     },
-     "qr_code": {
-      "type": [
-       "string",
-       "null"
-      ],
-      "description": "A PNG image as a data URI, or `null` when the number is already connected."
-     },
-     "expires_in": {
-      "type": "integer",
-      "description": "Seconds after which to ask for it again: 5 with a QR, 3 while the session starts, 0 once connected. WhatsApp changes the code every few seconds and an old one no longer links: show the latest one and have it scanned right away; do not store or forward a QR."
-     }
-    },
-    "required": [
-     "connected",
-     "qr_code",
-     "expires_in"
-    ]
-   },
-   "PendingGroupAction": {
-    "type": "object",
-    "properties": {
-     "action_id": {
-      "type": "string",
-      "format": "uuid"
-     },
-     "type": {
-      "type": "string",
-      "description": "`send_message` for a message to the group."
-     },
-     "status": {
-      "type": "string",
-      "enum": [
-       "queued",
-       "running",
-       "completed",
-       "failed"
-      ]
-     },
-     "device_id": {
-      "type": [
-       "string",
-       "null"
-      ],
-      "description": "Id opaco: un texto que empieza con `dev_`. Se usa tal como llega; no se arma ni se interpreta.",
-      "pattern": "^dev_[A-Za-z0-9]{23}$",
-      "examples": [
-       "dev_Ac7Ku7iIZDXJTjdCu0UB1mX"
-      ],
-      "x-fc-pending": "opaque-ids"
-     },
-     "group": {
-      "anyOf": [
-       {
-        "type": "object",
-        "properties": {
-         "uid": {
-          "type": "string"
-         },
-         "name": {
-          "type": [
-           "string",
-           "null"
-          ]
-         }
-        },
-        "required": [
-         "uid",
-         "name"
-        ]
-       },
-       {
-        "type": "null"
-       }
-      ]
-     },
-     "result": {
-      "description": "`{}` while it is open. Sending: `{message: {uid}}`, the id of the message in WhatsApp. Other actions: `{participants: [...]}`, `{group, invite_link}` or `{invite_link}`.",
-      "anyOf": [
-       {
-        "type": "object",
-        "properties": {
-         "message": {
-          "type": "object",
-          "properties": {
-           "uid": {
-            "type": "string"
-           }
-          }
-         },
-         "participants": {
-          "type": "array",
-          "items": {
-           "$ref": "#/components/schemas/PendingGroupParticipantResult"
-          }
-         },
-         "invite_link": {
-          "type": "string"
-         },
-         "group": {
-          "type": "object",
-          "properties": {
-           "uid": {
-            "type": "string"
-           },
-           "name": {
-            "type": [
-             "string",
-             "null"
-            ]
-           }
-          }
-         }
-        }
-       },
-       {
-        "type": "null"
-       }
-      ]
-     },
-     "reason": {
-      "type": [
-       "string",
-       "null"
-      ],
-      "description": "Why it failed, when `status` is `failed`."
-     },
-     "created_at": {
-      "type": [
-       "string",
-       "null"
-      ],
-      "format": "date-time"
-     },
-     "started_at": {
-      "type": [
-       "string",
-       "null"
-      ],
-      "format": "date-time"
-     },
-     "completed_at": {
-      "type": [
-       "string",
-       "null"
-      ],
-      "format": "date-time"
-     },
-     "failed_at": {
-      "type": [
-       "string",
-       "null"
-      ],
-      "format": "date-time"
-     }
-    },
-    "required": [
-     "action_id",
-     "type",
-     "status",
-     "device_id",
-     "group",
-     "result",
-     "reason",
-     "created_at",
-     "started_at",
-     "completed_at",
-     "failed_at"
-    ]
    }
   },
   "responses": {
@@ -84446,8 +84271,8 @@
   "note": "GENERATED: do not edit it. The portal's snapshot plus the pending layers.",
   "inputs": {
    "spec/funnelchat.json": "4a8fbaee9d8b251fd0df44b5a6ae5e4a55ca4993569a5af6834c09b31a4bb423",
-   "spec/pending.json": "665399018a4a5193038efd4471c4e8655b2fd05400eb9bd9b621627148f8be47",
-   "spec/pending-sandbox.json": "c06fdbc13ac4874bf38c17419c3512ac4659879c7d3bec19ae8ad7c27aa11925"
+   "spec/pending.json": "1acc5da9e4eb425af95d8611e040ead5c2d1110308b449d7afa451316c1a51ff",
+   "spec/pending-sandbox.json": "3711e31380d55c147b7221a62dddc9419c4b91c33ab1bdbb4532ffe75d0da2f7"
   },
   "snapshot_commit": "fe4df8d241a2e5b8591d352930be1a08642b5740",
   "pending_commit": "bde867919d1da0fc9412bad7e67688c3cd2e6a9b",
@@ -84494,8 +84319,7 @@
    "webhook whatsapp_form.completed (ids: device_id) [pending-sandbox.json]",
    "webhook whatsapp_form.completed (ids: form.id) [pending-sandbox.json]",
    "webhook whatsapp_form.completed (ids: form.version_id) [pending-sandbox.json]",
-   "schema PendingWebhookDevice (ids: id) [pending-sandbox.json]",
-   "schema PendingGroupAction (ids: device_id) [pending-sandbox.json]"
+   "schema PendingWebhookDevice (ids: id) [pending-sandbox.json]"
   ]
  }
 }
