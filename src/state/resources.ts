@@ -1,11 +1,15 @@
 /**
  * The public shape of each object, as the domains' Laravel resources write them (keys, order, date formats).
  */
-import { iso8601, isoSeconds, laravelJson, sqlDateTime } from '../util.js';
+import type { TemplateParams } from '../messaging/template-params.js';
+import { fixedId, iso8601, isoSeconds, laravelJson, sqlDateTime } from '../util.js';
 import type { ConnectLink, Connection, Contact, CustomField, Delivery, Device, Message, Store, Subscription, Tag, Template } from './store.js';
 
-/** The account the sandbox imitates. REST resources carry it in `user_id`; events never do. */
-export const ACCOUNT_USER_ID = 1;
+/**
+ * The account the sandbox imitates. REST resources carry it in `user_id`, which a key reads as an opaque id (`usr_`,
+ * `KeyPublicIds::NAMES`); events never do.
+ */
+export const ACCOUNT_USER_ID = fixedId('usr', 'Sandbox0Cuenta');
 
 const MESSAGE_TYPE_INT: Record<string, number> = {
   text: 0,
@@ -22,6 +26,7 @@ const MESSAGE_TYPE_INT: Record<string, number> = {
   button: 15,
   template: 16,
   option_list: 18,
+  template_button_reply: 19,
 };
 
 /** MessageStatusEnum of conversations: the number the history shows. */
@@ -44,8 +49,9 @@ function statusInt(message: Message, device: Device | undefined): number | null 
 }
 
 /**
- * conversations `ContactResource`. The detail (`show`) also carries `ai_assistant_email`, `account_main_email` and
- * `follow_up_date` (conversations v1.19.7), `null` for a contact without an AI assistant nor a follow-up date.
+ * conversations `ContactResource`. The detail (`show`, `ContactController::show`) also carries `opted_out`,
+ * `follow_up_date` and `name_mismatch` (`null`: no pending alert). `ai_assistant_email` and `account_main_email` are
+ * the panel's only: a key never gets them.
  */
 export function contactResource(store: Store, contact: Contact, mode: 'list' | 'show' = 'list'): Record<string, unknown> {
   const show = mode === 'show';
@@ -53,15 +59,16 @@ export function contactResource(store: Store, contact: Contact, mode: 'list' | '
   const last = messages[0];
   return {
     id: contact.id,
-    name: contact.name,
-    email: contact.email,
-    phone: contact.phone,
-    whatsapp_id: contact.whatsappId,
+    // `?? ''`, like conversations: a contact without a name, an email, a phone, a WhatsApp id or a photo has `""`.
+    name: contact.name ?? '',
+    email: contact.email ?? '',
+    phone: contact.phone ?? '',
+    whatsapp_id: contact.whatsappId ?? '',
     whatsapp_username: null,
     has_phone: Boolean(contact.phone),
     country_code: '',
     status: contact.status,
-    image: contact.image,
+    image: contact.image ?? '',
     notes: contact.notes,
     custom_fields: [...contact.customFields.entries()].flatMap(([id, value]) => {
       const field = store.customFields.get(id);
@@ -72,25 +79,28 @@ export function contactResource(store: Store, contact: Contact, mode: 'list' | '
     favorite: contact.favorite ? 1 : 0,
     unread_messages: contact.unreadMessages,
     manually_unread: contact.manuallyUnread,
-    last_message: last
+    // Only when the contact has a last message (`has_last_message`): without one the key is not there.
+    ...(last
       ? {
-          text: last.text ?? '',
-          file: last.file ?? '',
-          date: sqlDateTime(last.createdAt),
-          type: String(MESSAGE_TYPE_INT[last.type] ?? 0),
-          own: last.own ? '1' : '0',
-          deleted_at: null,
-          deleted_scope: null,
+          last_message: {
+            text: last.text ?? '',
+            file: last.file ?? '',
+            date: sqlDateTime(last.createdAt),
+            type: String(MESSAGE_TYPE_INT[last.type] ?? 0),
+            own: last.own ? '1' : '0',
+            deleted_at: null,
+            deleted_scope: null,
+          },
         }
-      : null,
+      : {}),
     device_id: contact.deviceId,
     adviser_id: contact.adviserId,
     paused_at: contact.pausedAt ? laravelJson(contact.pausedAt) : null,
     mac_date: null,
     ai_assistant_name: null,
-    ...(show ? { ai_assistant_email: null, account_main_email: null } : {}),
-    stage_since: null,
-    is_stagnant: false,
+    ...(show ? { opted_out: false } : {}),
+    // `stage_since` and `is_stagnant` only come in a stages board's listing of contacts, which the sandbox answers
+    // with the shape of the spec.
     ...(show ? { follow_up_date: null } : {}),
     lead_score: {
       score: 0,
@@ -101,6 +111,82 @@ export function contactResource(store: Store, contact: Contact, mode: 'list' | '
       disqualified_at: null,
       updated_at: null,
     },
+    ...(show ? { name_mismatch: null } : {}),
+  };
+}
+
+/**
+ * One row of `GET /api/v1/conversations` (conversations `ConversationController::index`): not a contact resource but
+ * the raw row the listing builds, the contact's columns (`contact_*`, `unread_messages`, `adviser_id`, `last_device_id`…)
+ * plus the computed ones (`is_mac_inactive`, `has_mac`, `tag_ids`, `lead_score`, `manually_unread`,
+ * `meta_window_inbounds`) and then the columns of the last message: **`id` is the last message's (`msg_…`), the
+ * contact is `contact_id`**. Database values as they are: `0`/`1`, `Y-m-d H:i:s` dates and `null`, not `''`.
+ * `country_code` is `null` (the sandbox does not derive it from the phone) and `lead_score` too (no lead scoring).
+ */
+export function conversationRow(store: Store, contact: Contact): Record<string, unknown> {
+  const last = store.contactMessages(contact.id).reverse()[0];
+  const device = last?.deviceId ? store.devices.get(last.deviceId) : undefined;
+  const at = (date: Date | undefined): string | null => (date ? sqlDateTime(date) : null);
+  const reached = (status: Message['status'], ...after: Message['status'][]): boolean => status !== null && after.includes(status);
+  // `contact_meta_window_inbounds`: the last inbound per official number, the 24-hour window's start.
+  const inbounds = [...store.devices.values()]
+    .filter((d) => d.kind === 'cloud')
+    .flatMap((d) => {
+      const date = store.lastInbound.get(`${contact.id}:${d.id}`);
+      return date ? [{ device_id: d.id, last_inbound_at: iso8601(date) }] : [];
+    });
+  return {
+    contact_id: contact.id,
+    contact_name: contact.name,
+    contact_phone: contact.phone,
+    contact_whatsapp_id: contact.whatsappId,
+    contact_email: contact.email,
+    contact_image: contact.image,
+    country_code: null,
+    unread_messages: contact.unreadMessages,
+    contact_active_conversation: contact.activeConversation ? 1 : 0,
+    contact_favorite: contact.favorite ? 1 : 0,
+    contact_custom_fields: null,
+    contact_notes: contact.notes,
+    adviser_id: contact.adviserId,
+    user_id: ACCOUNT_USER_ID,
+    last_message_time: at(last?.createdAt),
+    paused_at: at(contact.pausedAt ?? undefined),
+    last_device_id: last?.deviceId ?? contact.deviceId,
+    contact_whatsapp_username: null,
+    // MAC_PER_CONTACT_ENFORCEMENT is on in production since 21-10.
+    is_mac_inactive: store.mac.inactiveContacts.has(contact.id),
+    mac_date: null,
+    has_mac: 0,
+    tag_ids: [...contact.tags.keys()],
+    lead_score: null,
+    manually_unread: contact.manuallyUnread,
+    meta_window_inbounds: inbounds,
+    id: last?.id ?? null,
+    uid: last?.uid ?? null,
+    text: last ? last.text : null,
+    file: last ? last.file : null,
+    own: last ? (last.own ? 1 : 0) : null,
+    status: last ? statusInt(last, device) : null,
+    error_code: last?.error?.code ?? null,
+    chat_id: last && contact.phone ? `${contact.phone}@c.us` : null,
+    time: at(last?.createdAt),
+    info: null,
+    delivered_at: last && reached(last.status, 'delivered', 'read') ? at(last.updatedAt) : null,
+    viewed_at: last && reached(last.status, 'read') ? at(last.updatedAt) : null,
+    type: last ? (MESSAGE_TYPE_INT[last.type] ?? 0) : null,
+    content: null,
+    origin: last ? (last.own ? 1 : null) : null,
+    device_id: last?.deviceId ?? null,
+    group_id: null,
+    created_at: at(last?.createdAt),
+    updated_at: at(last?.updatedAt),
+    origin_id: null,
+    reference_message_uid: null,
+    forwarded: last ? 0 : null,
+    deleted_at: null,
+    deleted_scope: null,
+    file_original_name: null,
   };
 }
 
@@ -114,8 +200,10 @@ export function tagResource(store: Store, tag: Tag): Record<string, unknown> {
   return {
     id: tag.id,
     name: tag.name,
-    description: null,
+    description: tag.description,
     color: tag.color,
+    // `OptOutTag::isReserved`: the sandbox has no reserved tag.
+    is_system: false,
     created_at: laravelJson(tag.createdAt),
     updated_at: laravelJson(tag.updatedAt),
     contact_count: contactCount(store, (c) => c.tags.has(tag.id)),
@@ -125,7 +213,7 @@ export function tagResource(store: Store, tag: Tag): Record<string, unknown> {
 export function contactTagResource(store: Store, tag: Tag, assignedAt: Date): Record<string, unknown> {
   return {
     ...tagResource(store, tag),
-    contact_count: String(contactCount(store, (c) => c.tags.has(tag.id))),
+    contact_count: contactCount(store, (c) => c.tags.has(tag.id)),
     assigned_at: laravelJson(assignedAt),
     last_updated: laravelJson(assignedAt),
   };
@@ -136,7 +224,7 @@ export function customFieldResource(store: Store, field: CustomField): Record<st
     id: field.id,
     name: field.name,
     type: field.type,
-    description: null,
+    description: field.description,
     contact_count: contactCount(store, (c) => c.customFields.has(field.id)),
     created_at: laravelJson(field.createdAt),
   };
@@ -151,13 +239,20 @@ export function contactCustomFieldResource(
   return {
     id: field.id,
     name: field.name,
-    description: null,
-    type: String(field.type),
+    description: field.description,
+    // The model casts `type` to `CustomFieldTypeEnum`: an integer.
+    type: field.type,
     value,
     created_at: laravelJson(dates.createdAt),
     updated_at: laravelJson(dates.updatedAt),
     contact_count: String(contactCount(store, (c) => c.customFields.has(field.id))),
   };
+}
+
+/** The canonical `params` (`TemplateParams`) as PHP writes them: a map without keys is `[]`. */
+function phpParams(params: TemplateParams): Record<string, unknown> {
+  const map = (m: Record<string, string>): Record<string, string> | [] => (Object.keys(m).length ? { ...m } : []);
+  return { body: map(params.body), samples: { body: map(params.samples.body) } };
 }
 
 export function templateResource(template: Template, currentDeviceId?: string): Record<string, unknown> {
@@ -176,7 +271,7 @@ export function templateResource(template: Template, currentDeviceId?: string): 
     upload_session_id: '',
     header_handle: '',
     file: template.file ?? '',
-    params: template.params ?? [],
+    params: phpParams(template.params),
     buttons: template.buttons ?? [],
     user_id: ACCOUNT_USER_ID,
     device_id: template.deviceId,
@@ -223,6 +318,9 @@ function deviceHealth(device: Device): Record<string, unknown> | null {
     messaging_limit_per_day: 1000,
     last_fetched_at: iso8601(device.createdAt),
     stale: false,
+    // Meta's approved display name and the status of the phone number, lower case (`DeviceHealthSummaryBuilder`).
+    verified_name: device.alias,
+    meta_status: device.connected ? 'connected' : 'disconnected',
   };
 }
 
@@ -250,6 +348,8 @@ export function deviceResource(device: Device): Record<string, unknown> {
     user_id: ACCOUNT_USER_ID,
     provider: device.provider,
     waba_id: device.wabaId ?? '',
+    // Meta's phone number id: an official number's, `null` on a QR one.
+    phone_number_id: device.kind === 'cloud' ? device.phoneNumberId : null,
     whatsapp_username: null,
     is_business: device.kind === 'cloud' ? 1 : 0,
     connected: device.connected ? 1 : 0,
@@ -294,12 +394,13 @@ export function eventDevice(device: Device): Record<string, unknown> {
   };
 }
 
-/** The sign-up link of contract A1, without the token (it is only in the `url` of the create answer). */
-export function connectLinkResource(link: ConnectLink): Record<string, unknown> {
+/** The sign-up link of contract A1: `url` has the token only in the create answer, `null` afterwards. */
+export function connectLinkResource(link: ConnectLink, url: string | null = null): Record<string, unknown> {
   return {
     id: link.id,
     type: link.type,
     status: link.status,
+    url,
     expires_at: iso8601(link.expiresAt),
     allowed_connection_types: link.allowedConnectionTypes,
     provision_us_number: link.provisionUsNumber,

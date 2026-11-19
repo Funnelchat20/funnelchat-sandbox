@@ -3,7 +3,7 @@
  * and read the answers.
  */
 import { describe, expect, it } from 'vitest';
-import { startReceiver, startSandbox, subscribe, OFFICIAL, QR, CONTACT, NO_FORM } from './helpers.js';
+import { startReceiver, startSandbox, subscribe, OFFICIAL, QR, CONTACT, NO_FORM_FAMILY } from './helpers.js';
 
 describe('WhatsApp forms', () => {
   it('lists the five templates and only takes official numbers', async () => {
@@ -39,7 +39,7 @@ describe('WhatsApp forms', () => {
 
     // Not published yet.
     await api.call('POST', '/_sandbox/inbound/message', { contact_id: CONTACT, device_id: OFFICIAL });
-    const early = await api.call('POST', `/api/v1/contacts/${CONTACT}/message/form`, { form_id: created.id, device_id: OFFICIAL });
+    const early = await api.call('POST', `/api/v1/contacts/${CONTACT}/message/form`, { form_id: created.family_id, device_id: OFFICIAL });
     expect(early.body.error).toBe('form_not_published');
 
     const published = await api.call('POST', `/api/v1/forms/${created.id}/publish`);
@@ -49,10 +49,12 @@ describe('WhatsApp forms', () => {
     expect((await api.call('PUT', `/api/v1/forms/${created.id}`, { definition: { screens: [] } })).body.error).toBe('PUBLISHED');
 
     // The rules of a form send.
-    expect((await api.call('POST', `/api/v1/contacts/${CONTACT}/message/form`, { form_id: NO_FORM, device_id: OFFICIAL })).status).toBe(404);
-    expect((await api.call('POST', `/api/v1/contacts/${CONTACT}/message/form`, { form_id: created.id, device_id: QR })).body.error).toBe('number_not_eligible');
+    expect((await api.call('POST', `/api/v1/contacts/${CONTACT}/message/form`, { form_id: NO_FORM_FAMILY, device_id: OFFICIAL })).status).toBe(404);
+    // `form_id` is the family (`frm_`); the id of a version (`frv_`) is not one.
+    expect((await api.call('POST', `/api/v1/contacts/${CONTACT}/message/form`, { form_id: created.id, device_id: OFFICIAL })).body.errors).toHaveProperty('form_id');
+    expect((await api.call('POST', `/api/v1/contacts/${CONTACT}/message/form`, { form_id: created.family_id, device_id: QR })).body.error).toBe('number_not_eligible');
 
-    const sent = await api.call('POST', `/api/v1/contacts/${CONTACT}/message/form`, { form_id: created.id, device_id: OFFICIAL, client_reference: 'pedido-42' });
+    const sent = await api.call('POST', `/api/v1/contacts/${CONTACT}/message/form`, { form_id: created.family_id, device_id: OFFICIAL, client_reference: 'pedido-42' });
     expect(sent.status).toBe(200);
     expect(sent.body.message).toMatchObject({ type: 'whatsapp_form', status: 'queued', client_reference: 'pedido-42', direction: 'outbound' });
     expect((await api.call('GET', `/api/v1/contacts/${CONTACT}/messages/${sent.body.message.id}`)).body.type).toBe('whatsapp_form');

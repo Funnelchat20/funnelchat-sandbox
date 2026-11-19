@@ -7,13 +7,19 @@
       "responsePatches": "Un parche reemplaza respuestas de una operación de la instantánea solo mientras esa operación cumple la condición de `while`.",
       "webhookPatches": "Un parche fija propiedades de `data` de un evento (esquema y ejemplo) mientras el evento cumple `while`, o mientras su `data` no trae `whileMissing`.",
       "components.schemas": "Los esquemas de esta capa empiezan con `PendingSandbox` para no chocar con los de la instantánea ni con los de spec/pending.json.",
-      "operationPatches": "Un parche suma propiedades al cuerpo de una operación de la instantánea mientras esa operación cumple `while` (si lo tiene) y le falta alguna; con `replace: true` reemplaza propiedades que la instantánea ya tiene (una corrección, se aplica siempre).",
+      "operationPatches": "Un parche suma propiedades al cuerpo de una operación de la instantánea mientras esa operación cumple `while` (si lo tiene) y le falta alguna; con `replace: true` reemplaza propiedades que la instantánea ya tiene (una corrección, se aplica siempre). Con `removeKeywords` o `removeRequired` saca del esquema del cuerpo reglas condicionales (`oneOf`, `allOf`, un obligatorio) que el handler aplica con los mensajes del dominio; el generador avisa cuando la instantánea ya no las trae.",
       "parameterPatches": "Un parche suma parámetros a una operación de la instantánea, solo los que todavía no tiene (por nombre y lugar).",
-      "idPatches": "Un parche vuelve id opaco una propiedad de `data` de un evento (`event`) o de un esquema (`schema`) mientras siga tipada como número: cuando la capa que corrige se actualiza, el generador lo avisa para borrarlo."
+      "idPatches": "Un parche vuelve id opaco una propiedad de `data` de un evento (`event`) o de un esquema (`schema`) mientras siga tipada como número: cuando la capa que corrige se actualiza, el generador lo avisa para borrarlo.",
+      "catalogFields": "`label` e `is_critical` de cada tipo en `GET /api/v1/webhooks/events`: la spec publicada los exige en `WebhookEventType` y no los trae por evento. Se copian del catálogo de accounts; un tipo nuevo sin entrada frena la generación."
     },
     "sources": {
       "accounts-workspaces": "accounts v1.5.97, en producción desde el 04-11 (platform-gate v0.9.1): cada API key es de un workspace y solo ve y crea ahí; un evento llega solo a las suscripciones de su workspace y todo aviso público lleva `data.workspace_id` = el workspace al que se ruteó, como última clave de `data`. Los ejemplos del catálogo de accounts usan 37. conversations v1.19.7 y communities v2.35.5 confinan sus rutas igual.",
-      "accounts-prohibited-null": "accounts v1.5.97, en producción desde el 04-11: las reglas de crear un enlace de alta cambian según `type` (`prohibited` con `qr` para `allowed_connection_types` y `provision_us_number`), y `prohibited` de Laravel deja pasar `null`, `\"\"` y `[]`. El esquema publicado no expresa la condición y los declara sin `null`: el sandbox los acepta con `null`, como accounts, y aplica las reglas por `type` en el handler."
+      "accounts-prohibited-null": "accounts v1.5.97, en producción desde el 04-11: las reglas de crear un enlace de alta cambian según `type` (`prohibited` con `qr` para `allowed_connection_types` y `provision_us_number`), y `prohibited` de Laravel deja pasar `null`, `\"\"` y `[]`. El esquema publicado no expresa la condición y los declara sin `null`: el sandbox los acepta con `null`, como accounts, y aplica las reglas por `type` en el handler.",
+      "conversations-template-params": "conversations en producción (origin/main d9823025e8, 17-11; igual en la spec v3 del 18-11): crear o editar una plantilla exige `device_id` (`StoreMessageTemplateRequest`/`UpdateMessageTemplateRequest`), `file` salvo con `type` `text` y, si `body` tiene `{{n}}`, `params` con un campo y un ejemplo por variable (`TemplateParamsComplete`), en la forma canónica `{\"body\": {\"1\": \"{name}\"}, \"samples\": {\"body\": {\"1\": \"Lucía\"}}}`. La spec v3 ya lo publica (con `device_id` obligatorio y `file` en un `if`/`else`); la capa deja dos cosas: `params` también como lista (la regla `array` de Laravel la deja pasar y `TemplateParamsComplete` la rechaza en `body`), y `device_id` y `file` fuera del esquema, porque el handler los revisa con los mensajes de conversations («El campo device id es requerido.», «El campo file es requerido a menos que type esté en text.»).",
+      "accounts-disconnect-reasons": "accounts en producción (origin/main d9823025e8, 17-11, `DeviceWebhookEmitter::DISCONNECT_REASONS`): `reason` de `device.disconnected` es `qr_logged_out`, `meta_account_not_registered`, `shadow_ban_protection`, `disconnected_by_user` o `unknown`. `provider_error` se documentó y ningún sitio lo emitía: se quitó de la lista el 13-11. La capa del SDK todavía lo lista.",
+      "sandbox-local-receivers": "Del sandbox, no de producción: accounts exige una URL `https://` pública (la spec publicada lo dice con `pattern: ^https://`). El sandbox existe para probar en local, así que acepta también `http://` y direcciones locales salvo con `--require-https` (`webhooks.requireHttps`), que el handler aplica con el mensaje de accounts. Sin esta corrección, ningún receptor local se podría suscribir.",
+      "accounts-connect-link-rules": "accounts en producción: las reglas de un enlace de alta cambian según `type` y `device_id` (`StoreConnectLinkRequest`). La spec las publica como un `oneOf` de tres variantes; el handler del sandbox las aplica con los campos y los mensajes de accounts (`invalid_request`), así que la capa saca ese `oneOf` del esquema: con él, un pedido inválido respondería sin decir qué campo falla.",
+      "accounts-event-catalog": "El catálogo unificado de accounts (`GET /api/v1/webhooks/events`) como lo tomó el portal el 16-11 (developers-portal snapshots/accounts/events.json, sha256 0d075d57e54c…, copia local de accounts v1.6.114 con ids opacos): de ahí salen `label` e `is_critical` de catalogFields."
     }
   },
   "components": {
@@ -37,6 +43,33 @@
       },
       "exampleData": {
         "workspace_id": 37
+      }
+    },
+    {
+      "type": "device.disconnected",
+      "while": {
+        "/requestBody/content/application~1json/schema/properties/data/properties/reason/enum": [
+          "qr_logged_out",
+          "meta_account_not_registered",
+          "shadow_ban_protection",
+          "provider_error",
+          "unknown",
+          "disconnected_by_user"
+        ]
+      },
+      "x-fc-pending": "accounts-disconnect-reasons",
+      "dataProperties": {
+        "reason": {
+          "type": "string",
+          "enum": [
+            "qr_logged_out",
+            "meta_account_not_registered",
+            "shadow_ban_protection",
+            "disconnected_by_user",
+            "unknown"
+          ],
+          "description": "Por qué se desconectó: `qr_logged_out` (se cerró la sesión de un número por QR), `meta_account_not_registered`, `shadow_ban_protection` (Funnelchat lo desconectó para protegerlo), `disconnected_by_user` (alguien de la cuenta lo desconectó) o `unknown`."
+        }
       }
     }
   ],
@@ -70,6 +103,173 @@
             "null"
           ],
           "description": "`type: meta` only: offer a US number of the Funnelchat pool."
+        }
+      }
+    },
+    {
+      "method": "post",
+      "path": "/api/v1/connect-links",
+      "x-fc-pending": "accounts-connect-link-rules",
+      "replace": true,
+      "removeKeywords": [
+        "oneOf"
+      ]
+    },
+    {
+      "method": "post",
+      "path": "/api/v1/templates",
+      "x-fc-pending": "conversations-template-params",
+      "replace": true,
+      "requestBodyProperties": {
+        "params": {
+          "type": [
+            "object",
+            "array",
+            "null"
+          ],
+          "description": "Si `body` tiene `{{n}}`, es obligatorio: para cada variable, el campo del contacto que la llena (`body`) y un valor de ejemplo para la revisión de Meta (`samples.body`), con la variable sin llaves como clave. Por ejemplo `{\"body\": {\"1\": \"{name}\"}, \"samples\": {\"body\": {\"1\": \"Lucía\"}}}`. Sin ellos la API responde 422 en `body`.",
+          "properties": {
+            "body": {
+              "type": [
+                "object",
+                "array"
+              ],
+              "additionalProperties": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "samples": {
+              "type": "object",
+              "properties": {
+                "body": {
+                  "type": [
+                    "object",
+                    "array"
+                  ],
+                  "additionalProperties": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "examples": [
+            {
+              "body": {
+                "1": "{name}"
+              },
+              "samples": {
+                "body": {
+                  "1": "Lucía"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "removeKeywords": [
+        "allOf"
+      ],
+      "removeRequired": [
+        "device_id"
+      ]
+    },
+    {
+      "method": "put",
+      "path": "/api/v1/templates/{template}",
+      "x-fc-pending": "conversations-template-params",
+      "replace": true,
+      "requestBodyProperties": {
+        "params": {
+          "type": [
+            "object",
+            "array",
+            "null"
+          ],
+          "description": "Si `body` tiene `{{n}}`, es obligatorio: para cada variable, el campo del contacto que la llena (`body`) y un valor de ejemplo para la revisión de Meta (`samples.body`), con la variable sin llaves como clave. Por ejemplo `{\"body\": {\"1\": \"{name}\"}, \"samples\": {\"body\": {\"1\": \"Lucía\"}}}`. Sin ellos la API responde 422 en `body`.",
+          "properties": {
+            "body": {
+              "type": [
+                "object",
+                "array"
+              ],
+              "additionalProperties": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "samples": {
+              "type": "object",
+              "properties": {
+                "body": {
+                  "type": [
+                    "object",
+                    "array"
+                  ],
+                  "additionalProperties": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "examples": [
+            {
+              "body": {
+                "1": "{name}"
+              },
+              "samples": {
+                "body": {
+                  "1": "Lucía"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "removeKeywords": [
+        "allOf"
+      ],
+      "removeRequired": [
+        "device_id"
+      ]
+    },
+    {
+      "method": "post",
+      "path": "/api/v1/webhooks",
+      "x-fc-pending": "sandbox-local-receivers",
+      "replace": true,
+      "requestBodyProperties": {
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 2048,
+          "description": "URL de tu servidor. La API real solo acepta `https://` público; el sandbox también acepta `http://` y direcciones locales, para probar con un receptor en tu máquina (`--require-https` lo cierra como la API real). Sin usuario ni contraseña."
+        }
+      }
+    },
+    {
+      "method": "put",
+      "path": "/api/v1/webhooks/{id}",
+      "x-fc-pending": "sandbox-local-receivers",
+      "replace": true,
+      "requestBodyProperties": {
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 2048,
+          "description": "URL de tu servidor. La API real solo acepta `https://` público; el sandbox también acepta `http://` y direcciones locales, para probar con un receptor en tu máquina (`--require-https` lo cierra como la API real). Sin usuario ni contraseña."
         }
       }
     }
@@ -188,14 +388,234 @@
       "property": "id",
       "prefix": "dev",
       "x-fc-pending": "opaque-ids"
-    },
-    {
-      "schema": "PendingGroupAction",
-      "property": "device_id",
-      "prefix": "dev",
-      "x-fc-pending": "opaque-ids"
     }
   ],
   "parameterPatches": [],
-  "webhooks": {}
+  "webhooks": {},
+  "catalogFields": {
+    "device.disconnected": {
+      "label": "Número desconectado",
+      "is_critical": true
+    },
+    "device.connected": {
+      "label": "Número conectado",
+      "is_critical": false
+    },
+    "device.deleted": {
+      "label": "Número borrado",
+      "is_critical": false
+    },
+    "device.health_changed": {
+      "label": "Cambió la salud del número",
+      "is_critical": true
+    },
+    "device.quality_changed": {
+      "label": "Cambió la calidad del número",
+      "is_critical": true
+    },
+    "device.messaging_limit_changed": {
+      "label": "Cambio del límite de mensajes",
+      "is_critical": true
+    },
+    "device.display_name_reviewed": {
+      "label": "Nombre visible revisado",
+      "is_critical": false
+    },
+    "billing.payment_failed": {
+      "label": "Pago fallido",
+      "is_critical": true
+    },
+    "billing.upcoming_charge": {
+      "label": "Próximo cobro",
+      "is_critical": false
+    },
+    "subscription.trial_ending": {
+      "label": "Trial por terminar",
+      "is_critical": false
+    },
+    "subscription.reactivated": {
+      "label": "Suscripción reactivada",
+      "is_critical": false
+    },
+    "subscription.cancellation_confirmed": {
+      "label": "Cancelación confirmada",
+      "is_critical": false
+    },
+    "subscription.dormant_ending": {
+      "label": "Período dormido por terminar",
+      "is_critical": false
+    },
+    "mac.usage_80": {
+      "label": "Contactos activos al 80%",
+      "is_critical": false
+    },
+    "mac.usage_100": {
+      "label": "Contactos activos al 100%",
+      "is_critical": true
+    },
+    "mac.expiring": {
+      "label": "Contactos activos por expirar",
+      "is_critical": false
+    },
+    "account.blocked": {
+      "label": "Cuenta bloqueada",
+      "is_critical": true
+    },
+    "message.received": {
+      "label": "Mensaje recibido",
+      "is_critical": false
+    },
+    "flow.completed": {
+      "label": "Flujo completado",
+      "is_critical": false
+    },
+    "broadcast.finished": {
+      "label": "Campaña finalizada",
+      "is_critical": false
+    },
+    "contact.stage_changed": {
+      "label": "Contacto cambió de etapa",
+      "is_critical": false
+    },
+    "message.status_changed": {
+      "label": "Estado de mensaje cambiado",
+      "is_critical": false
+    },
+    "conversation.closed": {
+      "label": "Conversación cerrada",
+      "is_critical": false
+    },
+    "conversation.assigned": {
+      "label": "Conversación asignada",
+      "is_critical": false
+    },
+    "contact.tag_added": {
+      "label": "Etiqueta agregada a un contacto",
+      "is_critical": false
+    },
+    "broadcast.paused": {
+      "label": "Campaña pausada",
+      "is_critical": false
+    },
+    "contact.tag_removed": {
+      "label": "Etiqueta quitada de un contacto",
+      "is_critical": false
+    },
+    "contact.created": {
+      "label": "Contacto creado",
+      "is_critical": false
+    },
+    "template.status_changed": {
+      "label": "Plantilla cambió de estado",
+      "is_critical": false
+    },
+    "flow.failed": {
+      "label": "Flujo fallido",
+      "is_critical": false
+    },
+    "whatsapp_form.completed": {
+      "label": "Formulario de WhatsApp completado",
+      "is_critical": false
+    },
+    "contact.updated": {
+      "label": "Contacto actualizado",
+      "is_critical": false
+    },
+    "message.reaction_failed": {
+      "label": "Reacción fallida",
+      "is_critical": false
+    },
+    "group.created": {
+      "label": "Grupo creado",
+      "is_critical": false
+    },
+    "group.invite_link_down": {
+      "label": "Link de invitación caído",
+      "is_critical": false
+    },
+    "group.invite_link_renewed": {
+      "label": "Link de invitación renovado",
+      "is_critical": false
+    },
+    "group_participant.joined": {
+      "label": "Participante se unió",
+      "is_critical": false
+    },
+    "group_participant.left": {
+      "label": "Participante salió",
+      "is_critical": false
+    },
+    "scheduled_message.group_delivery_failed": {
+      "label": "Mensaje programado no entregado a un grupo",
+      "is_critical": false
+    },
+    "scheduled_message.response_received": {
+      "label": "Respuesta a un mensaje programado",
+      "is_critical": false
+    },
+    "poll.voted": {
+      "label": "Voto en una encuesta",
+      "is_critical": false
+    },
+    "pipeline.finished": {
+      "label": "Pipeline finalizado",
+      "is_critical": false
+    },
+    "group.blocked": {
+      "label": "Grupo bloqueado",
+      "is_critical": false
+    },
+    "group.recovered": {
+      "label": "Grupo recuperado",
+      "is_critical": false
+    },
+    "campaign.status_changed": {
+      "label": "Cambio de estado de campaña",
+      "is_critical": false
+    },
+    "scheduled_message.finished": {
+      "label": "Mensaje programado finalizado",
+      "is_critical": false
+    },
+    "group_action.failed": {
+      "label": "Acción sobre un grupo fallida",
+      "is_critical": false
+    },
+    "daily_report.generated": {
+      "label": "Reporte diario generado",
+      "is_critical": false
+    },
+    "campaign.no_groups_available": {
+      "label": "Campaña sin grupos disponibles",
+      "is_critical": false
+    },
+    "group.full": {
+      "label": "Grupo lleno",
+      "is_critical": false
+    },
+    "group_action.completed": {
+      "label": "Acción sobre un grupo completada",
+      "is_critical": false
+    },
+    "group.message_received": {
+      "label": "Mensaje recibido en un grupo",
+      "is_critical": false
+    },
+    "group.reaction_added": {
+      "label": "Reacción en un grupo",
+      "is_critical": false
+    },
+    "group_join_request.created": {
+      "label": "Solicitud para unirse a un grupo",
+      "is_critical": false
+    },
+    "group_join_request.revoked": {
+      "label": "Solicitud para unirse retirada",
+      "is_critical": false
+    },
+    "webhook.test": {
+      "label": "Evento de prueba",
+      "is_critical": false
+    }
+  }
 }

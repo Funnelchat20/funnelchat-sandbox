@@ -2,7 +2,7 @@
 
 A local server that imitates the Funnelchat public API and sends signed webhooks, with no real effects: nothing goes out to WhatsApp, nothing is charged, everything stays in memory. Build and test your integration without an account.
 
-It comes from the spec the developer portal publishes, v0.7.0: the same operations and events (see [Pending of the spec](#pending-of-the-spec)). What it simulates with state follows production as it was checked on 06-11.
+It comes from the spec the developer portal publishes (18-11, the snapshots of the three domains): the same operations and events (see [Pending of the spec](#pending-of-the-spec)). What it simulates with state follows production as it was checked on 18-11.
 
 ## Try it in 3 minutes, without an account
 
@@ -103,6 +103,19 @@ curl -s -X POST http://localhost:4010/_sandbox/workspaces -H 'Content-Type: appl
 
 With that key, `GET /api/v1/devices` is empty until you connect a number there, and its events go out with `"workspace_id": 2`. `POST /_sandbox/keys` (`{"workspace_id": 2}`) gives another key, `GET /_sandbox/workspaces` lists them, and the configuration file can create workspaces with fixed keys (see [Options](#options)).
 
+## What changes in 0.7.0
+
+0.7.0 follows the portal's spec of 18-11, which now says what production does. What can break an integration:
+
+- **A form is sent by its family**: `form_id` of `POST /api/v1/contacts/{contact}/message/form` is the `frm_…` id (`family_id`), the id production takes; the send goes out with the current published version. A version id (`frv_…`) is a `422` on `form_id`.
+- **Template variables go by number**: `template_variables.body` is `{"1": "Lucía"}` (a list still goes in order). Without `template_variables`, each `{{n}}` takes the field the template chose in `params.body` (`{name}` is the contact's name), and a value can carry the contact's fields too (`"{first_name}"`). A custom field the account does not have is `422 template_unresolved_placeholder`.
+- **`POST /api/v1/contacts/{contact}/message` takes `contact_id` and `phone` (or `whatsapp_id`) in the body**, as production asks. A menu (`options`) only goes by that route: `send-message` does not read `options`, and the text goes out alone.
+- **A tag or a custom field with a name the account has** answers that one with `200`, without creating another; a new name answers `201`.
+- **`GET /api/v1/webhooks` is always a page** (`{data, links, meta}`, 25 by default).
+- Contacts carry `""` where they have no name, email, phone, WhatsApp id or photo; `last_message` only when there is one; the detail adds `opted_out` and `name_mismatch`. `user_id` is an opaque id (`usr_…`). A custom field of a contact has an integer `type`.
+- The numbers carry `phone_number_id` and, in `health`, `verified_name` and `meta_status`; a sign-up link has `url: null` after the answer that created it.
+- The event catalog (`GET /api/v1/webhooks/events`) carries `is_critical` and `label`, as accounts' does.
+
 ## Migrating to 0.6.0: opaque ids
 
 0.6.0 follows the portal's v0.7.0, where **the ids of the public API are opaque**, with a direct cut and no transition. It is the only breaking change, and it breaks every client that held an id as a number.
@@ -116,7 +129,7 @@ What to change in your integration:
 - The example records have fixed ids (see [What is inside](#what-is-inside)); the ones you create get a new random id, in every session.
 - Lists that came «by id» (newest first) keep the order of creation: do not sort them by id.
 - In the sandbox, `/_sandbox/*` takes the same ids: `device_id`, `contact_id`, `group_id`, `tag_id`, `active_contact_ids`…
-- `POST /api/v1/contacts/{contact}/message/form` takes `form_id` with the `frv_` id of the form, as the spec says.
+- `POST /api/v1/contacts/{contact}/message/form` takes `form_id` with the `frv_` id of the form, as the spec said then (since 0.7.0, the family's `frm_`).
 
 ```diff
 - "device_id": 3, "contact_id": 2001
@@ -149,7 +162,7 @@ npx funnelchat-sandbox
 ```
 
 ```
-funnelchat-sandbox 0.6.0 at http://127.0.0.1:4010
+funnelchat-sandbox 0.7.0 at http://127.0.0.1:4010
   API:    http://127.0.0.1:4010/api/v1/...   (Authorization: Bearer 1|fc_live_sandbox, or any well-formed key)
   panel:  http://127.0.0.1:4010/_sandbox
   example numbers: dev_Sandbox0Oficial00000000 (official, with the 24-hour window) and dev_Sandbox0QR0000000000000 (QR, no window); contact ctc_Sandbox0Contacto0000000; template tpl_Sandbox0Bienvenida00000
@@ -275,12 +288,23 @@ Every session starts with this:
 | Tag «Cliente» | `tag_Sandbox0Cliente00000000` | |
 | Template `bienvenida`, approved, of the official number | `tpl_Sandbox0Bienvenida00000` | One variable: «Hola {{1}}, gracias por escribirnos…». |
 | Group «Grupo de ejemplo» of the QR number | `grp_Sandbox0Grupo0000000000`, `120363000000000000@g.us` | In the account. The QR number is its admin; the example contact, a participant. |
-| Group «Clientes VIP» of the QR number | `120363000000000001@g.us` | Only on WhatsApp, to follow (import). The QR number is its admin. |
+| Group «Clientes VIP» of the QR number | `grp_Sandbox0ClientesVIP0000`, `120363000000000001@g.us` | Only on WhatsApp, to follow (import). The QR number is its admin. |
 | Workspace «Principal» | `1` | The default one: every key belongs to it unless it was minted for another. |
 
 `POST /_sandbox/reset` goes back to this and cancels everything that was scheduled.
 
 **With state** (what you create, change or delete stays): contacts (`/api/v1/contacts…`, with their tags, fields and the `meta-window`), conversations (`/api/v1/conversations…`), messages (send, history, reactions, forward, cards, the lookup by id, mark as read and «typing…»), tags, custom fields, templates, [WhatsApp forms](#whatsapp-forms), numbers and sign-up links ([connecting numbers](#connecting-numbers)), [groups](#groups) (the list, one group and the send) and webhook subscriptions with their history, in one or more [workspaces](#workspaces).
+
+**Contacts, as production keeps them** (conversations on `main`, 17-11):
+
+- `POST /api/v1/contacts` and `POST /api/v1/contacts/update-or-create` answer **`201` when they create the contact** and `200` when it already was there (a Laravel resource of a model just created).
+- `POST /api/v1/tags` and `POST /api/v1/custom-fields` **look the name up first**, as conversations does: a name the account has (case, accents and spaces at the end do not count, as in MySQL) answers that tag or field with `200`, unchanged; a new one is created, `201`.
+- Both take `custom_fields: [{"id": "fld_…", "value": "…"}]` (up to 100) and **keep the values**: `update-or-create` on the contact it creates or updates, `POST /contacts` only on one it creates. They are checked before anything is written: a field that is not of the account is `422` on `custom_fields.N.id`; a value out of its type's format (number `1500` or `99.90`, date `AAAA-MM-DD`, URL with `http(s)://`) `422` on `custom_fields.N.value`; a repeated `id` or an empty value, too.
+- `POST /api/v1/contacts/add-tags` and `…/remove-tags` (`[{"contactId": "ctc_…", "tag": {"id": "tag_…"}}]`, up to 200) **keep the tags**: `200` without a body, `contact.tag_added` / `contact.tag_removed` with `source: "manual"` for each real change, and an item whose contact or tag is not of the account is skipped without an error. `?bulk=1` (or `true`) is accepted.
+
+**Conversations** (`GET /api/v1/conversations`) are not contacts: each row is the one conversations builds, the contact's columns (`contact_id`, `contact_name`, `contact_phone`, `contact_active_conversation`, `unread_messages`, `last_device_id`, `tag_ids`, `meta_window_inbounds`, `is_mac_inactive`…) followed by the columns of the **last message**: `id` is that message's (`msg_…`), never the contact's. Values are the database's (`0`/`1`, `2026-10-01 12:00:00`, `null`). The page is the cursor one, with `links.first` and `meta.total` (the count without a cursor, `null` with one). `country_code` and `lead_score` are always `null` here.
+
+**Booleans of a query are `1` or `0`**, as Laravel's `boolean` rule reads them: `?activeConversation=true` answers `422` on `activeConversation`, like production; `?activeConversation=1` lists the open ones. The only exception is `bulk` of `add-tags` and `remove-tags`, which conversations reads with `$request->boolean()`.
 
 **The numbers** are those of accounts: `GET /api/v1/devices` always paginates (`{data, links, meta}`, `perPage` from 1 to 100), and each number carries `capabilities`, with what the API can do through it:
 
@@ -343,7 +367,7 @@ The complete spec the sandbox uses is at `GET /_sandbox/openapi.json`.
 
 The sandbox answers every operation of that spec, in one of two ways:
 
-- **With state**, the first use: numbers and sign-up links, contacts with their tags and fields, conversations and messages, groups (the live list, the list, one group, the import and the send), WhatsApp forms, mark as read and «typing…», and webhook subscriptions. What you create stays (in memory) and the events go out, signed.
+- **With state**, the first use: numbers and sign-up links, contacts with their tags (`add-tags` and `remove-tags` too) and fields, conversations and messages, groups (the live list, the list, one group, the import and the send), WhatsApp forms, mark as read and «typing…», and webhook subscriptions. What you create stays (in memory) and the events go out, signed.
 - **Shape only**, everything else. The request is validated like any other (the key, the route, the path, the query and the body, with the same `401`, `404` and `422`), and the answer is the success status the spec gives (`200`, `201`, `202` or `204`) with a body that fits its response schema: the spec's example of the response when it has one that fits, otherwise one built from the schema. It is the same on every call to that operation, whatever you send. Nothing is stored and no event goes out: creating a board answers `201` with a board, and the list of boards does not have it.
 
 A shape-only answer carries `X-Sandbox-Simulated: shape-only`; the body stays as the schema says. Nothing else carries that header.
@@ -360,7 +384,7 @@ curl -si -X POST http://localhost:4010/api/v1/kanban-settings -H "Authorization:
 
 ```bash
 curl -s http://localhost:4010/_sandbox/operations | jq '.meta'
-# {"total": 253, "stateful": 88, "shape_only": 165, "closed": 0}
+# {"total": 253, "stateful": 90, "shape_only": 163, "closed": 0}
 curl -s http://localhost:4010/_sandbox/operations | jq -r '.data[] | select(.simulated == "shape-only") | "\(.method) \(.path)"'
 ```
 
@@ -397,6 +421,8 @@ curl -s http://localhost:4010/api/v1/contacts/ctc_Sandbox0Contacto0000000/messag
 
 - **Queued is not sent.** Then, at 1, 3 and 6 seconds (configurable), the message moves to `sent`, `delivered` and `read`, and every change arrives through `message.status_changed` with the same `message_id`, `previous_status` (`null` on the first one) and your `client_reference`. `queued` never appears in the event.
 - The current status is read with `GET /api/v1/contacts/{contact}/messages/{message}` (the same object) and in the history `GET /api/v1/contacts/{contactId}/messages`.
+- **Creating a template** (`POST /api/v1/templates`) follows conversations' rules, all at once: `device_id` is required (`422` on `device_id`; a number that is not of the key's workspace, `422 {"error": "validation_failed", "message": "Device not found", "error_code": "device_not_found"}`), `file` unless `type` is `text`, and **for every `{{n}}` of `body`, a field and a sample in `params`**, which is an object: `{"body": {"1": "{name}"}, "samples": {"body": {"1": "Lucía"}}}`. Without them it is a `422` on `body` («Falta elegir el campo de {{1}}.», «Falta el valor de ejemplo de {{1}}. …») and nothing is created; a list of texts (`["Lucía"]`, the old shape) declares fields without samples and gets the same `422`. A valid one answers **`201`** with the template `PENDING` and `params` as stored; on an official number it is `APPROVED` after `--template-approval` seconds (`template.status_changed`), on a QR number it ends `REJECTED` right away with the observation «El dispositivo no tiene WABA ID configurado.» and no event, as conversations' job leaves it. `PUT /api/v1/templates/{template}` checks `file` and `params` the same way. A name with anything but lower-case letters, digits and `_` is refused at once (in production Meta refuses it after the `201`).
+- **Sending a template** (`POST /api/v1/devices/{device}/templates/{template}/send-template`): `template_variables.body` gives each variable by its number, `{"1": "Lucía"}`; without `template_variables`, each `{{n}}` takes the field chosen in `params.body` (the contact's name for `{name}`). A value can carry the contact's fields (`{name}`, `{first_name}`, `{email}`, `{phone}` or a custom field by its name); one the account does not have answers `422 template_unresolved_placeholder` with `placeholders`, and so does a `{{n}}` left without a value. Nothing is sent then.
 - **A template created in Meta that does not appear in `GET /api/v1/templates`:** bring it with `POST /api/v1/devices/{device}/templates` (official numbers only, conversations v1.19.37) and list again. In the sandbox nothing goes to Meta: an official number answers `202 {"status": "completed"}`, a QR one `422 number_not_connected_to_meta`, and a number that is not of the key's workspace `404`.
 - The same goes for `POST /api/v1/message/send-message` (`{message}`), templates (`POST /api/v1/devices/{device}/templates/{template}/send-template`, `{message}`), forms (`POST /api/v1/contacts/{contact}/message/form`, `{message}`), cards (`{messages: [...]}`, one per card) and the forward (one item per destination, with its `message`, or `status: "blocked"` and `message: null`).
 - `client_reference` is optional: 1 to 64 visible ASCII characters, no spaces. If it does not fit, `422 errors.client_reference`.
@@ -490,7 +516,7 @@ The routes of conversations, with state. A form is a family (`family_id`, `frm_�
 | `POST /api/v1/forms/{id}/versions` | A new draft version (`201`), or `200` with `created: false` if there was one already. |
 | `GET`, `POST /api/v1/forms/{id}/numbers`, `DELETE …/numbers/{deviceId}`, `POST …/numbers/retry` | The numbers of the form. The primary one cannot be removed: `422 PRIMARY_NUMBER`. |
 | `GET /api/v1/forms/families/{familyId}/definition`, `…/versions`, `…/responses`, `…/responses/{runId}` | The current definition, the versions and the responses. |
-| `POST /api/v1/contacts/{contact}/message/form` | `{"form_id": "frv_…", "device_id": "dev_…"}` (optional `text`, `button_text`, `client_reference`): `200` with the queued message, `type: "whatsapp_form"`. |
+| `POST /api/v1/contacts/{contact}/message/form` | `{"form_id": "frm_…", "device_id": "dev_…"}` (optional `text`, `button_text`, `client_reference`): `200` with the queued message, `type: "whatsapp_form"`. `form_id` is the family (`family_id`): it sends the current published version. |
 
 The send follows the order of conversations: `device_unavailable`, `404 form_not_found`, `422 number_not_eligible`, `422 form_not_published`, `422 form_not_on_number`, `422 recipient_unreachable`, `422 window_closed`, and then the pace, the brakes and the MAC. An incoming message opens the window.
 
@@ -546,7 +572,8 @@ starts the same way. To test it, turn it on with `--meta-connect`, `"numbers": {
 **Each number has** `external_reference` (your text, not unique) and `connection` (`qr`, `coexistence` or
 `dedicated`). The four `device.*` events carry both inside `device`, and `connect_link_id`: in `device.connected`, the
 link of that connection; in the other three, the link that connected the number last; `null` without one. `device.disconnected` brings `reason`: `qr_logged_out`, `meta_account_not_registered`,
-`shadow_ban_protection`, `provider_error`, `unknown` or `disconnected_by_user`. Like every event, they end with
+`shadow_ban_protection`, `disconnected_by_user` or `unknown`, accounts' closed list (`provider_error` is no longer one:
+it was documented and never emitted; it is still a link's `error_code`). Like every event, they end with
 `workspace_id`, the number's workspace.
 
 **The quota** counts phones: QR and Meta of the same phone count once. The sandbox account allows 5 and the two
@@ -578,13 +605,13 @@ curl -s localhost:4010/api/v1/devices/dev_Ac7Ku7iIZDXJTjdCu0UB1mX/qr -H "$KEY"  
 curl -s -X POST localhost:4010/_sandbox/devices/dev_Ac7Ku7iIZDXJTjdCu0UB1mX/connect      # device.connected
 ```
 
-A sign-up link and its page (`meta` links need the Meta sign-up on: `npx funnelchat-sandbox --meta-connect`):
+A sign-up link and its page:
 
 ```bash
 curl -s -X POST localhost:4010/api/v1/connect-links -H "$KEY" -H 'Content-Type: application/json' \
-  -d '{"type": "meta", "allowed_connection_types": ["coexistence", "dedicated"], "external_reference": "cliente-8841", "return_url": "https://your-app.example/connected"}'
-# {"data": {"id": "lnk_AEF0eLF7bcRyfgK70NSWVdy", "type": "meta", "status": "pending", "url": "http://localhost:4010/connect/<token>", …}}
-curl -si -X POST 'http://localhost:4010/connect/<token>/start' -d connection=coexistence
+  -d '{"type": "qr", "external_reference": "cliente-8841", "return_url": "https://your-app.example/connected"}'
+# {"data": {"id": "lnk_AEF0eLF7bcRyfgK70NSWVdy", "type": "qr", "status": "pending", "url": "http://localhost:4010/connect/<token>", …}}
+curl -si -X POST 'http://localhost:4010/connect/<token>/start'
 # 303 Location: https://your-app.example/connected?connect_link_id=lnk_AEF0eLF7bcRyfgK70NSWVdy&status=completed&device_id=dev_Ac7Ku7iIZDXJTjdCu0UB1mX
 ```
 
@@ -621,12 +648,12 @@ You subscribe with the same routes the SDKs and the n8n trigger use (the unified
 | Route | What it does |
 |---|---|
 | `POST /api/v1/webhooks` | Creates a subscription. The answer (`201`) carries `secret` **only once**. Up to 50 per workspace, whatever their status: one more answers `422 webhooks_limit_reached`. |
-| `GET /api/v1/webhooks`, `GET /api/v1/webhooks/{id}` | Lists or shows them, without the secret. |
+| `GET /api/v1/webhooks`, `GET /api/v1/webhooks/{id}` | Lists them (always a page: `{data, links, meta}`, 25 by default, `perPage` up to 100) or shows one, without the secret. |
 | `PUT /api/v1/webhooks/{id}` | Changes `url`, `events`, `description`, `filters` and, optionally, `status` (`active` or `paused`). The secret does not change. |
 | `DELETE /api/v1/webhooks/{id}` | Deletes it (`204`). |
 | `POST /api/v1/webhooks/{id}/test` | Sends a signed `webhook.test` now and answers `{succeeded, response_status, error, duration_ms, delivery_id}`. |
 | `GET /api/v1/webhooks/{id}/deliveries` | The history: one record per attempt, newest first. |
-| `GET /api/v1/webhooks/events` | The event catalog of the spec: the 55 types of the `events` enum of `POST /api/v1/webhooks` and `webhook.test` (not subscribable), all `active`, each with `area`, `status`, `description`, `subscribable` and `example`. |
+| `GET /api/v1/webhooks/events` | The event catalog of the spec: the 55 types of the `events` enum of `POST /api/v1/webhooks` and `webhook.test` (not subscribable), all `active`, each with `area`, `status`, `is_critical`, `label`, `description`, `subscribable` and `example`. |
 
 **Each delivery** is a `POST` with the portal's envelope and these headers:
 
@@ -657,7 +684,7 @@ X-Funnelchat-Delivery: 7c9e6679-7425-40de-944b-e07fc1f90ae7
 - **The signature** is the portal's: `v1` is the HMAC-SHA256, with the full secret (with `whsec_`), of `"<t>." + raw body`. Verify it with `Funnelchat.webhooks.verify` (Node), `Webhook::verify` (PHP) or the portal's snippets. The sandbox's tests verify it with the Node SDK's `verify` and with the portal's `verificar-firma.js`, on the vectors of `tests/test_firmas.py`.
 - **The retries** are the portal's: up to 4 attempts, waiting 60 s, 300 s and 1800 s (shorten them with `--retry-delays`). A network error, a timeout (10 s), a `5xx` or a `429` is retried; any other `4xx` or a `3xx` is final. Every attempt carries the same body and the same `id`, a new signature and another `X-Funnelchat-Delivery`.
 - **Five failed deliveries in a row** disable the subscription (`status: disabled`, `disabled_reason: too_many_failures`), as in accounts. A `PUT` with `"status": "active"` turns it back on.
-- The sandbox accepts `http` and local URLs, so you can point at your machine. The real API only accepts public `https`: try it with `--require-https`.
+- **A receiver on your machine works:** the sandbox accepts `http://localhost:3000/…` and `http://127.0.0.1:3000/…` (any `http` or local URL). The real API only accepts a public `https` URL: start the sandbox with `--require-https` to get its `422`.
 - **The events the sandbox emits on its own** are those of its state: `message.received`, `message.status_changed`, `whatsapp_form.completed`, `contact.*`, `conversation.*`, `template.status_changed`, `device.*` and the ones you fire from `/_sandbox`. Any other type of the catalog is emitted with `POST /_sandbox/events/{type}`.
 
 ## Simulating what comes in
@@ -667,6 +694,7 @@ These routes take no key: they belong to the sandbox, not to the API.
 | Route | What it simulates |
 |---|---|
 | `POST /_sandbox/inbound/message` | A contact writes to you: `{"phone": "5491100000000", "device_id": "dev_Sandbox0Oficial00000000", "text": "Hola"}` (or `contact_id`; optional `name`, `type`, `file` and `occurred_at`). If the phone is new it creates the contact (`contact.created`); then it emits `message.received` and opens the 24-hour window of that number. |
+| `POST /_sandbox/inbound` (or `…/inbound/message`) with `reply` | The contact **taps a button** of a message you sent: `{"reply": {"to_message_id": "msg_…", "option_id": "humano"}}`. On a question sent with `options` it is `message.received` with `type: "interactive"`; on a template with `QUICK_REPLY` buttons (`option_id` is the button's text), `type: "template_button_reply"`. `text` is the label tapped (cut to 20 characters for buttons and 24 for a list, as WhatsApp shows it); the option's `id` is not in the event, as in production. The contact and the number are the message's. |
 | `POST /_sandbox/groups`, `GET /_sandbox/groups` | A group of a connected QR number, in the number's workspace: `{"device_id": "dev_Ac7Ku7iIZDXJTjdCu0UB1mX", "name": "Clientes", "participants": [{"phone": "5491155550000", "name": "Ana"}]}`. In the account unless `"imported": false` (only on WhatsApp, to import); the number is its admin unless `"admin": false`. |
 | `POST /_sandbox/groups/participant-joined`, `…/participant-left` | Someone joins or leaves a group: `{"group_id": "grp_Sandbox0Grupo0000000000", "participant": {"phone": "…", "name": "…"}}` (or `"uid"`; the example group without either). The group's participants change and the event goes to its workspace. A `group` the sandbox does not have (`{"group": {"uid": "…@g.us", "name": "…"}}`) goes out from the catalog's example. |
 | `POST /_sandbox/forms/complete` | The contact completes a sent form: emits `whatsapp_form.completed` (see [WhatsApp forms](#whatsapp-forms)). |
@@ -675,7 +703,7 @@ These routes take no key: they belong to the sandbox, not to the API.
 | `POST /_sandbox/devices/{id}/disconnect`, `…/connect` | The number disconnects (`{"reason": "disconnected_by_user"}`, any of the list; `qr_logged_out` for QR and `unknown` for official ones by default) or connects, which is the scan of a QR (`{"number": "5491155550101"}`, a fake one otherwise): `device.disconnected` and `device.connected`. Disconnected, sends answer `422 device_unavailable`. |
 | `POST /_sandbox/devices/{id}/health` | The health of an official number changes: `{"state": "limited"}` (`available`, `limited`, `blocked`, `unknown`) emits `device.health_changed`, only if it changed. |
 | `POST /_sandbox/numbers`, `GET /_sandbox/numbers` | The quota of the account: `{"limit": 3, "included": true, "trial": false, "meta_connect": true, "links_per_minute": 10}` (`meta_connect` turns the Meta sign-up on or off). `GET` also says how many places are in use and which QR numbers are pending. |
-| `POST /_sandbox/templates/{id}/status` | Meta approves or rejects a template: `{"status": "REJECTED", "reason": "…"}` emits `template.status_changed`. |
+| `POST /_sandbox/templates/{id}/status` | Meta approves or rejects a template: `{"status": "REJECTED", "reason": "…"}` emits `template.status_changed` with `reason: null`, as production sends a review of Meta (it only carries a reason for a rejection reported when the template is created); the reason stays in the template's `observation`. |
 | `POST /_sandbox/events/{type}` | Any event of the catalog, with its example; what you send in `{"data": {…}}` overrides it, and `{"workspace_id": 2}` sends it to that workspace (the default one otherwise). `GET /_sandbox/events` lists them. The example is the one of the catalog, the spec's. |
 | `POST /_sandbox/window` | Opens or closes the window by hand: `{"contact_id": "ctc_Sandbox0Contacto0000000", "device_id": "dev_Sandbox0Oficial00000000", "open": false}`. |
 | `POST /_sandbox/workspaces`, `GET /_sandbox/workspaces` | A [workspace](#workspaces) with a key that only sees it: `{"name": "Cliente B"}` answers `201 {workspace, key}`. `POST /_sandbox/keys` with `{"workspace_id": 2}` mints another key (of the default workspace without `workspace_id`); with `"permissions": [...]` it has only those (the sandbox checks just `communities:operate`, to import a group). |
@@ -764,8 +792,10 @@ And at `http://localhost:4010/_sandbox` you see each request and each delivery w
 - **The state is memory only:** it is lost when the process stops or with `POST /_sandbox/reset`. So your receiver does not lose the secret, put the subscription in the configuration file.
 - **The shape-only routes** answer the shape of the spec, always the same: it does not match your data, a write keeps nothing and no event goes out. See [With state or shape only](#with-state-or-shape-only).
 - **The validation messages** are Laravel's in Spanish, built from the schema: they may not match the API's word for word (decide by the HTTP status and by `error`, not by `message`).
+- **The filters of `GET /api/v1/conversations`** are simpler than production's: there `favorites`, `ownContacts` and `ownAndUnassigned` filter whenever they are present (`favorites=0` too) and `unreadMessages=0` does not filter, `perName` also searches the phone, and `contactId` finds a contact without messages; here `favorites=0` and `unreadMessages=0` take the other side, `perName` is the name only and a contact without messages is not a conversation. A template's name is not checked for being unique in its WhatsApp Business account, and editing an approved template does not send it back to `PENDING`.
+- **The published spec and the sandbox agree:** the [contract test](#development) finds no difference. One that shows up again is listed, with why, in `test/contract/known.ts`.
 - **Webhook URLs** may be `http` and local, without the real API's protection against internal destinations (try `--require-https`). Do not expose the sandbox to the internet: the `/_sandbox` routes take no key and the sandbox `POST`s to any URL subscribed to it.
-- **The event catalog** is what the spec documents (`generated/catalog.json`, transcribed by `npm run generate`): fields of production's catalog the spec does not document, such as `is_critical` and `label`, are not there.
+- **The event catalog** is what the spec documents (`generated/catalog.json`, transcribed by `npm run generate`), with `is_critical` and `label` copied from accounts' catalog (`catalogFields` of `spec/pending-sandbox.json`).
 - **Groups have state only for the number's live list, the list, one group, the import and the send of a message** (the action is `completed` after the delays of `sent` and `delivered`; it never fails on its own). The live list is never cached (production keeps it a minute for a key). The other group actions, the campaigns and the rest of the groups' routes answer shape only, and their events are fired from `/_sandbox`. There are no official groups (the account is not in their beta), no `too_many_pending_actions` and no rate limit of 30 sends per minute.
 - **Workspaces confine** numbers, sign-up links, webhook subscriptions, contacts, conversations, messages, templates and groups. Tags, custom fields and forms are not confined in the sandbox. A contact belongs to one workspace, and the phone stays unique in the account: `POST /api/v1/contacts`, `update-or-create` and a send by phone with a phone of another workspace answer `404`.
 - **Forms do not talk to Meta:** `sync` and `publish` succeed unless the linter finds an error, and the linter is a short version of the real one (screens without a title, without an ending, without questions, with a connection to the server). The metrics (`…/metrics`) answer shape only, and there are no dynamic forms.
@@ -778,9 +808,9 @@ And at `http://localhost:4010/_sandbox` you see each request and each delivery w
 
 ## Pending of the spec
 
-The spec (`spec/funnelchat.json`) is the one the portal publishes, v0.7.0 (https://developers-portal.funnelchat.app/specs/funnelchat.json): only the operations and events the portal shows. **The sandbox offers only that:** a layer corrects shapes where the spec says otherwise than production answers, but never adds an operation or an event (the generator refuses it and says so). The corrections are in two layers, which the next regeneration drops on its own once the spec carries them:
+The spec (`spec/funnelchat.json`) is the one the portal publishes (built at the portal's fe4df8d, 18-11, from the snapshots of the three domains): only the operations and events the portal shows. **The sandbox offers only that:** a layer corrects shapes where the spec says otherwise than production answers, but never adds an operation or an event (the generator refuses it and says so). The corrections are in two layers, which the next regeneration drops on its own once the spec carries them:
 
-- `spec/pending.json`: the pending layer of the Node SDK (`funnelchat-node` @ `bde8679`), with the corrections of 13-11 made here ahead of the SDK: `answers[].label` of `whatsapp_form.completed` is always a string, `message.type` of `message.received` accepts types the spec does not list yet, and its sources say what portal v0.6.14 shows (its note in `spec/procedencia.json` lists them). Guarded by JSON Pointer conditions: the send answers, `devices/{device}/qr`, the template list, `PUT webhooks/{id}`, and the shapes of the number, group, billing, form and message events. Its entry for `GET groups/actions/{action}` no longer applies: the spec of v0.6.16 carries that answer, and `npm run generate` lists the entry so that the layer drops it.
+- `spec/pending.json`: the pending layer of the Node SDK (`funnelchat-node` @ `bde8679`), with the corrections of 13-11 made here ahead of the SDK (`answers[].label` of `whatsapp_form.completed` is always a string, `message.type` of `message.received` accepts types the spec does not list yet) and, on 18-11, without what the spec of that day already carries (the response patches, and the billing and `group_participant.*` events). What is left, guarded by JSON Pointer conditions: the shapes of the number, group, form and message events.
 - `spec/pending-sandbox.json`: what the sandbox corrects on top of it, with its sources inside.
 
 The event catalog (`generated/catalog.json`) comes out of the merged spec, with the same command: see [Regenerating](#regenerating).
@@ -790,8 +820,11 @@ What `spec/pending-sandbox.json` still corrects:
 | What | Why neither the spec nor the Node SDK's layer has it |
 |---|---|
 | `data.workspace_id` in every event (accounts v1.5.97, Q35) | The events of the spec do not carry it yet |
-| `null` in `allowed_connection_types` and `provision_us_number` of `POST /api/v1/connect-links` | A correction: accounts' rules depend on `type`, and Laravel's `prohibited` lets `null` through |
-| The ids of the events and shapes of the SDK's layer (`idPatches`: `device_id`, `contact.id`, `message_id`, `connect_link_id`, the form's…) as opaque ids | That layer was written before the portal's v0.7.0 and still types them as numbers; the entries apply only while it does, and the generator reports them once it is updated |
+| `null` in `allowed_connection_types` and `provision_us_number` of `POST /api/v1/connect-links`, and its rules by `type` in the handler (the `oneOf` of the spec is taken out) | A correction: accounts' rules depend on `type`, Laravel's `prohibited` lets `null` through, and the handler names the field that fails with accounts' messages |
+| `params` of `POST /api/v1/templates` and `PUT /api/v1/templates/{template}` also as a list, and `device_id` and `file` checked in the handler | Laravel's `array` rule takes a list too (and `TemplateParamsComplete` refuses it on `body`); the handler answers conversations' messages for `device_id` and `file` |
+| `http://` and local URLs in `url` of `POST /api/v1/webhooks` and `PUT /api/v1/webhooks/{id}` | Of the sandbox, not of production: the spec asks for `https://`, and a receiver on your machine could not subscribe |
+| `reason` of `device.disconnected` without `provider_error` | accounts no longer emits it (13-11); the SDK's layer still lists it |
+| `is_critical` and `label` of each event type (`catalogFields`) | The spec requires them in `WebhookEventType` and does not carry them per event |
 
 ## Regenerating
 
@@ -826,7 +859,7 @@ What it does:
 
 **A handler whose operation is not in the spec is not reached:** the route answers `404 route_not_found`, like a route the API does not have. After a regeneration, `GET /_sandbox/operations` says what has state and what answers [shape only](#with-state-or-shape-only).
 
-**The current spec** is the one the portal publishes, v0.7.0, at https://developers-portal.funnelchat.app/specs/funnelchat.json (sha256 `fadcd73731cba99d0b49adfec7b5799d7318fe99944c88282a444362d869e576`), with the common error format of the API: 209 paths, 253 operations and 57 events (56 types: the 55 of the `events` enum and `webhook.test`, which two areas document), in 30 groups: 1 of «Primer uso», 9 of «Funciones de WhatsApp» and 20 of «Funciones de Funnelchat». The detail is in `spec/procedencia.json`.
+**The current spec** is the one `npm run build` of the portal publishes at fe4df8d (18-11; sha256 `4a8fbaee9d8b251fd0df44b5a6ae5e4a55ca4993569a5af6834c09b31a4bb423`), with the common error format of the API: 209 paths, 253 operations and 58 events (56 types: the 55 of the `events` enum and `webhook.test`, which the three areas document), in 30 groups. The detail is in `spec/procedencia.json`.
 
 ## Development
 
@@ -838,6 +871,8 @@ npm run lint
 npm test                 # vitest (Node 20.19 or later), no network: the receivers are local servers
 npm run build            # dist/ in ESM, with .d.ts
 ```
+
+**The contract test** (`test/contract.test.ts`) walks every operation of the published spec (`spec/funnelchat.json`, checked against its sha256): a scenario with real data for the routes with state, then each operation once with a request built from its schema. Every answer must have a status the operation declares and a body that fits its schema, and every request the sandbox accepts must fit the spec. Today it finds none. A difference that shows up is listed, with why, in `test/contract/known.ts`: where the published spec says what production does not do (`spec:`), where the sandbox still differs from production (`sandbox:`) and what is not checked against the backend yet (`sin verificar:`). A new difference fails the test, and so does an entry that no longer happens. `CONTRACT_REPORT=1 npx vitest run test/contract.test.ts` prints them all with their detail.
 
 The tests verify the deliveries with unchanged copies of the Node SDK's `verify` and of the portal's snippet (`test/vendor/`, with their provenance). If the `funnelchat-node` repo is next to this one (or in `FUNNELCHAT_NODE_SDK`), they also run against its current code, including the whole client pointed at the sandbox.
 

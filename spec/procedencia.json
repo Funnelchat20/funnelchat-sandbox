@@ -2,50 +2,49 @@
   "description": "Where each file of spec/ came from. Written by `npm run generate -- --spec <file>` or `-- --pending <file>`; do not edit it by hand. spec/pending-sandbox.json belongs to this repo: its sources are inside it.",
   "snapshot": {
     "file": "spec/funnelchat.json",
-    "sha256": "fadcd73731cba99d0b49adfec7b5799d7318fe99944c88282a444362d869e576",
-    "bytes": 977912,
+    "sha256": "4a8fbaee9d8b251fd0df44b5a6ae5e4a55ca4993569a5af6834c09b31a4bb423",
+    "bytes": 1447302,
     "source": {
-      "repository": null,
-      "path": null,
-      "branch": null,
-      "commit": null,
-      "commit_date": null,
-      "file_tracked_in_git": null,
-      "tracked_files_clean": null,
-      "file_modified_at": "2026-11-16T20:07:13.502Z",
-      "url": "https://developers-portal.funnelchat.app/specs/funnelchat.json",
-      "portal_version": "v0.7.0",
-      "note": "The spec the developer portal publishes as v0.7.0: only the operations and events the portal shows. The sha256 is the one of the file the portal publishes in that version."
+      "repository": "https://github.com/Funnelchat20/developers-portal.git",
+      "path": "public/specs/funnelchat.json",
+      "branch": "docs/integracion-17nov",
+      "commit": "fe4df8d241a2e5b8591d352930be1a08642b5740",
+      "commit_date": "2026-11-18T10:15:03-05:00",
+      "file_tracked_in_git": false,
+      "tracked_files_clean": true,
+      "file_modified_at": "2026-11-18T15:15:27.174Z",
+      "portal_version": "v0.7.0-35-gfe4df8d",
+      "note": "The spec that `npm run build` of the portal publishes at that commit (not deployed yet): the v3 snapshots of the three domains, taken from the monorepo at c5fbf5fe27 (main ab662d203d with the docs/spec-api-* branches, local). It is a build output, not tracked in git; the sha256 is the one of that file."
     },
-    "imported_at": "2026-11-16T20:08:08.833Z",
+    "imported_at": "2026-11-18T15:24:41.077Z",
     "spec": {
       "openapi": "3.1.0",
       "title": "Funnelchat API",
       "version": "v0",
       "paths": 209,
       "operations": 253,
-      "webhooks": 57,
+      "webhooks": 58,
       "domains": [
         {
           "domain": "conversations",
-          "tag": null,
-          "sha": null,
+          "tag": "conversations-v1.20.84-60-gc5fbf5fe27",
+          "sha": "c5fbf5fe27",
           "branch": null,
-          "snapshot_at": null
+          "snapshot_at": "2026-11-18T10:02:58-05:00"
         },
         {
           "domain": "communities",
-          "tag": null,
-          "sha": null,
+          "tag": "communities-v2.37.0-78-gc5fbf5fe27",
+          "sha": "c5fbf5fe27",
           "branch": null,
-          "snapshot_at": null
+          "snapshot_at": "2026-11-18T10:02:58-05:00"
         },
         {
           "domain": "accounts",
-          "tag": null,
-          "sha": null,
+          "tag": "accounts-v1.6.123-106-gc5fbf5fe27",
+          "sha": "c5fbf5fe27",
           "branch": null,
-          "snapshot_at": null
+          "snapshot_at": "2026-11-18T10:02:58-05:00"
         }
       ]
     }

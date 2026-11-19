@@ -8,16 +8,18 @@
  */
 import type { SandboxApp } from '../app.js';
 import { body, listContext, ok, type HandlerContext, type HandlerTable } from '../http/context.js';
-import { ApiError, fieldError, notFound, objectNotFound } from '../http/errors.js';
-import { cursorPaginate, paginate } from '../http/paginate.js';
+import { ApiError, fieldError, notFound, objectNotFound, validationFailed } from '../http/errors.js';
+import { cursorPaginate, linkQuery, paginate } from '../http/paginate.js';
 import {
   contactCustomFieldResource,
   contactResource,
   contactTagResource,
+  conversationRow,
   customFieldResource,
   tagResource,
 } from '../state/resources.js';
-import type { Contact } from '../state/store.js';
+import type { Contact, CustomField } from '../state/store.js';
+import type { FieldErrors } from '../openapi/validate.js';
 import { sees, type WorkspaceScope } from '../state/workspaces.js';
 import { digits, iso8601, toE164, asId } from '../util.js';
 
@@ -56,6 +58,12 @@ export interface NewContact {
 }
 
 const text = (value: unknown): string | null => (value === undefined || value === null || value === '' ? null : String(value));
+
+/**
+ * Whether two names of a tag or a field are the same to production's lookup (`where('name', …)` in MySQL's
+ * `utf8mb4_unicode_ci`): neither case nor accents count, nor spaces at the end.
+ */
+const sameName = (a: string, b: string): boolean => a.trimEnd().localeCompare(b.trimEnd(), 'und', { sensitivity: 'base' }) === 0;
 
 /** Creates a contact and emits `contact.created`, like conversations' `ContactObserver::created`. */
 export function createContact(app: SandboxApp, input: NewContact): Contact {
@@ -236,6 +244,120 @@ function lastMessageAt(app: SandboxApp, contact: Contact): number {
 
 const truthy = (v: unknown) => v === true || v === 'true' || v === '1' || v === 1;
 
+/** `ApplyContactCustomFieldValuesAction::MAX_VALUES_PER_CALL`. */
+const MAX_CUSTOM_FIELD_VALUES = 100;
+
+/**
+ * conversations `CustomFieldValueFormat::violation()`: the format an API key must give a value, by the field's type
+ * (0 text, 1 number, 2 date, 3 URL, 4 alphanumeric), with the message of `lang/es/errors.php`.
+ */
+function customFieldFormatError(field: CustomField, value: string): string | null {
+  switch (field.type) {
+    case 1:
+      return /^-?\d+(\.\d+)?$/.test(value)
+        ? null
+        : `El campo «${field.name}» es numérico: escribe un número con punto decimal y sin separador de miles, por ejemplo "1500" o "99.90".`;
+    case 2: {
+      const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+      const date = match ? new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))) : null;
+      const real = date !== null && date.toISOString().slice(0, 10) === value;
+      return real ? null : `El campo «${field.name}» es de fecha: escribe la fecha como AAAA-MM-DD, por ejemplo "2026-11-30".`;
+    }
+    case 3: {
+      let ok = false;
+      try {
+        const url = new URL(value);
+        ok = (url.protocol === 'http:' || url.protocol === 'https:') && url.hostname !== '';
+      } catch {
+        ok = false;
+      }
+      return ok ? null : `El campo «${field.name}» es una URL: escribe la dirección completa, con https:// o http://, por ejemplo "https://ejemplo.com/pedido/123".`;
+    }
+    default:
+      return null;
+  }
+}
+
+/**
+ * The optional `custom_fields: [{id, value}]` of `POST /contacts` and `update-or-create` (conversations
+ * `ValidatesContactCustomFieldValues`): every item is checked before anything is written. First the rules (`value`
+ * required, `id` not repeated), then, only if they pass, the fields: one that is not of the account answers 422 on
+ * `custom_fields.N.id`, a value out of its type's format 422 on `custom_fields.N.value`. Returns what to write.
+ */
+function customFieldValues(ctx: HandlerContext, raw: unknown): { field: CustomField; value: string }[] {
+  if (!Array.isArray(raw) || raw.length === 0) return [];
+  const items = raw as Record<string, unknown>[];
+  const rules: FieldErrors = {};
+  const ids = items.map((item) => (item.id === undefined || item.id === null ? null : String(item.id)));
+  items.forEach((item, i) => {
+    if (ids[i] !== null && ids.filter((id) => id === ids[i]).length > 1) rules[`custom_fields.${i}.id`] = [`El campo custom_fields.${i}.id tiene un valor duplicado.`];
+    // `ConvertEmptyStringsToNull` and `TrimStrings`: a value of only spaces is missing.
+    if (item.value === undefined || item.value === null || (typeof item.value === 'string' && item.value.trim() === '')) {
+      rules[`custom_fields.${i}.value`] = [`El campo custom_fields.${i}.value es requerido.`];
+    }
+  });
+  if (Object.keys(rules).length) throw validationFailed(rules);
+  if (items.length > MAX_CUSTOM_FIELD_VALUES) throw fieldError('custom_fields', `El campo custom_fields no debe tener más de ${MAX_CUSTOM_FIELD_VALUES} elementos.`);
+  const errors: FieldErrors = {};
+  const values: { field: CustomField; value: string }[] = [];
+  items.forEach((item, i) => {
+    const field = ctx.app.store.customFields.get(asId(item.id));
+    if (!field) {
+      errors[`custom_fields.${i}.id`] = [`El custom_fields.${i}.id seleccionado no es válido.`];
+      return;
+    }
+    const value = String(item.value);
+    const format = customFieldFormatError(field, value);
+    if (format) {
+      errors[`custom_fields.${i}.value`] = [format];
+      return;
+    }
+    values.push({ field, value });
+  });
+  if (Object.keys(errors).length) throw validationFailed(errors);
+  return values;
+}
+
+/** `ApplyContactCustomFieldValuesAction::handle()`: writes the values, in the order sent. */
+function applyCustomFieldValues(contact: Contact, values: { field: CustomField; value: string }[]): void {
+  if (values.length === 0) return;
+  const now = new Date();
+  for (const { field, value } of values) {
+    const current = contact.customFields.get(field.id);
+    contact.customFields.set(field.id, { value, createdAt: current?.createdAt ?? now, updatedAt: now });
+  }
+  contact.updatedAt = now;
+}
+
+/**
+ * `POST /contacts/add-tags` and `remove-tags` (conversations `ContactController::addTags()` / `removeTags()`): a list of
+ * `{contactId, tag: {id}}`, up to 200. An item whose contact or tag is not of the account (or the contact is outside
+ * the key's workspace) is skipped, without an error; a tag the contact already has (or does not have) changes nothing.
+ * Each real change emits `contact.tag_added` / `contact.tag_removed` with `source: "manual"`. `200` without a body.
+ */
+function changeTags(ctx: HandlerContext, action: 'add' | 'remove'): { status: number } {
+  const items = Array.isArray(ctx.body) ? (ctx.body as Record<string, unknown>[]) : [];
+  for (const item of items) {
+    const contact = ctx.app.store.contacts.get(asId(item.contactId));
+    if (!contact || !sees(ctx.workspace, contact.workspaceId)) continue;
+    const tagId = (item.tag as Record<string, unknown> | undefined)?.id;
+    const tag = ctx.app.store.tags.get(asId(tagId));
+    if (!tag) continue;
+    if (action === 'add') {
+      if (contact.tags.has(tag.id)) continue;
+      contact.tags.set(tag.id, new Date());
+    } else if (!contact.tags.delete(tag.id)) {
+      continue;
+    }
+    ctx.app.webhooks.emit(
+      action === 'add' ? 'contact.tag_added' : 'contact.tag_removed',
+      { contact: eventContact(contact), tag: { id: tag.id, name: tag.name }, source: 'manual' },
+      { workspaceId: contact.workspaceId },
+    );
+  }
+  return { status: 200 };
+}
+
 function conversationFilter(app: SandboxApp, q: Record<string, unknown>): (c: Contact) => boolean {
   return (c) =>
     hasMessages(app, c) &&
@@ -268,6 +390,9 @@ export const contactHandlers: HandlerTable = {
       if (!device) throw fieldError('deviceId', 'El valor seleccionado en deviceId no es válido.');
       if (!sees(ctx.workspace, device.workspaceId)) throw outsideWorkspace();
     }
+    // `custom_fields` are checked with the rest of the request, whatever the outcome, and written only on a contact
+    // this call creates: an existing one is handed back as it is (`ContactController::store`).
+    const values = customFieldValues(ctx, b.custom_fields);
     const phone = digits(b.phone);
     const existing = phone
       ? ctx.app.store.findContactByPhone(phone)
@@ -275,11 +400,16 @@ export const contactHandlers: HandlerTable = {
     if (existing && !sees(ctx.workspace, existing.workspaceId)) throw outsideWorkspace();
     if (existing) return ok(contactResource(ctx.app.store, existing));
     const contact = createContact(ctx.app, { workspaceId: ctx.workspace.id, name: b.name, email: b.email, phone: b.phone, whatsappId: b.whatsapp_id, image: b.image, deviceId: b.deviceId });
+    applyCustomFieldValues(contact, values);
     return ok(contactResource(ctx.app.store, contact), 201);
   },
 
+  // `200` with the contact it updated, `201` with the one it created (a Laravel resource of a model just created), and
+  // in both cases the `custom_fields` it carries, checked before anything is written (conversations
+  // `UpdateOrCreateContactRequest`).
   'POST /api/v1/contacts/update-or-create': (ctx) => {
     const b = body(ctx);
+    const values = customFieldValues(ctx, b.custom_fields);
     const phone = digits(b.phone);
     if (!phone) throw fieldError('phone', 'El campo phone es obligatorio.');
     const existing = ctx.app.store.findContactByPhone(phone);
@@ -289,12 +419,18 @@ export const contactHandlers: HandlerTable = {
       if ('name' in b && b.name !== null) existing.name = text(b.name);
       if ('email' in b && b.email !== null) existing.email = text(b.email);
       existing.updatedAt = new Date();
+      applyCustomFieldValues(existing, values);
       return ok(contactResource(ctx.app.store, existing));
     }
-    return ok(contactResource(ctx.app.store, createContact(ctx.app, { workspaceId: ctx.workspace.id, name: b.name, email: b.email, phone })));
+    const contact = createContact(ctx.app, { workspaceId: ctx.workspace.id, name: b.name, email: b.email, phone });
+    applyCustomFieldValues(contact, values);
+    return ok(contactResource(ctx.app.store, contact), 201);
   },
 
-  // The detail adds `ai_assistant_email`, `account_main_email` and `follow_up_date` (conversations v1.19.7).
+  'POST /api/v1/contacts/add-tags': (ctx) => changeTags(ctx, 'add'),
+  'POST /api/v1/contacts/remove-tags': (ctx) => changeTags(ctx, 'remove'),
+
+  // The detail adds `opted_out`, `follow_up_date` and `name_mismatch` (see `contactResource`).
   'GET /api/v1/contacts/{contact}': (ctx) => ok(contactResource(ctx.app.store, getContact(ctx.app, ctx.path.contact, ctx.workspace), 'show')),
 
   'PUT /api/v1/contacts/{contact}': (ctx) => {
@@ -352,10 +488,12 @@ export const contactHandlers: HandlerTable = {
     const now = new Date();
     return ok(
       items.map((item) => {
+        // With a key, a field or a contact it cannot see is a 404 item inside the 200 (contract 1113,
+        // `ContactController::attachCustomField`); the panel's 403 items are not the API's.
         const field = ctx.app.store.customFields.get(asId(item.customFieldId));
-        if (!field) return { message: 'No autorizado: el campo personalizado no pertenece al usuario autenticado.', status: 403 };
+        if (!field) return { message: 'Objeto no encontrado.', status: 404 };
         const contact = ctx.app.store.contacts.get(asId(item.contactId));
-        if (!contact) return { message: 'No autorizado: el contacto no pertenece al usuario autenticado.', status: 403 };
+        if (!contact || !sees(ctx.workspace, contact.workspaceId)) return { message: 'Contacto no encontrado.', status: 404 };
         const current = contact.customFields.get(field.id);
         contact.customFields.set(field.id, { value: String(item.value ?? ''), createdAt: current?.createdAt ?? now, updatedAt: now });
         contact.updatedAt = now;
@@ -397,13 +535,22 @@ export const contactHandlers: HandlerTable = {
 
   // --- conversations ------------------------------------------------------------------------------------------
 
+  // The rows are not contacts: see `conversationRow()`. With a key the page is the cursor one of the key listings
+  // (`KeyListingPage::fromCursor`): `links.first` is the first page, and `meta.total` the count of the filtered list
+  // when there is no cursor (`null` above 5000, and with a cursor).
   'GET /api/v1/conversations': (ctx) => {
     const direction = ctx.query.orderBy === 'asc' ? 1 : -1;
     const list = visibleContacts(ctx)
       .filter(conversationFilter(ctx.app, ctx.query))
       .reverse()
       .sort((a, b) => direction * (lastMessageAt(ctx.app, a) - lastMessageAt(ctx.app, b)));
-    return ok(cursorPaginate(list, listContext(ctx), (c) => contactResource(ctx.app.store, c)));
+    const page = cursorPaginate(list, listContext(ctx), (c) => conversationRow(ctx.app.store, c));
+    const meta = page.meta as Record<string, unknown>;
+    const links = page.links as Record<string, unknown>;
+    links.first = `${meta.path as string}?${linkQuery(listContext(ctx), { perPage: meta.per_page as number }, ['cursor']).toString()}`;
+    const hasCursor = ctx.query.cursor !== undefined && ctx.query.cursor !== '';
+    meta.total = hasCursor || list.length > 5000 ? null : list.length;
+    return ok(page);
   },
   'GET /api/v1/conversations/count/unread': (ctx) => ok(count(ctx, (c) => c.unreadMessages > 0 || c.manuallyUnread)),
   'GET /api/v1/conversations/count/open': (ctx) => ok(count(ctx, (c) => c.activeConversation)),
@@ -421,14 +568,15 @@ export const contactHandlers: HandlerTable = {
     return ok({ message: 'Todas las conversaciones han sido marcadas como leídas', updated_count: updated });
   },
   'POST /api/v1/conversations/mark-all-unread': (ctx) => {
-    const ids: Record<string, string> = {};
+    // `pluck('contacts.id')->toArray()`: a list of the contacts marked in this call.
+    const ids: string[] = [];
     for (const c of visibleContacts(ctx)) {
       if (hasMessages(ctx.app, c) && !(c.unreadMessages > 0 || c.manuallyUnread)) {
         c.manuallyUnread = true;
-        ids[String(Object.keys(ids).length)] = c.id;
+        ids.push(c.id);
       }
     }
-    return ok({ message: 'Todas las conversaciones elegibles fueron marcadas como no leídas', marked_count: Object.keys(ids).length, limit_reached: false, contact_ids: ids });
+    return ok({ message: 'Todas las conversaciones elegibles fueron marcadas como no leídas', marked_count: ids.length, limit_reached: false, contact_ids: ids });
   },
 
   // --- tags ---------------------------------------------------------------------------------------------------
@@ -445,21 +593,27 @@ export const contactHandlers: HandlerTable = {
         const cmp = va < vb ? -1 : va > vb ? 1 : 0;
         return desc ? -cmp : cmp;
       });
-    return ok(paginate(list, listContext(ctx), (t) => tagResource(ctx.app.store, t)));
+    // `TagResource::collection()->additional(['with_contact_count' => …])`.
+    return ok({ ...paginate(list, listContext(ctx), (t) => tagResource(ctx.app.store, t)), with_contact_count: ctx.query.withContactCount === true });
   },
+  // `TagController::store`: the tag of that name if the account has it (`200`, unchanged), or a new one (`201`).
   'POST /api/v1/tags': (ctx) => {
     const b = body(ctx);
+    const name = String(b.name);
+    const existing = [...ctx.app.store.tags.values()].find((t) => sameName(t.name, name));
+    if (existing) return ok(tagResource(ctx.app.store, existing));
     const now = new Date();
     const id = ctx.app.store.ids.tag.next();
-    const tag = { id, name: String(b.name), color: text(b.color), createdAt: now, updatedAt: now };
+    const tag = { id, name, description: typeof b.description === 'string' ? b.description : '', color: text(b.color), createdAt: now, updatedAt: now };
     ctx.app.store.tags.set(id, tag);
-    return ok(tagResource(ctx.app.store, tag));
+    return ok(tagResource(ctx.app.store, tag), 201);
   },
   'GET /api/v1/tags/{tag}': (ctx) => ok(tagResource(ctx.app.store, getTag(ctx))),
   'PUT /api/v1/tags/{tag}': (ctx) => {
     const tag = getTag(ctx);
     const b = body(ctx);
     tag.name = String(b.name);
+    if ('description' in b) tag.description = typeof b.description === 'string' ? b.description : '';
     if ('color' in b) tag.color = text(b.color);
     tag.updatedAt = new Date();
     return ok(tagResource(ctx.app.store, tag));
@@ -484,16 +638,21 @@ export const contactHandlers: HandlerTable = {
     const list = [...ctx.app.store.customFields.values()].filter(
       (f) => (!name || f.name.toLowerCase().includes(name)) && (ctx.query.type === undefined || f.type === Number(ctx.query.type)),
     );
-    return ok(paginate(list, listContext(ctx), (f) => customFieldResource(ctx.app.store, f)));
+    return ok({ ...paginate(list, listContext(ctx), (f) => customFieldResource(ctx.app.store, f)), with_contact_count: ctx.query.withContactCount === true });
   },
+  // `CustomFieldController::store`: the field of that name if the account has it (`200`, with its own `type`), or a new
+  // one (`201`).
   'POST /api/v1/custom-fields': (ctx) => {
     const b = body(ctx);
     if (![0, 1, 2, 3, 4].includes(Number(b.type))) throw fieldError('type', 'El valor seleccionado en type no es válido.');
+    const name = String(b.name);
+    const existing = [...ctx.app.store.customFields.values()].find((f) => sameName(f.name, name));
+    if (existing) return ok(customFieldResource(ctx.app.store, existing));
     const now = new Date();
     const id = ctx.app.store.ids.customField.next();
-    const field = { id, name: String(b.name), type: Number(b.type), createdAt: now, updatedAt: now };
+    const field = { id, name, description: typeof b.description === 'string' ? b.description : null, type: Number(b.type), createdAt: now, updatedAt: now };
     ctx.app.store.customFields.set(id, field);
-    return ok(customFieldResource(ctx.app.store, field));
+    return ok(customFieldResource(ctx.app.store, field), 201);
   },
   'GET /api/v1/custom-fields/{customField}': (ctx) => ok(customFieldResource(ctx.app.store, getCustomField(ctx))),
   'PUT /api/v1/custom-fields/{customField}': (ctx) => {

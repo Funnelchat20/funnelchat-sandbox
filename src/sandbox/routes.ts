@@ -27,7 +27,7 @@ import {
 } from '../numbers/numbers.js';
 import { FAILURE_REASONS, REJECTIONS, failureFor, parseForced } from '../messaging/rules.js';
 import { connectLinkResource, contactResource, deliveryResource, deviceResource, publicMessage } from '../state/resources.js';
-import { EXAMPLE_DEVICE, type ArmedFailure, type Contact, type Group, type HealthState, type TemplateStatus } from '../state/store.js';
+import { EXAMPLE_DEVICE, type ArmedFailure, type Contact, type Group, type HealthState, type Message, type TemplateStatus } from '../state/store.js';
 import { createWorkspace, mintKey, PERMISSION, workspaceView } from '../state/workspaces.js';
 import { digits, isRecord, iso8601, toE164, asId } from '../util.js';
 import { catalog, catalogEntry, emittedData } from '../webhooks/catalog.js';
@@ -148,12 +148,46 @@ function limitOf(query: URLSearchParams): number {
   return Number.isInteger(n) && n > 0 ? Math.min(n, 500) : 50;
 }
 
-/** `POST /_sandbox/inbound/message`: a contact writes to one of your numbers. */
+/**
+ * The tap of a contact on a choice of a message you sent (`reply: {to_message_id, option_id}`), as WhatsApp reports it
+ * and conversations publishes it in `message.received`: a question sent with `options` comes back `interactive`, a
+ * quick-reply button of a template `template_button_reply` (official numbers), and `text` is the label of what was
+ * tapped. The id of the choice is not in the event, as in production.
+ */
+function tapOf(app: SandboxApp, reply: Record<string, unknown>): { original: Message; type: string; text: string } {
+  const original = app.store.messages.get(asId(reply.to_message_id));
+  if (!original || !original.own) throw fieldError('reply.to_message_id', 'reply.to_message_id must be a message you sent (msg_…): a question with options, or a template with quick-reply buttons.');
+  let type: string;
+  let choices: { id: string; label: string }[];
+  if (original.options) {
+    type = 'interactive';
+    choices = original.options;
+  } else {
+    const template = original.templateId ? app.store.templates.get(original.templateId) : undefined;
+    const buttons = (template?.buttons ?? []).filter((button) => button.type === 'QUICK_REPLY' && typeof button.text === 'string');
+    if (buttons.length === 0) throw fieldError('reply.to_message_id', 'That message has nothing to tap: send it with options, or send a template with QUICK_REPLY buttons.');
+    type = 'template_button_reply';
+    choices = buttons.map((button) => ({ id: button.text as string, label: button.text as string }));
+  }
+  const choice = choices.find((c) => c.id === String(reply.option_id ?? ''));
+  if (!choice) throw fieldError('reply.option_id', `reply.option_id must be one of the choices of that message: ${choices.map((c) => c.id).join(', ')}.`);
+  return { original, type, text: choice.label };
+}
+
+/**
+ * `POST /_sandbox/inbound/message` (or `/_sandbox/inbound`): a contact writes to one of your numbers, or taps a choice
+ * of a message you sent (`reply`).
+ */
 function inboundMessage(app: SandboxApp, req: SandboxRequest): SandboxResponse {
   const b = obj(req.body);
-  const device = deviceOf(app, b.device_id);
+  const tap = b.reply === undefined || b.reply === null ? null : tapOf(app, obj(b.reply));
+  const device = tap ? deviceOf(app, tap.original.deviceId) : deviceOf(app, b.device_id);
+  if (tap && b.device_id !== undefined && asId(b.device_id) !== device.id) throw fieldError('device_id', 'The reply goes to the number that sent the message: leave device_id out.');
   let contact: Contact | undefined;
-  if (b.contact_id !== undefined) contact = contactOf(app, b.contact_id);
+  if (tap) {
+    contact = contactOf(app, tap.original.contactId);
+    if (b.contact_id !== undefined && asId(b.contact_id) !== contact.id) throw fieldError('contact_id', 'Only the contact the message went to can tap it: leave contact_id out.');
+  } else if (b.contact_id !== undefined) contact = contactOf(app, b.contact_id);
   else {
     const phone = digits(b.phone);
     if (!phone) throw fieldError('phone', 'Send phone (the phone of who writes) or contact_id.');
@@ -161,9 +195,9 @@ function inboundMessage(app: SandboxApp, req: SandboxRequest): SandboxResponse {
   }
   const occurredAt = b.occurred_at ? new Date(String(b.occurred_at)) : new Date();
   if (Number.isNaN(occurredAt.getTime())) throw fieldError('occurred_at', 'occurred_at must be an ISO 8601 date.');
-  const type = typeof b.type === 'string' ? b.type : b.file ? 'image' : 'text';
-  const text = b.text === undefined ? (b.file ? null : 'Hola, quiero más información') : b.text === null ? null : String(b.text);
-  const file = typeof b.file === 'string' ? b.file : null;
+  const type = tap ? tap.type : typeof b.type === 'string' ? b.type : b.file ? 'image' : 'text';
+  const text = tap ? tap.text : b.text === undefined ? (b.file ? null : 'Hola, quiero más información') : b.text === null ? null : String(b.text);
+  const file = tap ? null : typeof b.file === 'string' ? b.file : null;
 
   const message = createMessage(app, { contactId: contact.id, deviceId: device.id, own: false, type, text, file, viaApi: false, status: null, createdAt: occurredAt });
   // The contact wrote: the 24-hour window opens and the spam brakes start over.
@@ -232,7 +266,9 @@ function participantEvent(app: SandboxApp, req: SandboxRequest, type: 'group_par
     return { status: 202, body: { event: emitted(app.webhooks.emit(type, data, { workspaceId: group.workspaceId })), participants: group.participants.length } };
   }
   const entry = catalogEntry(type);
-  const example = obj(entry ? emittedData(entry) : {});
+  // communities always writes `campaign` (`null` outside a campaign), even where the catalog's example leaves it out.
+  const fromCatalog = obj(entry ? emittedData(entry) : {});
+  const example: Record<string, unknown> = 'campaign' in fromCatalog ? fromCatalog : { group: fromCatalog.group, campaign: null, ...fromCatalog };
   delete example.workspace_id;
   const data = deepMerge(example, {
     ...(isRecord(b.group) ? { group: b.group } : {}),
@@ -359,7 +395,7 @@ const ROUTES: Route[] = [
       return { status: 201, body: { key: mintKey(app.store, id, undefined, permissions), workspace_id: id, permissions } };
     },
   },
-  { method: 'POST', pattern: /^\/_sandbox\/inbound\/message$/, handle: inboundMessage },
+  { method: 'POST', pattern: /^\/_sandbox\/inbound(\/message)?$/, handle: inboundMessage },
   {
     method: 'GET',
     pattern: /^\/_sandbox\/events$/,

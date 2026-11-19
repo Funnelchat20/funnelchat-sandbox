@@ -23,9 +23,11 @@ describe('subscriptions', () => {
 
     const shown = await api.call('GET', `/api/v1/webhooks/${created.body.id}`);
     expect(shown.body.secret).toBeUndefined();
+    // With a key every listing of accounts is a page (`BoundApiKeyListings`: 25 by default).
     const list = await api.call('GET', '/api/v1/webhooks');
-    expect(Array.isArray(list.body)).toBe(true);
-    expect(list.body[0].secret).toBeUndefined();
+    expect(Object.keys(list.body)).toEqual(['data', 'links', 'meta']);
+    expect(list.body.meta).toMatchObject({ per_page: 25, total: 1 });
+    expect(list.body.data[0].secret).toBeUndefined();
     expect(JSON.stringify((await api.call('GET', '/_sandbox/state')).body)).not.toContain(created.body.secret);
     expect(JSON.stringify((await api.call('GET', '/_sandbox/requests')).body)).not.toContain(created.body.secret);
   });
@@ -50,6 +52,16 @@ describe('subscriptions', () => {
     await api.call('POST', '/_sandbox/inbound/message', { phone: '5491100000000' });
     await new Promise((r) => setTimeout(r, 100));
     expect(receiver.received).toHaveLength(0);
+  });
+
+  it('takes a receiver on your machine, http://localhost or http://127.0.0.1, though the real API wants https', async () => {
+    const api = await startSandbox();
+    for (const url of ['http://localhost:3000/hooks', 'http://127.0.0.1:3000/hooks']) {
+      const created = await api.call('POST', '/api/v1/webhooks', { url, events: ['message.received'] });
+      expect(created.status).toBe(201);
+      expect(created.body.url).toBe(url);
+      expect((await api.call('PUT', `/api/v1/webhooks/${created.body.id}`, { url, events: ['message.received'] })).status).toBe(200);
+    }
   });
 
   it('validates url and events like accounts', async () => {
@@ -84,7 +96,8 @@ describe('subscriptions', () => {
     for (const gone of ['ai_quota.low_balance', 'ai_quota.topup_succeeded', 'ai_quota.topup_failed', 'billing.plan_blocked', 'subscription.expiring']) {
       expect(types).not.toContain(gone);
     }
-    expect(Object.keys(res.body.data[0])).toEqual(['type', 'area', 'status', 'description', 'subscribable', 'example']);
+    expect(Object.keys(res.body.data[0])).toEqual(['type', 'area', 'status', 'is_critical', 'label', 'description', 'subscribable', 'example']);
+    expect(res.body.data.find((e: { type: string }) => e.type === 'device.disconnected')).toMatchObject({ is_critical: true, label: 'Número desconectado' });
     expect(res.body.data.find((e: { type: string }) => e.type === 'contact.updated')).toMatchObject({ area: 'conversations', status: 'active', subscribable: true });
     expect(res.body.data.find((e: { type: string }) => e.type === 'webhook.test')).toMatchObject({ area: 'accounts', subscribable: false });
     // Every example is its type's envelope and says its workspace: the API's fictitious 37.

@@ -350,8 +350,9 @@ function sendForm(ctx: HandlerContext): HandlerResult {
   const reference = clientReference(b);
   const device = app.store.devices.get(asId(b.device_id));
   if (!device || !device.connected) throw rejection('device_unavailable');
-  // `form_id` is the id of a version of the form (`frv_`): the send goes out with the current published one of its family.
-  const form = preflight(app, app.store.forms.get(formId)?.familyId ?? '', device, contact);
+  // `form_id` is the form's family (`frm_`, the id `KeyPublicIds` decodes for this field: `FormSendAcceptance::preflight`):
+  // the send goes out with the current published version of that family.
+  const form = preflight(app, formId, device, contact);
   const text = typeof b.text === 'string' ? b.text : labelOf(form);
   const [message] = send(ctx, {
     device,

@@ -41,7 +41,7 @@ describe('a key of another workspace', () => {
     expect((await b.as('GET', '/api/v1/devices')).body.data).toEqual([]);
     expect(await b.as('GET', `/api/v1/devices/${OFFICIAL}`)).toMatchObject({ status: 404, body: { error: 'not_found', message: 'No encontramos lo que pediste en esta cuenta.' } });
     expect((await b.as('DELETE', `/api/v1/devices/${QR}`)).status).toBe(404);
-    expect((await b.as('GET', '/api/v1/webhooks')).body).toEqual([]);
+    expect((await b.as('GET', '/api/v1/webhooks')).body.data).toEqual([]);
     expect((await b.as('GET', `/api/v1/webhooks/${subA.id}`)).status).toBe(404);
     expect((await b.as('DELETE', `/api/v1/webhooks/${subA.id}`)).status).toBe(404);
 
@@ -109,7 +109,7 @@ describe('contacts, conversations and messages of another workspace', () => {
     expect(await b.as('GET', `/api/v1/contacts/${CONTACT}`)).toMatchObject({ status: 404, body: { error: 'not_found', message: 'No encontramos lo que pediste en esta cuenta.' } });
     expect(await b.as('GET', `/api/v1/contacts/${CONTACT}/messages/${NO_MESSAGE}`)).toMatchObject({ status: 404, body: { error: 'not_found', message: 'No encontramos lo que pediste en esta cuenta.' } });
     expect(await b.as('GET', `/api/v1/contacts/${CONTACT}/messages`)).toMatchObject({ status: 404, body: { error: 'not_found', message: 'Contacto no encontrado.' } });
-    expect(await b.as('POST', `/api/v1/contacts/${CONTACT}/message`, { device_id: QR, contact_id: CONTACT, text: 'x' })).toMatchObject({ status: 404, body: { error: 'not_found', message: 'No encontramos lo que pediste en esta cuenta.' } });
+    expect(await b.as('POST', `/api/v1/contacts/${CONTACT}/message`, { phone: '5491100000000', device_id: QR, contact_id: CONTACT, text: 'x' })).toMatchObject({ status: 404, body: { error: 'not_found', message: 'No encontramos lo que pediste en esta cuenta.' } });
     expect(await b.as('POST', '/api/v1/message/send-message', { device_id: QR, contact_id: CONTACT, text: 'x' })).toMatchObject({
       status: 404,
       body: { error: 'not_found', message: 'Contacto no encontrado.', status: 'error' },
@@ -133,7 +133,7 @@ describe('contacts, conversations and messages of another workspace', () => {
     const api = await startSandbox();
     const b = await secondWorkspace(api);
     const contact = await b.as('POST', '/api/v1/contacts', { phone: '5491155550000' });
-    expect(await b.as('POST', `/api/v1/contacts/${contact.body.id}/message`, { device_id: QR, contact_id: contact.body.id, text: 'x' })).toMatchObject({
+    expect(await b.as('POST', `/api/v1/contacts/${contact.body.id}/message`, { device_id: QR, contact_id: contact.body.id, phone: '5491155550000', text: 'x' })).toMatchObject({
       status: 404,
       body: { error: 'not_found', message: 'No encontramos lo que pediste en esta cuenta.' },
     });
@@ -142,7 +142,7 @@ describe('contacts, conversations and messages of another workspace', () => {
     await b.as('POST', '/api/v1/webhooks', { url: receiver.url, events: ['message.status_changed'] });
     const device = await b.as('POST', '/api/v1/devices', { connection: 'qr' });
     await api.call('POST', `/_sandbox/devices/${device.body.data.id}/connect`);
-    const sent = await b.as('POST', `/api/v1/contacts/${contact.body.id}/message`, { device_id: device.body.data.id, contact_id: contact.body.id, text: 'Hola' });
+    const sent = await b.as('POST', `/api/v1/contacts/${contact.body.id}/message`, { device_id: device.body.data.id, contact_id: contact.body.id, phone: '5491155550000', text: 'Hola' });
     expect(sent.status).toBe(200);
     const events = await receiver.waitFor(3);
     expect(events.map((e) => [e.json.data.status, e.json.data.workspace_id])).toEqual([
@@ -162,7 +162,7 @@ describe('sending by phone, without contact_id (conversations v1.19.21)', () => 
     expect((await api.call('GET', `/api/v1/contacts/${contactId}`)).body.phone).toBe('5491155550100');
     // The same phone again is the same contact.
     expect((await api.call('POST', '/api/v1/message/send-message', { device_id: QR, phone: '5491155550100', text: 'Otra vez' })).body.message.contact_id).toBe(contactId);
-    const template = await api.call('POST', `/api/v1/devices/${OFFICIAL}/templates/${TEMPLATE}/send-template`, { phone: '5491155550100', template_variables: { body: ['Ana'] } });
+    const template = await api.call('POST', `/api/v1/devices/${OFFICIAL}/templates/${TEMPLATE}/send-template`, { phone: '5491155550100', template_variables: { body: { '1': 'Ana' } } });
     expect(template.body.message.contact_id).toBe(contactId);
 
     const b = await secondWorkspace(api);

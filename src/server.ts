@@ -14,6 +14,7 @@ import type { AddressInfo } from 'node:net';
 import { SandboxApp, type Logger } from './app.js';
 import { defaultConfig, mergeConfig, type ConfigInput, type SandboxConfig } from './config.js';
 import { handlers, simulationOf } from './handlers/index.js';
+import { groupListQueryErrors, groupSendBodyErrors } from './handlers/groups.js';
 import { SUBSCRIPTION_BODY_ROUTES, subscriptionBodyErrors } from './handlers/webhooks.js';
 import type { HandlerResult } from './http/context.js';
 import { takeEdgeFailure } from './http/edge.js';
@@ -172,9 +173,15 @@ export function createSandbox(options: CreateSandboxOptions = {}): Sandbox {
       if (!validation.ok) {
         if (validation.kind === 'not_found') throw notFound();
         const invalid = op.operation['x-fc-validation-error'] === 'invalid_request' || INVALID_REQUEST_ROUTES.has(route);
-        // Laravel checks every rule at once: the subscription's own rules join the schema's, and for a field both
-        // refuse, accounts' message wins.
-        const own = SUBSCRIPTION_BODY_ROUTES.has(route) ? subscriptionBodyErrors(app, requestBody) : {};
+        // Laravel checks every rule at once: the domain's own rules join the schema's, and for a field both refuse, the
+        // domain's message wins (accounts' for a subscription; communities' for a key's list of groups and a group send).
+        const own = SUBSCRIPTION_BODY_ROUTES.has(route)
+          ? subscriptionBodyErrors(app, requestBody)
+          : route === 'GET /api/v1/groups'
+            ? groupListQueryErrors(parseQuery(url.searchParams))
+            : route === 'POST /api/v1/groups/{group}/messages'
+              ? groupSendBodyErrors(requestBody)
+              : {};
         const errors = { ...validation.errors, ...own };
         throw invalid ? invalidRequest(errors) : validationFailed(errors);
       }
@@ -184,6 +191,7 @@ export function createSandbox(options: CreateSandboxOptions = {}): Sandbox {
         op,
         path: validation.value.path,
         query: validation.value.query,
+        rawQuery: url.searchParams,
         body: validation.value.body,
         headers,
         origin: `http://${headers.host ?? `localhost:${config.port}`}`,

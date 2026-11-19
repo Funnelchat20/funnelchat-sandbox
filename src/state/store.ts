@@ -5,6 +5,7 @@
  * stops or on `POST /_sandbox/reset`.
  */
 import { randomBytes } from 'node:crypto';
+import type { TemplateParams } from '../messaging/template-params.js';
 import { fixedId, newId, type IdPrefix } from '../util.js';
 
 export type PublicStatus = 'queued' | 'sent' | 'delivered' | 'read' | 'failed';
@@ -141,6 +142,8 @@ export interface Message {
   /** Sent with an API key: it has the queued → sent → delivered → read lifecycle and emits its states. */
   viaApi: boolean;
   templateId: string | null;
+  /** The choices of a question sent with `options` (`interactive`): what a contact can tap. `null` otherwise. */
+  options: { id: string; label: string }[] | null;
   reactions: { emoji: string; own: boolean }[];
   createdAt: Date;
   updatedAt: Date;
@@ -149,6 +152,8 @@ export interface Message {
 export interface Tag {
   id: string;
   name: string;
+  /** `""` when it has none (`TagController::store` saves `description ?? ''`). */
+  description: string;
   color: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -157,6 +162,7 @@ export interface Tag {
 export interface CustomField {
   id: string;
   name: string;
+  description: string | null;
   type: number;
   createdAt: Date;
   updatedAt: Date;
@@ -228,7 +234,8 @@ export interface Template {
   languageCode: string;
   deviceId: string;
   file: string | null;
-  params: string[] | null;
+  /** Canonical, as conversations stores it: a field and a sample per `{{n}}` (`messaging/template-params.ts`). */
+  params: TemplateParams;
   buttons: { text?: string; type?: string; url?: string; phone_number?: string }[] | null;
   rejectionReason: string | null;
   createdAt: Date;
@@ -603,7 +610,7 @@ export function seed(store: Store, now = new Date()): void {
   });
 
   const tagId = EXAMPLE_ID.tag;
-  store.tags.set(tagId, { id: tagId, name: 'Cliente', color: '#2E7D32', createdAt: now, updatedAt: now });
+  store.tags.set(tagId, { id: tagId, name: 'Cliente', description: '', color: '#2E7D32', createdAt: now, updatedAt: now });
 
   const templateId = EXAMPLE_ID.template;
   store.templates.set(templateId, {
@@ -620,7 +627,7 @@ export function seed(store: Store, now = new Date()): void {
     languageCode: 'es',
     deviceId: EXAMPLE_DEVICE.official,
     file: null,
-    params: ['Lucía'],
+    params: { body: { '1': '{name}' }, samples: { body: { '1': 'Lucía' } } },
     buttons: null,
     rejectionReason: null,
     createdAt: now,

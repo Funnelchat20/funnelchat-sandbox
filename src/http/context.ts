@@ -1,6 +1,7 @@
 import type { SandboxApp } from '../app.js';
 import type { IndexedOperation } from '../openapi/spec.js';
 import type { WorkspaceScope } from '../state/workspaces.js';
+import type { ListContext } from './paginate.js';
 
 export interface HandlerContext {
   app: SandboxApp;
@@ -9,6 +10,8 @@ export interface HandlerContext {
   path: Record<string, unknown>;
   /** Query, parsed the way Laravel reads it and coerced where the spec declares the parameter. */
   query: Record<string, unknown>;
+  /** The query as the client sent it: the pagination links copy it (see `ListContext.raw`). */
+  rawQuery: URLSearchParams;
   /** JSON body, coerced to the schema (`undefined` when there is none). */
   body: unknown;
   /** Request headers, lower case. */
@@ -37,8 +40,8 @@ export type HandlerTable = Record<string, Handler>;
 export const ok = (body: unknown, status = 200): HandlerResult => ({ status, body });
 export const noContent = (): HandlerResult => ({ status: 204 });
 
-export function listContext(ctx: HandlerContext): { path: string; query: Record<string, unknown> } {
-  return { path: `${ctx.origin}${ctx.pathname}`, query: ctx.query };
+export function listContext(ctx: HandlerContext): ListContext {
+  return { path: `${ctx.origin}${ctx.pathname}`, query: ctx.query, raw: ctx.rawQuery };
 }
 
 export function body(ctx: HandlerContext): Record<string, unknown> {

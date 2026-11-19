@@ -156,8 +156,7 @@ export const connectLinkHandlers: HandlerTable = {
       };
       app.store.connectLinks.set(link.id, link);
       app.logger.info(`sign-up link ${link.id} (${link.type}) → ${app.publicUrl}/connect/…`);
-      const { id, type, status, ...rest } = connectLinkResource(link);
-      return { status: 201, body: { data: { id, type, status, url: `${app.publicUrl}/connect/${token}`, ...rest } }, headers: { 'Cache-Control': 'no-store' } };
+      return { status: 201, body: { data: connectLinkResource(link, `${app.publicUrl}/connect/${token}`) }, headers: { 'Cache-Control': 'no-store' } };
     });
   },
 
@@ -170,7 +169,7 @@ export const connectLinkHandlers: HandlerTable = {
       .filter((link) => !status || link.status === status)
       .filter((link) => reference === undefined || reference === '' || link.externalReference === String(reference))
       .reverse();
-    return ok(paginate(list, listContext(ctx), connectLinkResource));
+    return ok(paginate(list, listContext(ctx), (link) => connectLinkResource(link)));
   },
 
   'GET /api/v1/connect-links/{link}': (ctx) => ok({ data: connectLinkResource(linkOf(ctx, ctx.path.link)) }),

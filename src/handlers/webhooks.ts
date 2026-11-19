@@ -89,8 +89,8 @@ export const webhookHandlers: HandlerTable = {
 
   'GET /api/v1/webhooks': (ctx) => {
     const list = ofWorkspace(ctx).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
-    if (ctx.query.perPage !== undefined || ctx.query.per_page !== undefined) return ok(paginate(list, listContext(ctx), subscriptionResource));
-    return ok(list.map(subscriptionResource));
+    // With a key every listing of accounts is a page (`BoundApiKeyListings`: 25 by default, up to 100).
+    return ok(paginate(list, listContext(ctx), subscriptionResource));
   },
 
   'POST /api/v1/webhooks': (ctx) => {

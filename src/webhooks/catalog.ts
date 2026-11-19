@@ -26,6 +26,10 @@ export interface CatalogEntry {
   area: string;
   /** `active`: it is delivered. Every type the portal publishes is. */
   status: 'active' | 'planned';
+  /** `true` if it tells of something that stops your operation (accounts' catalog). */
+  is_critical: boolean;
+  /** Its name for people, in Spanish. */
+  label: string;
   description: string;
   /** `false` only for `webhook.test`, which only `POST /api/v1/webhooks/{id}/test` sends. */
   subscribable: boolean;

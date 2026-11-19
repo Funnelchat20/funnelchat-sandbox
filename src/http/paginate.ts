@@ -7,6 +7,12 @@ export interface ListContext {
   /** `http://host:port/api/v1/...` without the query: Laravel's `path`. */
   path: string;
   query: Record<string, unknown>;
+  /**
+   * The query as the client sent it. The links copy it as is, like Laravel's `withQueryString()` and the key listings'
+   * `KeyListingPage::baseQuery()`: `activeConversation=1` stays `1` (the coerced `true` would be a 422 on the next
+   * page) and a list such as `status[]=0` stays in the link.
+   */
+  raw?: URLSearchParams;
 }
 
 function perPageOf(query: Record<string, unknown>, fallback: number, max = 100): number {
@@ -17,14 +23,29 @@ function perPageOf(query: Record<string, unknown>, fallback: number, max = 100):
   return Math.min(n, max);
 }
 
-function urlWith(path: string, query: Record<string, unknown>, extra: Record<string, string | number>): string {
-  const params = new URLSearchParams();
-  for (const [key, value] of Object.entries({ ...query, ...extra })) {
-    if (value === undefined || value === null || typeof value === 'object') continue;
-    params.set(key, String(value));
+/**
+ * The query of a link: the one the client sent (`ctx.raw`) without the keys in `drop`, with `extra` at the end. Without
+ * the raw query (a handler that builds its own context), the scalar values of `ctx.query`, a boolean as `1` or `0`: the
+ * only values Laravel's `boolean` rule accepts in a query.
+ */
+export function linkQuery(ctx: ListContext, extra: Record<string, string | number>, drop: string[] = []): URLSearchParams {
+  let params: URLSearchParams;
+  if (ctx.raw) params = new URLSearchParams(ctx.raw);
+  else {
+    params = new URLSearchParams();
+    for (const [key, value] of Object.entries(ctx.query)) {
+      if (value === undefined || value === null || typeof value === 'object') continue;
+      params.set(key, typeof value === 'boolean' ? (value ? '1' : '0') : String(value));
+    }
   }
-  const qs = params.toString();
-  return qs ? `${path}?${qs}` : path;
+  for (const key of [...drop, ...Object.keys(extra)]) params.delete(key);
+  for (const [key, value] of Object.entries(extra)) params.set(key, String(value));
+  return params;
+}
+
+function urlWith(ctx: ListContext, extra: Record<string, string | number>, drop: string[] = []): string {
+  const qs = linkQuery(ctx, extra, drop).toString();
+  return qs ? `${ctx.path}?${qs}` : ctx.path;
 }
 
 /** `LengthAwarePaginator`: `?page=N`, `meta.current_page` / `meta.last_page`, `meta.links`. */
@@ -37,7 +58,7 @@ export function paginate<T>(items: T[], ctx: ListContext, map: (item: T) => unkn
   const slice = items.slice((page - 1) * perPage, page * perPage);
   const from = slice.length ? (page - 1) * perPage + 1 : null;
   const to = slice.length ? (from as number) + slice.length - 1 : null;
-  const link = (n: number) => urlWith(ctx.path, ctx.query, { page: n });
+  const link = (n: number) => urlWith(ctx, { page: n });
   const pageLinks = [
     { url: page > 1 ? link(page - 1) : null, label: '&laquo; Anterior', active: false },
     ...Array.from({ length: lastPage }, (_, i) => ({ url: link(i + 1), label: String(i + 1), active: i + 1 === page })),
@@ -77,15 +98,13 @@ export function cursorPaginate<T>(items: T[], ctx: ListContext, map: (item: T) =
   const slice = items.slice(start, start + perPage);
   const next = start + perPage < items.length ? encodeCursor(start + perPage) : null;
   const prev = start > 0 ? encodeCursor(Math.max(0, start - perPage)) : null;
-  const rest = { ...ctx.query };
-  delete rest.cursor;
   return {
     data: slice.map(map),
     links: {
       first: null,
       last: null,
-      prev: prev ? urlWith(ctx.path, rest, { cursor: prev }) : null,
-      next: next ? urlWith(ctx.path, rest, { cursor: next }) : null,
+      prev: prev ? urlWith(ctx, { cursor: prev }) : null,
+      next: next ? urlWith(ctx, { cursor: next }) : null,
     },
     meta: { path: ctx.path, per_page: perPage, next_cursor: next, prev_cursor: prev },
   };
