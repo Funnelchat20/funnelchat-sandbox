@@ -62,11 +62,11 @@
   },
   {
    "name": "Campañas",
-   "description": "Ver tus campañas de grupos, sus condiciones, sus grupos, quién entró y salió, sus pipelines y planes de operación, y las acciones que corrieron."
+   "description": "Crear, editar, activar, pausar y borrar tus campañas de grupos, y ver sus condiciones, sus grupos, quién entró y salió, sus pipelines y planes de operación, y las acciones que corrieron."
   },
   {
    "name": "Envíos programados",
-   "description": "Ver tus envíos programados a grupos, sus grupos, cómo salió cada uno en cada grupo, cada vez que salió uno recurrente, sus lecturas, sus respuestas y sus carpetas."
+   "description": "Programar, editar y cancelar tus envíos a grupos, y ver sus grupos, cómo salió cada uno en cada grupo, cada vez que salió uno recurrente, sus lecturas, sus respuestas y sus carpetas."
   },
   {
    "name": "Estadísticas",
@@ -1854,7 +1854,7 @@
     "x-fc-permission": "conversations:write",
     "x-fc-superficie": "plataforma",
     "x-fc-destructive": false,
-    "x-fc-proposito": "Úsalo para dimensionar la audiencia de una difusión con los mismos filtros con que buscas sus contactos, sin traerlos uno por uno. La especificación no describe la forma de la respuesta.",
+    "x-fc-proposito": "Úsalo para dimensionar la audiencia de una difusión con los mismos filtros con que buscas sus contactos, sin traerlos uno por uno.",
     "description": "**Permiso requerido:** **Contactos y conversaciones → Editar**",
     "x-fc-domain": "conversations"
    }
@@ -36626,6 +36626,50 @@
     "x-fc-destructive": false,
     "x-fc-proposito": "Úsalo para listar las campañas de grupos de WhatsApp de tu cuenta, con búsqueda por nombre, y obtener sus IDs para consultar grupos, participantes o estadísticas.",
     "x-fc-domain": "communities"
+   },
+   "post": {
+    "operationId": "campaign.store",
+    "description": "**Permiso requerido:** **Grupos y campañas → Editar**\n\nCrear los grupos al instante (`auto_create_groups: true`, con `backup_groups_count`) o activar la moderación pide además **Grupos y campañas → Administrar grupos**; sin ese permiso responde `403 operate_permission_required` y no crea nada. Con una API key no se aceptan `photo`, `input_tag` ni `output_tag` (`422`), y un administrador que sea un número de tu cuenta tiene que ser de este espacio de trabajo (`422`).",
+    "summary": "Crear una campaña",
+    "tags": [
+     "Campañas"
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/StoreCampaignRequest"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/CommunitiesAuthenticationException"
+     },
+     "403": {
+      "$ref": "#/components/responses/CommunitiesAuthorizationException"
+     },
+     "422": {
+      "$ref": "#/components/responses/CommunitiesValidationException"
+     }
+    },
+    "x-fc-permission": "communities:write",
+    "x-fc-superficie": "plataforma",
+    "x-fc-destructive": false,
+    "x-fc-proposito": "Úsalo para crear una campaña de grupos de WhatsApp: sus administradores, cómo reparte a las personas entre sus grupos y sus límites.",
+    "x-fc-domain": "communities"
    }
   },
   "/api/v1/campaigns/{campaign}": {
@@ -36762,6 +36806,119 @@
     "x-fc-destructive": false,
     "x-fc-proposito": "Sirve para ver la configuración completa de una campaña: sus grupos, administradores, link de redirección, distribución del tráfico, píxel y grupos desconectados o con error.",
     "x-fc-domain": "communities"
+   },
+   "put": {
+    "operationId": "campaign.update",
+    "description": "**Permiso requerido:** **Grupos y campañas → Editar**\n\nCon una API key, el cambio no llega a los grupos en WhatsApp salvo que mandes `update_groups: true`. Eso pide además **Grupos y campañas → Administrar grupos**, igual que activar la creación automática de grupos, subir `backup_groups_count` o cambiar `clicks_limit` o `participants_limit` con la creación automática activa (pueden crear grupos), y activar o cambiar la moderación; sin ese permiso responde `403 operate_permission_required` y no cambia nada. `administrators` es obligatorio (salvo en una campaña de grupos oficiales) y reemplaza la lista, y si no mandas `moderation`, la moderación se apaga. Con una API key no se aceptan `photo`, `input_tag` ni `output_tag` (`422`).",
+    "summary": "Editar una campaña",
+    "tags": [
+     "Campañas"
+    ],
+    "parameters": [
+     {
+      "name": "campaign",
+      "in": "path",
+      "required": true,
+      "description": "The campaign ID",
+      "schema": {
+       "type": "string",
+       "description": "Id (`cmp_…`)",
+       "pattern": "^cmp_[A-Za-z0-9]{23}$",
+       "examples": [
+        "cmp_A6RMvAOjr0mHuLr08RpcwWu"
+       ]
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UpdateCampaignRequest"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/CommunitiesAuthenticationException"
+     },
+     "403": {
+      "$ref": "#/components/responses/CommunitiesAuthorizationException"
+     },
+     "404": {
+      "$ref": "#/components/responses/CommunitiesModelNotFoundException"
+     },
+     "422": {
+      "$ref": "#/components/responses/CommunitiesValidationException"
+     }
+    },
+    "x-fc-permission": "communities:write",
+    "x-fc-superficie": "plataforma",
+    "x-fc-destructive": false,
+    "x-fc-proposito": "Sirve para cambiar la configuración de una campaña. Con una API key, el cambio llega a sus grupos en WhatsApp solo si mandas `update_groups: true`.",
+    "x-fc-domain": "communities"
+   },
+   "delete": {
+    "operationId": "campaign.destroy",
+    "description": "> ⚠️ **No se puede deshacer:** la campaña se borra con sus grupos en Funnelchat y sus estadísticas, y los envíos programados que solo apuntaban a ella quedan borrados. Los grupos siguen en WhatsApp.\n\n**Permiso requerido:** **Grupos y campañas → Editar**\n\nIrreversible: borra la campaña, sus grupos en Funnelchat (siguen en WhatsApp) y sus estadísticas, y da por borrados los envíos programados que solo apuntaban a ella. Una campaña con grupos oficiales responde `409 campaign_has_official_groups` (borrarla los borraría en WhatsApp), y una con grupos de otro espacio de trabajo, `409 campaign_has_groups_of_another_workspace`: esas se borran desde el panel.",
+    "summary": "Borrar una campaña",
+    "tags": [
+     "Campañas"
+    ],
+    "parameters": [
+     {
+      "name": "campaign",
+      "in": "path",
+      "required": true,
+      "description": "The campaign ID",
+      "schema": {
+       "type": "string",
+       "description": "Id (`cmp_…`)",
+       "pattern": "^cmp_[A-Za-z0-9]{23}$",
+       "examples": [
+        "cmp_A6RMvAOjr0mHuLr08RpcwWu"
+       ]
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/CommunitiesAuthenticationException"
+     },
+     "403": {
+      "$ref": "#/components/responses/CommunitiesAuthorizationException"
+     },
+     "404": {
+      "$ref": "#/components/responses/CommunitiesModelNotFoundException"
+     }
+    },
+    "x-fc-permission": "communities:write",
+    "x-fc-superficie": "plataforma",
+    "x-fc-destructive": true,
+    "x-fc-proposito": "Sirve para borrar una campaña que ya no usas. Sus grupos siguen en WhatsApp.",
+    "x-fc-domain": "communities"
    }
   },
   "/api/v1/campaigns/{campaign}/conditionals": {
@@ -36874,6 +37031,81 @@
     "x-fc-superficie": "plataforma",
     "x-fc-destructive": false,
     "x-fc-proposito": "Úsalo para conocer las reglas condicionales de una campaña: qué condiciones evalúa y a qué URL o grupo redirige cuando se cumplen.",
+    "x-fc-domain": "communities"
+   }
+  },
+  "/api/v1/campaigns/{campaign}/status": {
+   "post": {
+    "operationId": "campaign.status",
+    "description": "**Permiso requerido:** **Grupos y campañas → Editar**\n\nActivar una campaña con la creación automática de grupos activa hace que las visitas al link vuelvan a crear grupos.",
+    "summary": "Activar o pausar una campaña",
+    "tags": [
+     "Campañas"
+    ],
+    "parameters": [
+     {
+      "name": "campaign",
+      "in": "path",
+      "required": true,
+      "description": "The campaign ID",
+      "schema": {
+       "type": "string",
+       "description": "Id (`cmp_…`)",
+       "pattern": "^cmp_[A-Za-z0-9]{23}$",
+       "examples": [
+        "cmp_A6RMvAOjr0mHuLr08RpcwWu"
+       ]
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UpdateCampaignStatusRequest"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Correcto",
+      "content": {
+       "application/json": {
+        "schema": {
+         "allOf": [
+          {
+           "$ref": "#/components/schemas/CampaignResource"
+          },
+          {
+           "type": "object",
+           "required": [
+            "moderation"
+           ]
+          }
+         ]
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/CommunitiesAuthenticationException"
+     },
+     "403": {
+      "$ref": "#/components/responses/CommunitiesAuthorizationException"
+     },
+     "404": {
+      "$ref": "#/components/responses/CommunitiesModelNotFoundException"
+     },
+     "422": {
+      "$ref": "#/components/responses/CommunitiesValidationException"
+     }
+    },
+    "x-fc-permission": "communities:write",
+    "x-fc-superficie": "plataforma",
+    "x-fc-destructive": false,
+    "x-fc-proposito": "Úsalo para pausar una campaña o volver a activarla.",
     "x-fc-domain": "communities"
    }
   },
@@ -37217,7 +37449,7 @@
      {
       "name": "status",
       "in": "query",
-      "description": "Estado del grupo (ver `status` de `GroupResource`); `0` no filtra",
+      "description": "Estado del grupo (ver `status` de `GroupResource`): `0` solo los activos; sin `status` no filtra. Con `3` se excluyen los grupos cuyo dueño es un número conectado de la cuenta",
       "schema": {
        "type": "integer"
       }
@@ -37253,6 +37485,24 @@
       "description": "Filtra por teléfono de administrador, sin `+`",
       "schema": {
        "type": "string"
+      }
+     },
+     {
+      "name": "fillState",
+      "in": "query",
+      "description": "Estado de llenado: `receiving`, `waiting`, `full` o `suspended`",
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ],
+       "enum": [
+        "receiving",
+        "waiting",
+        "full",
+        "suspended",
+        null
+       ]
       }
      },
      {
@@ -37379,6 +37629,34 @@
             "total": {
              "type": "integer",
              "minimum": 0
+            },
+            "fillStateCounts": {
+             "type": "object",
+             "description": "Grupos en cada estado de llenado, con los demás filtros y sin `fillState`",
+             "properties": {
+              "receiving": {
+               "type": "integer",
+               "description": "Recibiendo"
+              },
+              "waiting": {
+               "type": "integer",
+               "description": "Esperando ingresos"
+              },
+              "full": {
+               "type": "integer",
+               "description": "Llenos"
+              },
+              "suspended": {
+               "type": "integer",
+               "description": "Suspendidos por WhatsApp"
+              }
+             },
+             "required": [
+              "receiving",
+              "waiting",
+              "full",
+              "suspended"
+             ]
             }
            },
            "required": [
@@ -37389,7 +37667,8 @@
             "path",
             "per_page",
             "to",
-            "total"
+            "total",
+            "fillStateCounts"
            ]
           }
          },
@@ -37453,7 +37732,12 @@
              ],
              "adminOnlyMessage": true,
              "origin": 0,
-             "lastSyncAt": "2026-11-17 13:00:00"
+             "lastSyncAt": "2026-11-17 13:00:00",
+             "fillState": "receiving",
+             "fillStateReason": null,
+             "overLimit": false,
+             "nextBatchAt": null,
+             "lastRecheckAt": null
             }
            ],
            "links": {
@@ -37486,7 +37770,13 @@
             "path": "https://api.funnelchat.com/api/v1/campaigns/cmp_A6RMvAOjr0mHuLr08RpcwWu/groups",
             "per_page": 25,
             "to": 1,
-            "total": 1
+            "total": 1,
+            "fillStateCounts": {
+             "receiving": 1,
+             "waiting": 0,
+             "full": 0,
+             "suspended": 0
+            }
            }
           },
           "summary": "Un grupo de la campaña"
@@ -40068,7 +40358,7 @@
      {
       "name": "status",
       "in": "query",
-      "description": "Estado del grupo (ver `status` de `GroupResource`)",
+      "description": "Estado del grupo (ver `status` de `GroupResource`); con `3` se excluyen los grupos cuyo dueño es un número conectado de la cuenta",
       "schema": {
        "type": "string",
        "enum": [
@@ -40101,6 +40391,27 @@
       "name": "noCampaign",
       "in": "query",
       "description": "`true`: solo grupos fuera de campañas; `false`: todos",
+      "schema": {
+       "type": "boolean"
+      }
+     },
+     {
+      "name": "adminConnection",
+      "in": "query",
+      "description": "Admins conectados: `1` todos, `2` ninguno (incluye grupos sin admins), `3` algunos",
+      "schema": {
+       "type": "integer",
+       "enum": [
+        1,
+        2,
+        3
+       ]
+      }
+     },
+     {
+      "name": "participantMode",
+      "in": "query",
+      "description": "`true`: solo grupos importados sin ser admin (modo participante); `false`: todos",
       "schema": {
        "type": "boolean"
       }
@@ -40591,7 +40902,7 @@
   "/api/v1/devices/{device}/groups": {
    "get": {
     "operationId": "group.groups",
-    "description": "**Permiso requerido:** **Grupos y campañas → Ver**\n\nSe lee de WhatsApp; con una clave, la lista se guarda un minuto por número. `device_id` viene si el grupo ya está en tu workspace. Para importarlo: `POST /groups/{group}/import`.",
+    "description": "**Permiso requerido:** **Grupos y campañas → Ver**\n\nSe lee de WhatsApp, del grupo creado más reciente al más antiguo; con una clave, la lista se guarda un minuto por número. `device_id` viene si el grupo ya está en tu workspace. Para importarlo: `POST /groups/{group}/import`.",
     "summary": "Ver tus grupos",
     "tags": [
      "Grupos"
@@ -45721,6 +46032,15 @@
       }
      },
      {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 1,
+       "minimum": 1
+      }
+     },
+     {
       "name": "perPage",
       "in": "query",
       "schema": {
@@ -45794,15 +46114,6 @@
         "0"
        ],
        "default": "false"
-      }
-     },
-     {
-      "name": "page",
-      "in": "query",
-      "schema": {
-       "type": "integer",
-       "default": 1,
-       "minimum": 1
       }
      }
     ],
@@ -46086,6 +46397,299 @@
     "x-fc-proposito": "Úsalo para listar tus envíos programados a grupos con su estado, fecha, recurrencia y campañas, filtrando por carpeta o por los que necesitan reconectar un número.",
     "description": "**Permiso requerido:** **Grupos y campañas → Ver**",
     "x-fc-domain": "communities"
+   },
+   "post": {
+    "operationId": "scheduledMessage.store",
+    "description": "**Permiso requerido:** **Grupos y campañas → Enviar**\n\nResponde `201` con el envío. Destino en `group_ids` o en `targets` (con `selection_type=all` necesita `group_uids`), hasta 500 grupos por llamada; `unimported_groups` responde `422 unimported_groups_not_available`. Cada clave programa como mucho 10.000 envíos a grupo (grupos × bloques × ocurrencias) en 24 horas: al pasarlo, `429 send_budget_exceeded` con `Retry-After`, y una sola llamada más grande que eso, `422 send_budget_too_large`. Una recurrencia tiene que terminar (`end_type` `occurrences` o `date`; si no, `422 recurrence_end_required`) en 30 ocurrencias como mucho (`422 recurrence_occurrences_exceeded`). Si el envío tiene riesgo de texto o de frecuencia, responde `422 risk_not_accepted` con el detalle en `risk`: reenvíalo con `accept_risk: true`. `send_option=now` lo manda al momento. Hasta 3 variaciones por bloque. `file` es el nombre de un archivo de tu cuenta (`422 invalid_file_name` o `file_not_found`). Un `response_tags` o un `reaction_tag` no vacío responde 422.",
+    "summary": "Programar un envío a grupos",
+    "tags": [
+     "Envíos programados"
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ScheduledMessageRequest"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Creado: el envío programado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "anyOf": [
+          {
+           "$ref": "#/components/schemas/App.Modules.ScheduledMessages.Resources.ScheduledMessageResource"
+          },
+          {
+           "type": "object"
+          }
+         ]
+        },
+        "examples": {
+         "creado": {
+          "value": {
+           "id": "smg_Ap5avHiKWWEBpqsQuJLOBCt",
+           "uuid": "0b8f6a52-3c1e-4d7a-9f25-6e1d2c3b4a59",
+           "name": "Recordatorio de clase en vivo",
+           "send_at": "2026-11-18T22:00:00.000000Z",
+           "status": 0,
+           "is_draft": false,
+           "blocked_by_plan_limit": false,
+           "type": 2,
+           "folder": {
+            "id": "fdr_AdEyABrIZfRUkEU1uGmsoXK",
+            "name": "Recordatorios de clase"
+           },
+           "audience": 443,
+           "total_readed": 212,
+           "total_played": 0,
+           "link_clicks": 18,
+           "tracked_links": [
+            {
+             "url": "https://acme.com/clase-en-vivo",
+             "clicks": 15
+            },
+            {
+             "url": "https://acme.com/material",
+             "clicks": 3
+            }
+           ],
+           "delivery_summary": {
+            "confirmed": 1,
+            "dispatched": 1,
+            "unconfirmed": 0,
+            "failed": 0,
+            "partially_failed": 0,
+            "pending": 0
+           },
+           "whalink_custom_domain": null,
+           "shipping_speed": 1,
+           "campaign_ids": null,
+           "group_ids": [
+            "grp_AK2GMGeWAAdd8fZbtOVvE3Z",
+            "grp_AGOHpDgGDknqWtHMb6J1PuM"
+           ],
+           "excluded_group_ids": null,
+           "static_audience": false,
+           "campaigns": [
+            {
+             "id": "cmp_A6RMvAOjr0mHuLr08RpcwWu",
+             "name": "Lanzamiento curso",
+             "type": "grupo"
+            }
+           ],
+           "groups": [
+            {
+             "id": "grp_AK2GMGeWAAdd8fZbtOVvE3Z",
+             "uid": "120363025246125888",
+             "name": "Clientes VIP 1",
+             "campaign_name": "Lanzamiento curso",
+             "import_state": null,
+             "import_stop_reason": null
+            },
+            {
+             "id": "grp_AGOHpDgGDknqWtHMb6J1PuM",
+             "uid": "120363025246125999",
+             "name": "Clientes VIP 2",
+             "campaign_name": "Lanzamiento curso",
+             "import_state": null,
+             "import_stop_reason": null
+            }
+           ],
+           "total_groups": 2,
+           "messages": [
+            {
+             "id": "mtp_Ax7RTy6z7iuxm2plhdyTXZz",
+             "type": 1,
+             "value": {
+              "message": "Hoy a las 19 h es la clase en vivo. ¡Te esperamos!"
+             },
+             "mentioned": false,
+             "metrics": [
+              {
+               "count": 2,
+               "status": 2
+              }
+             ],
+             "reactions": [
+              {
+               "count": 7,
+               "value": "👍"
+              }
+             ],
+             "votes": [],
+             "event_responses": [],
+             "shipping_order": 1,
+             "variations": []
+            }
+           ],
+           "total_left_after_send": 4,
+           "can_be_edited": true,
+           "recurrence": {
+            "enabled": true,
+            "frequency": "weekly",
+            "interval": 1,
+            "week_days": [
+             2,
+             4
+            ],
+            "end_type": "occurrences",
+            "end_date": null,
+            "occurrences": 8,
+            "current_occurrence": 3,
+            "only_new_groups": false,
+            "only_full_groups": false
+           }
+          },
+          "summary": "El envío quedó programado"
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/CommunitiesAuthenticationException"
+     },
+     "402": {
+      "description": "Llegaste a un tope de tu plan (envíos recurrentes o envíos del mes); no se guardó nada\n\n- `payment_required`: mira `cap` y `used`",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string",
+           "description": "Código estable",
+           "enum": [
+            "payment_required"
+           ]
+          },
+          "message": {
+           "type": "string",
+           "description": "Texto para personas"
+          },
+          "cap": {
+           "type": "integer",
+           "description": "El tope del plan"
+          },
+          "used": {
+           "type": "integer",
+           "description": "Uso del tope"
+          }
+         },
+         "required": [
+          "error",
+          "message"
+         ]
+        }
+       }
+      }
+     },
+     "403": {
+      "$ref": "#/components/responses/CommunitiesAuthorizationException"
+     },
+     "422": {
+      "description": "No se guardó nada\n\n- `validation_failed`: mira `errors`\n- `recurrence_end_required`: la recurrencia tiene que terminar: `end_type` `occurrences` o `date`\n- `recurrence_occurrences_exceeded`: programa más ocurrencias que el máximo (30)\n- `risk_not_accepted`: el envío tiene riesgo; mira `risk` y reenvíalo con `accept_risk: true`\n- `send_budget_too_large`: esta llamada sola programa más envíos a grupo que el tope de 24 horas\n- `unimported_groups_not_available`: importa el grupo antes y manda su id en `group_ids`\n- `invalid_file_name`: `file` tiene que ser solo un nombre, sin `/`, `\\` ni `..`\n- `file_not_found`: `file` no es un archivo de tu cuenta",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string",
+           "description": "Código estable",
+           "enum": [
+            "validation_failed",
+            "recurrence_end_required",
+            "recurrence_occurrences_exceeded",
+            "risk_not_accepted",
+            "send_budget_too_large",
+            "unimported_groups_not_available",
+            "invalid_file_name",
+            "file_not_found"
+           ]
+          },
+          "message": {
+           "type": "string",
+           "description": "Texto para personas"
+          },
+          "errors": {
+           "type": "object",
+           "description": "Mensajes por campo"
+          },
+          "risk": {
+           "type": "object",
+           "description": "Con `risk_not_accepted`: el riesgo de texto y de frecuencia detectado, el mismo que ve el panel"
+          },
+          "sends": {
+           "type": "integer",
+           "description": "Con `send_budget_too_large`: envíos a grupo de esta llamada"
+          },
+          "cap": {
+           "type": "integer",
+           "description": "Con `send_budget_too_large`: tope de 24 horas de la clave"
+          }
+         },
+         "required": [
+          "error",
+          "message"
+         ]
+        }
+       }
+      }
+     },
+     "429": {
+      "description": "Demasiados pedidos; espera `Retry-After`\n\n- `send_budget_exceeded`: la clave ya programó su tope de envíos a grupo de las últimas 24 horas\n- `rate_limited`: espera `Retry-After`\n- `daily_cap_exceeded`: tope diario de tu clave",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string",
+           "description": "Código estable",
+           "enum": [
+            "send_budget_exceeded",
+            "rate_limited",
+            "daily_cap_exceeded"
+           ]
+          },
+          "message": {
+           "type": "string",
+           "description": "Texto para personas"
+          },
+          "sends": {
+           "type": "integer",
+           "description": "Con `send_budget_exceeded`: envíos a grupo de esta llamada"
+          },
+          "cap": {
+           "type": "integer",
+           "description": "Con `send_budget_exceeded`: tope de 24 horas de la clave"
+          },
+          "used": {
+           "type": "integer",
+           "description": "Con `send_budget_exceeded`: envíos a grupo ya programados en las últimas 24 horas"
+          }
+         },
+         "required": [
+          "error",
+          "message"
+         ]
+        }
+       }
+      }
+     }
+    },
+    "x-fc-permission": "communities:send",
+    "x-fc-superficie": "plataforma",
+    "x-fc-destructive": false,
+    "x-fc-proposito": "Úsalo para programar un mensaje a tus grupos: para una fecha, al momento o con recurrencia, en hasta 3 bloques.",
+    "x-fc-domain": "communities"
    }
   },
   "/api/v1/scheduled-messages/{scheduledMessage}": {
@@ -46139,6 +46743,24 @@
            "total_readed": 212,
            "total_played": 0,
            "link_clicks": 18,
+           "tracked_links": [
+            {
+             "url": "https://acme.com/clase-en-vivo",
+             "clicks": 15
+            },
+            {
+             "url": "https://acme.com/material",
+             "clicks": 3
+            }
+           ],
+           "delivery_summary": {
+            "confirmed": 1,
+            "dispatched": 1,
+            "unconfirmed": 0,
+            "failed": 0,
+            "partially_failed": 0,
+            "pending": 0
+           },
            "whalink_custom_domain": null,
            "shipping_speed": 1,
            "campaign_ids": null,
@@ -46240,6 +46862,535 @@
     "x-fc-proposito": "Sirve para ver un envío programado completo: fecha, estado, audiencia, lecturas, reproducciones, clics en links y velocidad de envío.",
     "description": "**Permiso requerido:** **Grupos y campañas → Ver**",
     "x-fc-domain": "communities"
+   },
+   "put": {
+    "operationId": "scheduledMessage.update",
+    "description": "**Permiso requerido:** **Grupos y campañas → Enviar**\n\nReemplaza el envío: lo que no mandes se pierde (sin `recurrence`, deja de repetirse). Solo envíos pendientes o en borrador. Lleva siempre el destino (`group_ids` o `targets`; si no, `422 destination_required`) y sigue las reglas del alta: 500 grupos por llamada, recurrencia con fin, `accept_risk` y el tope de 24 horas, que solo cuenta lo que la edición agrega. Si el envío ya entregó algo, no se cambian sus bloques ni sus grupos (`422 send_history_rebuild_not_allowed`). Un `response_tags` o un `reaction_tag` no vacío responde 422; si no los mandas, se conservan los configurados en el panel.",
+    "summary": "Editar un envío programado",
+    "tags": [
+     "Envíos programados"
+    ],
+    "parameters": [
+     {
+      "name": "scheduledMessage",
+      "in": "path",
+      "required": true,
+      "description": "Id del envío (no el `uuid`)",
+      "schema": {
+       "type": "string",
+       "description": "Id (`smg_…`)",
+       "pattern": "^smg_[A-Za-z0-9]{23}$",
+       "examples": [
+        "smg_Ap5avHiKWWEBpqsQuJLOBCt"
+       ]
+      },
+      "example": "smg_Ap5avHiKWWEBpqsQuJLOBCt"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ScheduledMessageRequest"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Correcto",
+      "content": {
+       "application/json": {
+        "schema": {
+         "anyOf": [
+          {
+           "$ref": "#/components/schemas/App.Modules.ScheduledMessages.Resources.ScheduledMessageResource"
+          },
+          {
+           "type": "object"
+          }
+         ]
+        },
+        "examples": {
+         "editado": {
+          "value": {
+           "id": "smg_Ap5avHiKWWEBpqsQuJLOBCt",
+           "uuid": "0b8f6a52-3c1e-4d7a-9f25-6e1d2c3b4a59",
+           "name": "Recordatorio de clase en vivo",
+           "send_at": "2026-11-18T22:00:00.000000Z",
+           "status": 0,
+           "is_draft": false,
+           "blocked_by_plan_limit": false,
+           "type": 2,
+           "folder": {
+            "id": "fdr_AdEyABrIZfRUkEU1uGmsoXK",
+            "name": "Recordatorios de clase"
+           },
+           "audience": 443,
+           "total_readed": 212,
+           "total_played": 0,
+           "link_clicks": 18,
+           "tracked_links": [
+            {
+             "url": "https://acme.com/clase-en-vivo",
+             "clicks": 15
+            },
+            {
+             "url": "https://acme.com/material",
+             "clicks": 3
+            }
+           ],
+           "delivery_summary": {
+            "confirmed": 1,
+            "dispatched": 1,
+            "unconfirmed": 0,
+            "failed": 0,
+            "partially_failed": 0,
+            "pending": 0
+           },
+           "whalink_custom_domain": null,
+           "shipping_speed": 1,
+           "campaign_ids": null,
+           "group_ids": [
+            "grp_AK2GMGeWAAdd8fZbtOVvE3Z",
+            "grp_AGOHpDgGDknqWtHMb6J1PuM"
+           ],
+           "excluded_group_ids": null,
+           "static_audience": false,
+           "campaigns": [
+            {
+             "id": "cmp_A6RMvAOjr0mHuLr08RpcwWu",
+             "name": "Lanzamiento curso",
+             "type": "grupo"
+            }
+           ],
+           "groups": [
+            {
+             "id": "grp_AK2GMGeWAAdd8fZbtOVvE3Z",
+             "uid": "120363025246125888",
+             "name": "Clientes VIP 1",
+             "campaign_name": "Lanzamiento curso",
+             "import_state": null,
+             "import_stop_reason": null
+            },
+            {
+             "id": "grp_AGOHpDgGDknqWtHMb6J1PuM",
+             "uid": "120363025246125999",
+             "name": "Clientes VIP 2",
+             "campaign_name": "Lanzamiento curso",
+             "import_state": null,
+             "import_stop_reason": null
+            }
+           ],
+           "total_groups": 2,
+           "messages": [
+            {
+             "id": "mtp_Ax7RTy6z7iuxm2plhdyTXZz",
+             "type": 1,
+             "value": {
+              "message": "Hoy a las 19 h es la clase en vivo. ¡Te esperamos!"
+             },
+             "mentioned": false,
+             "metrics": [
+              {
+               "count": 2,
+               "status": 2
+              }
+             ],
+             "reactions": [
+              {
+               "count": 7,
+               "value": "👍"
+              }
+             ],
+             "votes": [],
+             "event_responses": [],
+             "shipping_order": 1,
+             "variations": []
+            }
+           ],
+           "total_left_after_send": 4,
+           "can_be_edited": true,
+           "recurrence": {
+            "enabled": true,
+            "frequency": "weekly",
+            "interval": 1,
+            "week_days": [
+             2,
+             4
+            ],
+            "end_type": "occurrences",
+            "end_date": null,
+            "occurrences": 8,
+            "current_occurrence": 3,
+            "only_new_groups": false,
+            "only_full_groups": false
+           }
+          },
+          "summary": "El envío con los cambios"
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/CommunitiesAuthenticationException"
+     },
+     "402": {
+      "description": "Llegaste a un tope de tu plan (envíos recurrentes o envíos del mes); no se guardó nada\n\n- `payment_required`: mira `cap` y `used`",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string",
+           "description": "Código estable",
+           "enum": [
+            "payment_required"
+           ]
+          },
+          "message": {
+           "type": "string",
+           "description": "Texto para personas"
+          },
+          "cap": {
+           "type": "integer",
+           "description": "El tope del plan"
+          },
+          "used": {
+           "type": "integer",
+           "description": "Uso del tope"
+          }
+         },
+         "required": [
+          "error",
+          "message"
+         ]
+        }
+       }
+      }
+     },
+     "403": {
+      "$ref": "#/components/responses/CommunitiesAuthorizationException"
+     },
+     "404": {
+      "$ref": "#/components/responses/CommunitiesModelNotFoundException"
+     },
+     "422": {
+      "description": "No se guardó nada\n\n- `validation_failed`: mira `errors`\n- `recurrence_end_required`: la recurrencia tiene que terminar: `end_type` `occurrences` o `date`\n- `recurrence_occurrences_exceeded`: programa más ocurrencias que el máximo (30)\n- `risk_not_accepted`: el envío tiene riesgo; mira `risk` y reenvíalo con `accept_risk: true`\n- `send_budget_too_large`: esta llamada sola programa más envíos a grupo que el tope de 24 horas\n- `unimported_groups_not_available`: importa el grupo antes y manda su id en `group_ids`\n- `invalid_file_name`: `file` tiene que ser solo un nombre, sin `/`, `\\` ni `..`\n- `file_not_found`: `file` no es un archivo de tu cuenta\n- `destination_required`: manda siempre `group_ids` o `targets`\n- `send_history_rebuild_not_allowed`: ya entregó algo: no se cambian sus bloques ni sus grupos",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string",
+           "description": "Código estable",
+           "enum": [
+            "validation_failed",
+            "recurrence_end_required",
+            "recurrence_occurrences_exceeded",
+            "risk_not_accepted",
+            "send_budget_too_large",
+            "unimported_groups_not_available",
+            "invalid_file_name",
+            "file_not_found",
+            "destination_required",
+            "send_history_rebuild_not_allowed"
+           ]
+          },
+          "message": {
+           "type": "string",
+           "description": "Texto para personas"
+          },
+          "errors": {
+           "type": "object",
+           "description": "Mensajes por campo"
+          },
+          "risk": {
+           "type": "object",
+           "description": "Con `risk_not_accepted`: el riesgo de texto y de frecuencia detectado, el mismo que ve el panel"
+          },
+          "sends": {
+           "type": "integer",
+           "description": "Con `send_budget_too_large`: envíos a grupo de esta llamada"
+          },
+          "cap": {
+           "type": "integer",
+           "description": "Con `send_budget_too_large`: tope de 24 horas de la clave"
+          }
+         },
+         "required": [
+          "error",
+          "message"
+         ]
+        }
+       }
+      }
+     },
+     "429": {
+      "description": "Demasiados pedidos; espera `Retry-After`\n\n- `send_budget_exceeded`: la clave ya programó su tope de envíos a grupo de las últimas 24 horas\n- `rate_limited`: espera `Retry-After`\n- `daily_cap_exceeded`: tope diario de tu clave",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string",
+           "description": "Código estable",
+           "enum": [
+            "send_budget_exceeded",
+            "rate_limited",
+            "daily_cap_exceeded"
+           ]
+          },
+          "message": {
+           "type": "string",
+           "description": "Texto para personas"
+          },
+          "sends": {
+           "type": "integer",
+           "description": "Con `send_budget_exceeded`: envíos a grupo de esta llamada"
+          },
+          "cap": {
+           "type": "integer",
+           "description": "Con `send_budget_exceeded`: tope de 24 horas de la clave"
+          },
+          "used": {
+           "type": "integer",
+           "description": "Con `send_budget_exceeded`: envíos a grupo ya programados en las últimas 24 horas"
+          }
+         },
+         "required": [
+          "error",
+          "message"
+         ]
+        }
+       }
+      }
+     }
+    },
+    "x-fc-permission": "communities:send",
+    "x-fc-superficie": "plataforma",
+    "x-fc-destructive": false,
+    "x-fc-proposito": "Sirve para cambiar un envío que todavía no salió o sigue en borrador. Lo que mandas reemplaza el envío completo.",
+    "x-fc-domain": "communities"
+   },
+   "delete": {
+    "operationId": "scheduledMessage.destroy",
+    "description": "> ⚠️ **No se puede deshacer:** lo que faltaba enviar ya no sale y la recurrencia se corta. Lo ya entregado queda en los grupos.\n\n**Permiso requerido:** **Grupos y campañas → Editar**\n\nIrreversible: cancela lo que falta enviar y corta la recurrencia. Lo ya entregado queda en los grupos: solo se acepta `recurrence_scope=stop`, el valor por defecto (`future` o `current_only` responden `422 recurrence_scope_panel_only`; eso se hace desde el panel). `200` si no había salido nada; `202` si ya había envíos y la cancelación sigue en segundo plano.",
+    "summary": "Cancelar un envío programado",
+    "tags": [
+     "Envíos programados"
+    ],
+    "parameters": [
+     {
+      "name": "scheduledMessage",
+      "in": "path",
+      "required": true,
+      "description": "Id del envío (no el `uuid`)",
+      "schema": {
+       "type": "string",
+       "description": "Id (`smg_…`)",
+       "pattern": "^smg_[A-Za-z0-9]{23}$",
+       "examples": [
+        "smg_Ap5avHiKWWEBpqsQuJLOBCt"
+       ]
+      },
+      "example": "smg_Ap5avHiKWWEBpqsQuJLOBCt"
+     },
+     {
+      "name": "recurrence_scope",
+      "in": "query",
+      "description": "Con una API key solo `stop` (por defecto): cancela lo que falta enviar y corta la recurrencia; lo ya entregado queda en los grupos",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "stop"
+       ],
+       "default": "stop"
+      }
+     },
+     {
+      "name": "only_if_draft",
+      "in": "query",
+      "description": "`true`: solo lo cancela si sigue en borrador; si no, `409`",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Cancelado: no había salido nada",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "message": {
+           "type": "string",
+           "description": "Texto para personas"
+          }
+         },
+         "required": [
+          "message"
+         ]
+        },
+        "examples": {
+         "cancelado": {
+          "value": {
+           "message": "Scheduled message deleted successfully."
+          },
+          "summary": "No había salido nada: el envío ya no está"
+         }
+        }
+       }
+      }
+     },
+     "202": {
+      "description": "Cancelándose: ya había salido algo; lo pendiente se cancela en segundo plano",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "message": {
+           "type": "string",
+           "description": "Texto para personas"
+          },
+          "scheduled_message_id": {
+           "type": "string",
+           "description": "Id del envío (`smg_…`)",
+           "pattern": "^smg_[A-Za-z0-9]{23}$",
+           "examples": [
+            "smg_Ap5avHiKWWEBpqsQuJLOBCt"
+           ]
+          }
+         },
+         "required": [
+          "message",
+          "scheduled_message_id"
+         ]
+        },
+        "examples": {
+         "cancelandose": {
+          "value": {
+           "message": "Scheduled message deletion in progress. You will be notified when it is completed.",
+           "scheduled_message_id": "smg_Ap5avHiKWWEBpqsQuJLOBCt"
+          },
+          "summary": "Ya había entregas: se cancela lo pendiente"
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/CommunitiesAuthenticationException"
+     },
+     "403": {
+      "$ref": "#/components/responses/CommunitiesAuthorizationException"
+     },
+     "404": {
+      "$ref": "#/components/responses/CommunitiesModelNotFoundException"
+     },
+     "409": {
+      "description": "Con `only_if_draft`, el envío ya no es un borrador; no se cancela nada\n\n- `not_draft`: ya no es un borrador\n- `has_history`: es un borrador que ya envió algo",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string",
+           "description": "Código estable",
+           "enum": [
+            "not_draft",
+            "has_history"
+           ]
+          },
+          "message": {
+           "type": "string",
+           "description": "Texto para personas"
+          }
+         },
+         "required": [
+          "error",
+          "message"
+         ]
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "No se canceló nada\n\n- `recurrence_scope_panel_only`: con una API key solo `stop`; borrar lo ya enviado se hace desde el panel\n- `validation_failed`: mira `errors`",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string",
+           "description": "Código estable",
+           "enum": [
+            "recurrence_scope_panel_only",
+            "validation_failed"
+           ]
+          },
+          "message": {
+           "type": "string",
+           "description": "Texto para personas"
+          },
+          "errors": {
+           "type": "object",
+           "description": "Mensajes por campo"
+          }
+         },
+         "required": [
+          "error",
+          "message"
+         ]
+        }
+       }
+      }
+     },
+     "429": {
+      "description": "Demasiados pedidos; espera `Retry-After`\n\n- `rate_limited`: espera `Retry-After`\n- `daily_cap_exceeded`: tope diario de tu clave",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string",
+           "description": "Código estable",
+           "enum": [
+            "rate_limited",
+            "daily_cap_exceeded"
+           ]
+          },
+          "message": {
+           "type": "string",
+           "description": "Texto para personas"
+          }
+         },
+         "required": [
+          "error",
+          "message"
+         ]
+        }
+       }
+      }
+     }
+    },
+    "x-fc-permission": "communities:write",
+    "x-fc-superficie": "plataforma",
+    "x-fc-destructive": true,
+    "x-fc-proposito": "Úsalo para cancelar un envío programado o cortar uno recurrente. Lo ya entregado queda en los grupos.",
+    "x-fc-domain": "communities"
    }
   },
   "/api/v1/scheduled-messages/{scheduledMessage}/groups": {
@@ -46300,6 +47451,15 @@
       }
      },
      {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 1,
+       "minimum": 1
+      }
+     },
+     {
       "name": "perPage",
       "in": "query",
       "description": "No cambia nada: siempre 3 por página",
@@ -46313,15 +47473,6 @@
       "description": "Hoy no filtra",
       "schema": {
        "type": "integer"
-      }
-     },
-     {
-      "name": "page",
-      "in": "query",
-      "schema": {
-       "type": "integer",
-       "default": 1,
-       "minimum": 1
       }
      }
     ],
@@ -46536,9 +47687,6 @@
      },
      "403": {
       "$ref": "#/components/responses/CommunitiesAuthorizationException"
-     },
-     "404": {
-      "$ref": "#/components/responses/CommunitiesModelNotFoundException"
      },
      "422": {
       "$ref": "#/components/responses/CommunitiesValidationException"
@@ -67357,6 +68505,65 @@
       "type": "integer",
       "description": "Clics en links medidos"
      },
+     "tracked_links": {
+      "type": "array",
+      "description": "Solo en el detalle: links medidos (en orden de creación) con sus clics; suman `link_clicks`",
+      "items": {
+       "type": "object",
+       "properties": {
+        "url": {
+         "type": "string",
+         "description": "Destino del link."
+        },
+        "clicks": {
+         "type": "integer",
+         "description": "Clics en ese link."
+        }
+       },
+       "required": [
+        "url",
+        "clicks"
+       ]
+      }
+     },
+     "delivery_summary": {
+      "type": "object",
+      "description": "Solo en el detalle: grupos por resultado de entrega. `confirmed` tiene recepción confirmada;\n`dispatched` salió sin recibo; `unconfirmed` no tiene confirmación de entrega",
+      "properties": {
+       "confirmed": {
+        "type": "integer",
+        "description": "Grupos con la recepción confirmada."
+       },
+       "dispatched": {
+        "type": "integer",
+        "description": "Grupos donde el mensaje salió, sin confirmación de recepción."
+       },
+       "unconfirmed": {
+        "type": "integer",
+        "description": "Grupos sin confirmación de entrega."
+       },
+       "failed": {
+        "type": "integer",
+        "description": "Grupos donde falló el envío."
+       },
+       "partially_failed": {
+        "type": "integer",
+        "description": "Grupos donde falló alguno de los mensajes."
+       },
+       "pending": {
+        "type": "integer",
+        "description": "Grupos que todavía esperan el resultado."
+       }
+      },
+      "required": [
+       "confirmed",
+       "dispatched",
+       "unconfirmed",
+       "failed",
+       "partially_failed",
+       "pending"
+      ]
+     },
      "whalink_custom_domain": {
       "type": [
        "string",
@@ -77723,6 +78930,247 @@
     ],
     "title": "ScheduledMessageIndexResource"
    },
+   "ScheduledMessageRequest": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "description": "Nombre del envío; no lo ven los grupos",
+      "maxLength": 191
+     },
+     "folder_id": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Carpeta (de «Ver las carpetas de envíos»)",
+      "pattern": "^fdr_[A-Za-z0-9]{23}$",
+      "examples": [
+       "fdr_AcPR1j7N9cs1PrbzZmC0ZiK"
+      ]
+     },
+     "is_draft": {
+      "type": "boolean",
+      "description": "`true`: lo guarda como borrador; no sale ni cuenta en el tope de 24 horas"
+     },
+     "accept_risk": {
+      "type": "boolean",
+      "description": "`true`: acepta el riesgo de texto o de frecuencia que devolvió un `422 risk_not_accepted`"
+     },
+     "send_at": {
+      "type": "string",
+      "description": "Cuándo sale, en UTC (`AAAA-MM-DD HH:MM:SS`); con `send_option=now`, ahora",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$"
+     },
+     "messages": {
+      "type": "array",
+      "description": "Bloques del envío, de 1 a 3, en el orden de `shipping_order`",
+      "items": {
+       "type": "object",
+       "properties": {
+        "type": {
+         "type": "integer",
+         "description": "Tipo de bloque: `1` texto (`value.message`), `2` imagen (`value.file`, `value.caption`), `3` video (`value.file`, `value.caption`), `4` botón con link (`value.message`, `value.button_text`, `value.button_url`), `5` contacto (`value.name`, `value.phone`), `6` encuesta (`value.message`, `value.poll`, `value.multiple_answers`), `7` documento (`value.file`), `8` audio (`value.file`), `9` evento (`value.event`), `10` link con vista previa (`value.message`)",
+         "enum": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+         ]
+        },
+        "value": {
+         "type": "object",
+         "description": "Contenido del bloque; sus campos dependen de `type`. `file` es el nombre de un archivo que subiste a tu cuenta"
+        },
+        "shipping_order": {
+         "type": "integer",
+         "description": "Orden del bloque, desde 1"
+        },
+        "variations": {
+         "type": "array",
+         "description": "Hasta 3 variantes de `value`; cada grupo recibe una",
+         "items": {
+          "type": "object"
+         }
+        },
+        "mentioned": {
+         "type": "boolean",
+         "description": "`true`: menciona a todos los del grupo",
+         "enum": [
+          true
+         ]
+        },
+        "pinned": {
+         "type": "boolean",
+         "description": "`true`: fija el mensaje en el grupo"
+        },
+        "pinDuration": {
+         "type": "integer",
+         "description": "Días fijado: 1, 7 o 30",
+         "enum": [
+          1,
+          7,
+          30
+         ]
+        }
+       },
+       "required": [
+        "type",
+        "value",
+        "shipping_order"
+       ]
+      },
+      "minItems": 1,
+      "maxItems": 3
+     },
+     "targets": {
+      "type": "array",
+      "description": "Destino por campaña: `selection_type=none` con los `group_uids` que van, o `all` con los que no van (no vacío)",
+      "items": {
+       "type": "object",
+       "properties": {
+        "campaign_id": {
+         "type": "string",
+         "description": "Id (`cmp_…`)",
+         "pattern": "^cmp_[A-Za-z0-9]{23}$",
+         "examples": [
+          "cmp_A6RMvAOjr0mHuLr08RpcwWu"
+         ]
+        },
+        "selection_type": {
+         "type": "string",
+         "enum": [
+          "all",
+          "none"
+         ]
+        },
+        "group_uids": {
+         "type": "array",
+         "items": {
+          "type": "string"
+         },
+         "maxItems": 500
+        }
+       },
+       "required": [
+        "campaign_id",
+        "selection_type"
+       ]
+      },
+      "maxItems": 200
+     },
+     "group_ids": {
+      "type": "array",
+      "description": "Destino: ids de grupos de tu workspace, hasta 500. Con `targets`, se suman",
+      "items": {
+       "type": "string",
+       "description": "Id (`grp_…`)",
+       "pattern": "^grp_[A-Za-z0-9]{23}$",
+       "examples": [
+        "grp_AK2GMGeWAAdd8fZbtOVvE3Z"
+       ]
+      },
+      "maxItems": 500
+     },
+     "send_option": {
+      "type": "string",
+      "description": "`now`: sale al guardar; `scheduled` (por defecto): en `send_at`",
+      "enum": [
+       "now",
+       "scheduled"
+      ]
+     },
+     "shipping_speed": {
+      "type": "integer",
+      "description": "Ritmo de envío entre grupos: `0` lento, `1` medio, `2` rápido",
+      "enum": [
+       0,
+       1,
+       2
+      ]
+     },
+     "recurrence": {
+      "type": "object",
+      "description": "Repetición del envío. Sin ella en un `PUT`, deja de repetirse",
+      "properties": {
+       "enabled": {
+        "type": "boolean",
+        "description": "`true`: el envío se repite"
+       },
+       "frequency": {
+        "type": "string",
+        "description": "Cada cuánto",
+        "enum": [
+         "daily",
+         "weekly",
+         "monthly"
+        ]
+       },
+       "interval": {
+        "type": "integer",
+        "description": "Cada cuántos días, semanas o meses; desde 1"
+       },
+       "week_days": {
+        "type": "array",
+        "description": "Con `weekly`: días de la semana en la zona horaria de tu cuenta, `0` domingo a `6` sábado",
+        "items": {
+         "type": "integer",
+         "enum": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+         ]
+        }
+       },
+       "end_type": {
+        "type": "string",
+        "description": "Cuándo termina. Con una API key tiene que terminar: `never` responde `422 recurrence_end_required`",
+        "enum": [
+         "occurrences",
+         "date"
+        ]
+       },
+       "occurrences": {
+        "type": "integer",
+        "description": "Con `occurrences`: cuántas veces sale, hasta 30"
+       },
+       "end_date": {
+        "type": "string",
+        "description": "Con `date`: último día, en UTC (`AAAA-MM-DD HH:MM:SS`); hasta 30 ocurrencias",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$"
+       }
+      },
+      "required": [
+       "enabled"
+      ]
+     },
+     "whalink_custom_domain": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Dominio propio para los links acortados del texto",
+      "pattern": "^[a-z0-9.-]+$",
+      "maxLength": 253
+     }
+    },
+    "required": [
+     "name",
+     "send_at",
+     "messages"
+    ],
+    "title": "ScheduledMessageRequest"
+   },
    "ScheduledMessageResource": {
     "type": "object",
     "description": "Un envío programado que incluye al grupo.",
@@ -78642,6 +80090,293 @@
     ],
     "additionalProperties": false,
     "title": "StoreBroadcastFolderRequest"
+   },
+   "StoreCampaignRequest": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "maxLength": 100
+     },
+     "description": {
+      "type": "string",
+      "maxLength": 2048
+     },
+     "photo": {
+      "type": "string"
+     },
+     "is_active": {
+      "type": "boolean"
+     },
+     "redirect_url": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "traffic_distribution_type": {
+      "type": "integer",
+      "enum": [
+       1,
+       2
+      ]
+     },
+     "fill_groups_enabled": {
+      "type": [
+       "boolean",
+       "null"
+      ],
+      "description": "Rellenar grupos, además de la distribución elegida. Versión preliminar privada: sin la versión preliminar, `403`."
+     },
+     "group_numbering_position": {
+      "type": "integer",
+      "enum": [
+       1,
+       2
+      ]
+     },
+     "slug": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "anti_bot_verification_enabled": {
+      "type": "boolean"
+     },
+     "custom_domain": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "captcha_enabled": {
+      "type": "boolean"
+     },
+     "virtual_queue_enabled": {
+      "type": "boolean"
+     },
+     "virtual_queue_rate_per_minute": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+     },
+     "group_name_variations": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "moderation": {
+      "type": "object",
+      "properties": {
+       "type": {
+        "type": "integer",
+        "enum": [
+         1,
+         2
+        ]
+       },
+       "insults_and_profanity": {
+        "type": "boolean"
+       },
+       "negative_comments": {
+        "type": "boolean"
+       },
+       "repetitive_spam": {
+        "type": "boolean"
+       },
+       "external_links": {
+        "type": "boolean"
+       },
+       "promotions_and_sales": {
+        "type": "boolean"
+       },
+       "off_topic": {
+        "type": "boolean"
+       }
+      }
+     },
+     "administrators": {
+      "type": "array",
+      "description": "Números que administran los grupos de la campaña: de 2 a 20 (de 1 a 20 en un canal). Una campaña de `type` 4 no lo usa.",
+      "items": {
+       "type": "object",
+       "properties": {
+        "phone": {
+         "type": "string"
+        },
+        "lid": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "Opcional: el identificador LID de WhatsApp del administrador, si ya lo conoces. Se guarda solo la parte numérica.",
+         "maxLength": 32
+        },
+        "roles": {
+         "type": "object",
+         "properties": {
+          "can_send_message": {
+           "type": "boolean",
+           "description": "Nuevos nombres de roles"
+          },
+          "can_do_actions": {
+           "type": "boolean"
+          },
+          "can_create_groups": {
+           "type": "boolean"
+          },
+          "can_create_group": {
+           "type": "boolean",
+           "description": "Nombres antiguos (compatibilidad hacia atras)"
+          },
+          "can_send_messages": {
+           "type": "boolean"
+          },
+          "can_change_name_description": {
+           "type": "boolean"
+          }
+         }
+        }
+       },
+       "required": [
+        "phone"
+       ]
+      },
+      "minItems": 2,
+      "maxItems": 20
+     },
+     "members_can_send_messages": {
+      "type": "boolean",
+      "description": "`true`: todos los participantes pueden escribir en los grupos; `false`: solo los administradores."
+     },
+     "type": {
+      "type": "string",
+      "description": "Tipo de campaña: 1 grupos, 2 grupos de anuncios, 3 canal, 4 grupos oficiales. Por defecto, 1.",
+      "enum": [
+       "1",
+       "2",
+       "3",
+       "4"
+      ]
+     },
+     "clicks_limit": {
+      "type": "integer",
+      "minimum": 10
+     },
+     "participants_limit": {
+      "type": "integer"
+     },
+     "backup_groups_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+     },
+     "admins_per_group": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "minimum": 1,
+      "maximum": 20
+     },
+     "pixel": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 20000
+     },
+     "input_tag": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "La etiqueta que se le pone al contacto que entra a un grupo de la campaña. Con una API key no se acepta (`422`): se configura desde el panel."
+     },
+     "output_tag": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "La etiqueta que se le pone al contacto que sale de un grupo de la campaña. Con una API key no se acepta (`422`): se configura desde el panel."
+     },
+     "send_always_same_group": {
+      "type": "integer"
+     },
+     "auto_create_groups": {
+      "type": "boolean"
+     },
+     "start_number": {
+      "type": "integer",
+      "minimum": 1
+     },
+     "official_number": {
+      "type": "string"
+     },
+     "official_lid": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 32
+     },
+     "companion_numbers": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "maxLength": 32
+      },
+      "maxItems": 7
+     },
+     "invite_template": {
+      "type": "object",
+      "properties": {
+       "name": {
+        "type": "string",
+        "maxLength": 512
+       },
+       "language": {
+        "type": "string",
+        "maxLength": 35
+       },
+       "body_param_count": {
+        "type": [
+         "integer",
+         "null"
+        ],
+        "minimum": 1
+       },
+       "group_id_position": {
+        "type": [
+         "integer",
+         "null"
+        ],
+        "minimum": 1
+       },
+       "body_parameters": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        }
+       },
+       "library_template_name": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "maxLength": 512
+       }
+      }
+     }
+    },
+    "required": [
+     "name",
+     "description",
+     "administrators"
+    ],
+    "title": "StoreCampaignRequest"
    },
    "StoreConnectLinkRequest": {
     "type": "object",
@@ -80583,6 +82318,334 @@
     ],
     "additionalProperties": false,
     "title": "UpdateBroadcastFolderRequest"
+   },
+   "UpdateCampaignRequest": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "maxLength": 100
+     },
+     "description": {
+      "type": "string",
+      "maxLength": 2048
+     },
+     "photo": {
+      "type": "string"
+     },
+     "is_active": {
+      "type": "boolean"
+     },
+     "redirect_url": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "traffic_distribution_type": {
+      "type": "integer",
+      "enum": [
+       1,
+       2
+      ]
+     },
+     "fill_groups_enabled": {
+      "type": [
+       "boolean",
+       "null"
+      ],
+      "description": "Rellenar grupos, además de la distribución elegida. Versión preliminar privada: sin la versión preliminar, `403`."
+     },
+     "group_numbering_position": {
+      "type": "integer",
+      "enum": [
+       1,
+       2
+      ]
+     },
+     "slug": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "anti_bot_verification_enabled": {
+      "type": "boolean"
+     },
+     "custom_domain": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "captcha_enabled": {
+      "type": "boolean"
+     },
+     "virtual_queue_enabled": {
+      "type": "boolean"
+     },
+     "virtual_queue_rate_per_minute": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+     },
+     "group_name_variations": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "moderation": {
+      "type": "object",
+      "properties": {
+       "type": {
+        "type": "integer",
+        "enum": [
+         1,
+         2
+        ]
+       },
+       "insults_and_profanity": {
+        "type": "boolean"
+       },
+       "negative_comments": {
+        "type": "boolean"
+       },
+       "repetitive_spam": {
+        "type": "boolean"
+       },
+       "external_links": {
+        "type": "boolean"
+       },
+       "promotions_and_sales": {
+        "type": "boolean"
+       },
+       "off_topic": {
+        "type": "boolean"
+       }
+      }
+     },
+     "administrators": {
+      "type": "array",
+      "description": "Reemplaza la lista de administradores: de 2 a 20 (de 1 a 20 en un canal). Una campaña de `type` 4 no lo usa.",
+      "items": {
+       "type": "object",
+       "properties": {
+        "phone": {
+         "type": "string"
+        },
+        "lid": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "Opcional: el identificador LID de WhatsApp del administrador, si ya lo conoces. Se guarda solo la parte numérica.",
+         "maxLength": 32
+        },
+        "roles": {
+         "type": "object",
+         "properties": {
+          "can_send_message": {
+           "type": "boolean",
+           "description": "Nuevos nombres de roles"
+          },
+          "can_do_actions": {
+           "type": "boolean"
+          },
+          "can_create_groups": {
+           "type": "boolean"
+          },
+          "can_create_group": {
+           "type": "boolean",
+           "description": "Nombres antiguos (compatibilidad hacia atras)"
+          },
+          "can_send_messages": {
+           "type": "boolean"
+          },
+          "can_change_name_description": {
+           "type": "boolean"
+          }
+         }
+        }
+       },
+       "required": [
+        "phone"
+       ]
+      },
+      "minItems": 2,
+      "maxItems": 20
+     },
+     "members_can_send_messages": {
+      "type": "boolean",
+      "description": "`true`: todos los participantes pueden escribir en los grupos; `false`: solo los administradores."
+     },
+     "type": {
+      "type": "string",
+      "description": "El tipo no cambia: si mandas uno distinto del de la campaña, `422`.",
+      "enum": [
+       "1",
+       "2",
+       "3",
+       "4"
+      ]
+     },
+     "process_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Cuándo llega el cambio a los grupos con `update_groups`: fecha y hora (ej. ISO 8601: 2026-02-28T09:24:00.000Z o Y-m-d H:i:s), no antes de ahora. Por defecto, al momento."
+     },
+     "update_groups": {
+      "type": "boolean",
+      "description": "`true`: el cambio llega también a los grupos en WhatsApp. Con una API key, por defecto `false`."
+     },
+     "selection_type": {
+      "type": "string",
+      "description": "Con `update_groups`, a qué grupos de la campaña llega el cambio: `none`, solo a los de `groups_uids`; `all`, a todos menos esos. Sin él, a todos.",
+      "enum": [
+       "all",
+       "none"
+      ]
+     },
+     "groups_uids": {
+      "type": "array",
+      "description": "Los `uid` de los grupos de la campaña que elige o excluye `selection_type`.",
+      "items": {
+       "type": "string"
+      }
+     },
+     "clicks_limit": {
+      "type": "integer",
+      "minimum": 10
+     },
+     "participants_limit": {
+      "type": "integer"
+     },
+     "backup_groups_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+     },
+     "admins_per_group": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "minimum": 1,
+      "maximum": 20
+     },
+     "pixel": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 20000
+     },
+     "input_tag": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "La etiqueta que se le pone al contacto que entra a un grupo de la campaña. Con una API key no se acepta (`422`): se configura desde el panel."
+     },
+     "output_tag": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "La etiqueta que se le pone al contacto que sale de un grupo de la campaña. Con una API key no se acepta (`422`): se configura desde el panel."
+     },
+     "send_always_same_group": {
+      "type": "integer"
+     },
+     "start_number": {
+      "type": "integer",
+      "minimum": 1
+     },
+     "auto_create_groups": {
+      "type": "boolean"
+     },
+     "official_number": {
+      "type": "string"
+     },
+     "official_lid": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 32
+     },
+     "companion_numbers": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "maxLength": 32
+      },
+      "maxItems": 7
+     },
+     "invite_template": {
+      "type": "object",
+      "properties": {
+       "name": {
+        "type": "string",
+        "maxLength": 512
+       },
+       "language": {
+        "type": "string",
+        "maxLength": 35
+       },
+       "body_param_count": {
+        "type": [
+         "integer",
+         "null"
+        ],
+        "minimum": 1
+       },
+       "group_id_position": {
+        "type": [
+         "integer",
+         "null"
+        ],
+        "minimum": 1
+       },
+       "body_parameters": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        }
+       },
+       "library_template_name": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "maxLength": 512
+       }
+      }
+     }
+    },
+    "required": [
+     "administrators"
+    ],
+    "title": "UpdateCampaignRequest"
+   },
+   "UpdateCampaignStatusRequest": {
+    "type": "object",
+    "properties": {
+     "active": {
+      "type": "boolean"
+     },
+     "redirect_url": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "uri"
+     }
+    },
+    "required": [
+     "active"
+    ],
+    "title": "UpdateCampaignStatusRequest"
    },
    "UpdateContactRequest": {
     "type": "object",
@@ -84250,7 +86313,7 @@
    "version": "1.0.0",
    "spec": "specs/communities.json",
    "spec_changes": "La especificación del área con `servers` en la URL base pública y, en el texto, cada permiso nombrado como en el panel («Área → Casilla»), sin el nombre técnico; el nombre técnico queda en `x-fc-permission`. En la publicada, cada operación lleva el nombre y el grupo del portal.",
-   "operations": 55,
+   "operations": 62,
    "excluded_routes": 0,
    "description": ""
   },
@@ -84270,11 +86333,11 @@
   "generated_by": "scripts/generate.mjs",
   "note": "GENERATED: do not edit it. The portal's snapshot plus the pending layers.",
   "inputs": {
-   "spec/funnelchat.json": "4a8fbaee9d8b251fd0df44b5a6ae5e4a55ca4993569a5af6834c09b31a4bb423",
+   "spec/funnelchat.json": "b98c53bd7dc167cfc77fbd15bb4334d98f2361d56b3edf3e03949ad723135b47",
    "spec/pending.json": "1acc5da9e4eb425af95d8611e040ead5c2d1110308b449d7afa451316c1a51ff",
    "spec/pending-sandbox.json": "3711e31380d55c147b7221a62dddc9419c4b91c33ab1bdbb4532ffe75d0da2f7"
   },
-  "snapshot_commit": "fe4df8d241a2e5b8591d352930be1a08642b5740",
+  "snapshot_commit": "5c9ed623381df7c7474c6c975b6ba2c73fc18eb4",
   "pending_commit": "bde867919d1da0fc9412bad7e67688c3cd2e6a9b",
   "pending_applied": [
    "webhook device.connected [pending.json]",

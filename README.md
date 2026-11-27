@@ -2,7 +2,7 @@
 
 A local server that imitates the Funnelchat public API and sends signed webhooks, with no real effects: nothing goes out to WhatsApp, nothing is charged, everything stays in memory. Build and test your integration without an account.
 
-It comes from the spec the developer portal publishes (18-11, the snapshots of the three domains): the same operations and events (see [Pending of the spec](#pending-of-the-spec)). What it simulates with state follows production as it was checked on 18-11.
+It comes from the spec the developer portal publishes (27-11: the snapshots of conversations and accounts of 18-11, and of communities of 27-11): the same operations and events (see [Pending of the spec](#pending-of-the-spec)). What it simulates with state follows production as it was checked on 18-11.
 
 ## Try it in 3 minutes, without an account
 
@@ -162,7 +162,7 @@ npx funnelchat-sandbox
 ```
 
 ```
-funnelchat-sandbox 0.7.0 at http://127.0.0.1:4010
+funnelchat-sandbox 0.8.0 at http://127.0.0.1:4010
   API:    http://127.0.0.1:4010/api/v1/...   (Authorization: Bearer 1|fc_live_sandbox, or any well-formed key)
   panel:  http://127.0.0.1:4010/_sandbox
   example numbers: dev_Sandbox0Oficial00000000 (official, with the 24-hour window) and dev_Sandbox0QR0000000000000 (QR, no window); contact ctc_Sandbox0Contacto0000000; template tpl_Sandbox0Bienvenida00000
@@ -384,7 +384,7 @@ curl -si -X POST http://localhost:4010/api/v1/kanban-settings -H "Authorization:
 
 ```bash
 curl -s http://localhost:4010/_sandbox/operations | jq '.meta'
-# {"total": 253, "stateful": 90, "shape_only": 163, "closed": 0}
+# {"total": 260, "stateful": 90, "shape_only": 170, "closed": 0}
 curl -s http://localhost:4010/_sandbox/operations | jq -r '.data[] | select(.simulated == "shape-only") | "\(.method) \(.path)"'
 ```
 
@@ -796,7 +796,7 @@ And at `http://localhost:4010/_sandbox` you see each request and each delivery w
 - **The published spec and the sandbox agree:** the [contract test](#development) finds no difference. One that shows up again is listed, with why, in `test/contract/known.ts`.
 - **Webhook URLs** may be `http` and local, without the real API's protection against internal destinations (try `--require-https`). Do not expose the sandbox to the internet: the `/_sandbox` routes take no key and the sandbox `POST`s to any URL subscribed to it.
 - **The event catalog** is what the spec documents (`generated/catalog.json`, transcribed by `npm run generate`), with `is_critical` and `label` copied from accounts' catalog (`catalogFields` of `spec/pending-sandbox.json`).
-- **Groups have state only for the number's live list, the list, one group, the import and the send of a message** (the action is `completed` after the delays of `sent` and `delivered`; it never fails on its own). The live list is never cached (production keeps it a minute for a key). The other group actions, the campaigns and the rest of the groups' routes answer shape only, and their events are fired from `/_sandbox`. There are no official groups (the account is not in their beta), no `too_many_pending_actions` and no rate limit of 30 sends per minute.
+- **Groups have state only for the number's live list, the list, one group, the import and the send of a message** (the action is `completed` after the delays of `sent` and `delivered`; it never fails on its own). The live list is never cached (production keeps it a minute for a key). `GET /api/v1/groups` takes `adminConnection` and `participantMode` but does not filter by them. The other group actions, the campaigns and the scheduled messages (also creating, editing, pausing and deleting them: a write keeps nothing) and the rest of the groups' routes answer shape only, and their events are fired from `/_sandbox`. There are no official groups (the account is not in their beta), no `too_many_pending_actions` and no rate limit of 30 sends per minute.
 - **Workspaces confine** numbers, sign-up links, webhook subscriptions, contacts, conversations, messages, templates and groups. Tags, custom fields and forms are not confined in the sandbox. A contact belongs to one workspace, and the phone stays unique in the account: `POST /api/v1/contacts`, `update-or-create` and a send by phone with a phone of another workspace answer `404`.
 - **Forms do not talk to Meta:** `sync` and `publish` succeed unless the linter finds an error, and the linter is a short version of the real one (screens without a title, without an ending, without questions, with a connection to the server). The metrics (`…/metrics`) answer shape only, and there are no dynamic forms.
 - **Files are not downloaded:** the type comes from the extension or from `file_type`. The «known» extensions (the ones that give `415` instead of `422 errors.file_type`) are the common ones; the API uses symfony/mime's full list.
@@ -808,7 +808,7 @@ And at `http://localhost:4010/_sandbox` you see each request and each delivery w
 
 ## Pending of the spec
 
-The spec (`spec/funnelchat.json`) is the one the portal publishes (built at the portal's fe4df8d, 18-11, from the snapshots of the three domains): only the operations and events the portal shows. **The sandbox offers only that:** a layer corrects shapes where the spec says otherwise than production answers, but never adds an operation or an event (the generator refuses it and says so). The corrections are in two layers, which the next regeneration drops on its own once the spec carries them:
+The spec (`spec/funnelchat.json`) is the one the portal publishes (built at the portal's 5c9ed62, 27-11, from the snapshots of the three domains): only the operations and events the portal shows. **The sandbox offers only that:** a layer corrects shapes where the spec says otherwise than production answers, but never adds an operation or an event (the generator refuses it and says so). The corrections are in two layers, which the next regeneration drops on its own once the spec carries them:
 
 - `spec/pending.json`: the pending layer of the Node SDK (`funnelchat-node` @ `bde8679`), with the corrections of 13-11 made here ahead of the SDK (`answers[].label` of `whatsapp_form.completed` is always a string, `message.type` of `message.received` accepts types the spec does not list yet) and, on 18-11, without what the spec of that day already carries (the response patches, and the billing and `group_participant.*` events). What is left, guarded by JSON Pointer conditions: the shapes of the number, group, form and message events.
 - `spec/pending-sandbox.json`: what the sandbox corrects on top of it, with its sources inside.
@@ -859,7 +859,7 @@ What it does:
 
 **A handler whose operation is not in the spec is not reached:** the route answers `404 route_not_found`, like a route the API does not have. After a regeneration, `GET /_sandbox/operations` says what has state and what answers [shape only](#with-state-or-shape-only).
 
-**The current spec** is the one `npm run build` of the portal publishes at fe4df8d (18-11; sha256 `4a8fbaee9d8b251fd0df44b5a6ae5e4a55ca4993569a5af6834c09b31a4bb423`), with the common error format of the API: 209 paths, 253 operations and 58 events (56 types: the 55 of the `events` enum and `webhook.test`, which the three areas document), in 30 groups. The detail is in `spec/procedencia.json`.
+**The current spec** is the one the portal publishes since its deploy of 27-11, built at 5c9ed62 (sha256 `b98c53bd7dc167cfc77fbd15bb4334d98f2361d56b3edf3e03949ad723135b47`), with the common error format of the API: 210 paths, 260 operations and 58 events (56 types: the 55 of the `events` enum and `webhook.test`, which the three areas document), in 30 groups. The detail is in `spec/procedencia.json`.
 
 ## Development
 

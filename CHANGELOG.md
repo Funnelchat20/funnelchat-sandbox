@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.8.0 (27-11-2026)
+
+Follows the spec the developer portal publishes since 27-11 (portal `5c9ed62`, sha256 `b98c53bd…`): communities of
+27-11, conversations and accounts of 18-11. 260 operations (253 before); the contract test finds no difference.
+
+- **Campaigns and scheduled messages are written with a key:** `POST /api/v1/campaigns`, `PUT` and
+  `DELETE /api/v1/campaigns/{campaign}`, `POST /api/v1/campaigns/{campaign}/status`, `POST /api/v1/scheduled-messages`,
+  and `PUT` and `DELETE /api/v1/scheduled-messages/{scheduledMessage}`. They answer shape only, like the rest of the
+  campaigns: the body is validated against the spec and a write keeps nothing.
+- **`send_at` and `recurrence.end_date` of a scheduled message take the text production takes,**
+  `2026-12-07 13:00:00`: an ISO date (`2026-12-07T13:00:00Z`) is a `422` on that field, as in production.
+- The groups of a campaign take `fillState` and answer `fillStateCounts`, and the detail of a scheduled message
+  brings `delivery_summary` and `tracked_links` (shape only). `GET /api/v1/groups` takes `adminConnection` and
+  `participantMode`, but does not filter by them yet.
+
 ## 0.7.0 (18-11-2026)
 
 Follows the spec the developer portal publishes on 18-11 (the snapshots of conversations, communities and accounts):
